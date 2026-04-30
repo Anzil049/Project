@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, ArrowRight, ArrowLeft, Send, CheckCircle, ShieldAlert } from 'lucide-react';
 import { Button, Input } from '../../components/common';
 import { ROUTES } from '../../constants/routes';
+import authService from '../../services/authService';
+import toast from 'react-hot-toast';
 import medicalImage from '../../assets/login.png';
 const ForgotPassword = () => {
   const [email, setEmail] = useState('');
@@ -15,16 +17,17 @@ const ForgotPassword = () => {
     e.preventDefault();
     setLoading(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setSubmitted(true);
-    setLoading(false);
-    
-    // Redirect after 2s or allow manual click
-    setTimeout(() => {
-       navigate('/verify-otp', { state: { email, type: 'recovery' } });
-    }, 2000);
+    try {
+      await authService.forgotPassword(email);
+      setSubmitted(true);
+      setTimeout(() => {
+        navigate('/verify-otp', { state: { email, type: 'recovery' } });
+      }, 2000);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to send reset code.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const containerVariants = {

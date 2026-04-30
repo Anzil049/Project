@@ -60,11 +60,18 @@ const VerifyOtp = () => {
     setLoading(true);
     setError('');
     try {
-      await authService.verifyOtp(email, otpValue, type);
+      // For registration, we verify and login.
+      // For recovery, we just pass the OTP to the next page where it will be verified during reset.
+      if (type !== 'recovery') {
+        await authService.verifyOtp(email, otpValue, type);
+      }
+      
       setSuccess(true);
       toast.success('Identity verified successfully!');
       setTimeout(() => {
-        navigate(type === 'recovery' ? '/reset-password' : ROUTES.PATIENT.DASHBOARD);
+        navigate(type === 'recovery' ? '/reset-password' : ROUTES.PATIENT.DASHBOARD, { 
+          state: { email, otp: otpValue } 
+        });
       }, 2000);
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid verification OTP. Access denied.');

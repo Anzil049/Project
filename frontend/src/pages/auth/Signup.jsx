@@ -14,13 +14,12 @@ import useAuthStore from '../../store/authStore';
 import { ROUTES } from '../../constants/routes';
 import toast from 'react-hot-toast';
 import medicalImage from '../../assets/login.png';
-import { Eye, EyeOff } from 'lucide-react';
 
 const signupSchema = z.object({
   fullName: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
   bloodGroup: z.string().min(1, 'Please select a blood group'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: z.string().min(8, 'Minimum 8 characters required'),
   confirmPassword: z.string()
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
@@ -33,7 +32,7 @@ const Signup = () => {
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
 
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, watch, formState: { errors } } = useForm({
     resolver: zodResolver(signupSchema),
     defaultValues: {
       fullName: '',
@@ -47,7 +46,7 @@ const Signup = () => {
   const onSubmit = async (data) => {
     setLoading(true);
     try {
-      const response = await authService.signup({
+      await authService.signup('patient', {
         name: data.fullName,
         email: data.email,
         password: data.password,

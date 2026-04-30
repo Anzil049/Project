@@ -43,6 +43,7 @@ import Signup from './pages/auth/Signup';
 import DoctorSignup from './pages/auth/DoctorSignup';
 import HospitalSignup from './pages/auth/HospitalSignup';
 import ForgotPassword from './pages/auth/ForgotPassword';
+import ResetPassword from './pages/auth/ResetPassword';
 import VerifyOtp from './pages/auth/VerifyOtp';
 import PrivacyPolicy from './pages/public/PrivacyPolicy';
 import TermsOfService from './pages/public/TermsOfService';
@@ -72,6 +73,29 @@ const DashboardRedirect = () => {
 };
 
 function App() {
+  const { login, setLoading, loading } = useAuthStore();
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const userData = await authService.getCurrentUser('me'); // 'me' is our special global endpoint
+        login(userData);
+      } catch (err) {
+        // No active session, logout store
+        setLoading(false);
+      }
+    };
+    checkAuth();
+  }, [login, setLoading]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#E1F2F1]">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-[#0D9488]"></div>
+      </div>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <Router>
@@ -100,6 +124,7 @@ function App() {
           <Route path={ROUTES.SIGNUP_DOCTOR} element={<DoctorSignup />} />
           <Route path={ROUTES.SIGNUP_HOSPITAL} element={<HospitalSignup />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/verify-otp" element={<VerifyOtp />} />
           <Route path={ROUTES.PRIVACY} element={<PrivacyPolicy />} />
           <Route path={ROUTES.TERMS} element={<TermsOfService />} />

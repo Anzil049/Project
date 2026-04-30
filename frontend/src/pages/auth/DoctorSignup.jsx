@@ -22,8 +22,9 @@ const doctorSignupSchema = z.object({
   licenseNumber: z.string().min(5, 'Valid license number is required'),
   specialization: z.string().min(2, 'Specialization is required'),
   experience: z.string().min(1, 'Years of experience is required'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  confirmPassword: z.string()
+  password: z.string().min(8, 'Minimum 8 characters required'),
+  confirmPassword: z.string(),
+  certificate: z.any().refine((files) => files?.length > 0, "Professional certificate is required"),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
@@ -33,8 +34,9 @@ const DoctorSignup = () => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
+  const login = useAuthStore((state) => state.login);
 
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, watch, formState: { errors } } = useForm({
     resolver: zodResolver(doctorSignupSchema),
     defaultValues: {
       fullName: '',
@@ -50,17 +52,19 @@ const DoctorSignup = () => {
   const onSubmit = async (data) => {
     setLoading(true);
     try {
-      await authService.signup({
-        name: data.fullName,
-        email: data.email,
-        password: data.password,
-        role: 'doctor',
-        doctorDetails: {
-          licenseNumber: data.licenseNumber,
-          specialization: data.specialization,
-          experience: data.experience
-        }
-      });
+      const formData = new FormData();
+      formData.append('name', data.fullName);
+      formData.append('email', data.email);
+      formData.append('password', data.password);
+      formData.append('role', 'doctor');
+      formData.append('licenseNumber', data.licenseNumber);
+      formData.append('specialization', data.specialization);
+      formData.append('experience', data.experience);
+      if (data.certificate[0]) {
+        formData.append('certificate', data.certificate[0]);
+      }
+
+      await authService.signup('doctor', formData);
       
       toast.success('Registration successful. Professional identity under review.');
       navigate('/verify-otp', { state: { email: data.email, type: 'registration' } });
@@ -196,6 +200,22 @@ const DoctorSignup = () => {
                   placeholder="xxxxxxxx"
                   className="h-14 rounded-3xl"
                 />
+
+                <div className="space-y-1">
+                  <label className="text-xs font-black uppercase tracking-widest text-teal-50/40 ml-4 mb-2 block">Doctor Certificate (PDF/Image)</label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none">
+                      <FileText className="h-5 w-5 text-teal-50/40 group-focus-within:text-white transition-colors" />
+                    </div>
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      {...register('certificate')}
+                      className={`w-full h-14 rounded-3xl bg-white/10 border ${errors.certificate ? 'border-red-400' : 'border-white/10'} text-white pl-14 pr-6 py-4 outline-none focus:border-white transition-all cursor-pointer file:hidden`}
+                    />
+                  </div>
+                  {errors.certificate && <p className="text-[10px] text-red-200 ml-4 font-bold uppercase tracking-tighter mt-1">{errors.certificate.message}</p>}
+                </div>
               </div>
 
               <motion.div variants={itemVariants} className="pt-4">

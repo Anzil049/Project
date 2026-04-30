@@ -39,7 +39,7 @@ const Login = () => {
 
     try {
       const data = await authService.login(email, password);
-      login(data.user);
+      login(data); // Store the whole user object
       
       // Check for 2FA requirement (simulated logic)
       if (data.requires2FA) {
@@ -47,19 +47,29 @@ const Login = () => {
         return;
       }
 
-      if (data.user.isFirstLogin) {
+      if (data.isFirstLogin) {
         navigate('/change-password');
         return;
       }
 
-      switch (data.user.role) {
-        case ROLES.ADMIN: navigate(ROUTES.ADMIN.DASHBOARD); break;
-        case ROLES.HOSPITAL: navigate(ROUTES.HOSPITAL.DASHBOARD); break;
-        case ROLES.DOCTOR: navigate(ROUTES.DOCTOR.DASHBOARD); break;
+      switch (data.role) {
+        case 'admin': navigate(ROUTES.ADMIN.DASHBOARD); break;
+        case 'hospital': navigate(ROUTES.HOSPITAL.DASHBOARD); break;
+        case 'doctor': navigate(ROUTES.DOCTOR.DASHBOARD); break;
+        case 'patient': navigate(ROUTES.PATIENT.DASHBOARD); break;
         default: navigate(ROUTES.PATIENT.DASHBOARD); break;
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid credentials. Access denied.');
+      const serverError = err.response?.data?.errors?.[0];
+      const message = serverError ? Object.values(serverError)[0] : (err.response?.data?.message || 'Invalid credentials. Access denied.');
+      setError(message);
+
+      // If user is not verified, redirect to OTP page after a short delay
+      if (message.toLowerCase().includes('verify your email')) {
+        setTimeout(() => {
+          navigate('/verify-otp', { state: { email, type: 'registration' } });
+        }, 2000);
+      }
     } finally {
       setLoading(false);
     }
@@ -158,7 +168,7 @@ const Login = () => {
                     >
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
-                 </motion.div>
+                  </motion.div>
               </div>
 
               <AnimatePresence mode="wait">

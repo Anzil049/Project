@@ -14,6 +14,7 @@ import useAuthStore from '../../store/authStore';
 import { ROUTES } from '../../constants/routes';
 import toast from 'react-hot-toast';
 import medicalImage from '../../assets/login.png';
+import { Eye, EyeOff } from 'lucide-react';
 
 const hospitalSignupSchema = z.object({
   hospitalName: z.string().min(3, 'Hospital name must be at least 3 characters'),
@@ -21,8 +22,9 @@ const hospitalSignupSchema = z.object({
   regNumber: z.string().min(5, 'Registration number is required'),
   facilityType: z.string().min(2, 'Facility type is required (e.g. Multi-Specialty)'),
   bedCapacity: z.string().min(1, 'Approximate bed capacity is required'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  confirmPassword: z.string()
+  password: z.string().min(8, 'Minimum 8 characters required'),
+  confirmPassword: z.string(),
+  certificate: z.any().refine((files) => files?.length > 0, "Registration certificate is required"),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
@@ -32,8 +34,9 @@ const HospitalSignup = () => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
+  const login = useAuthStore((state) => state.login);
 
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, watch, formState: { errors } } = useForm({
     resolver: zodResolver(hospitalSignupSchema),
     defaultValues: {
       hospitalName: '',
@@ -49,17 +52,19 @@ const HospitalSignup = () => {
   const onSubmit = async (data) => {
     setLoading(true);
     try {
-      await authService.signup({
-        name: data.hospitalName,
-        email: data.adminEmail,
-        password: data.password,
-        role: 'hospital',
-        hospitalDetails: {
-          registrationNumber: data.regNumber,
-          facilityType: data.facilityType,
-          beds: data.bedCapacity
-        }
-      });
+      const formData = new FormData();
+      formData.append('name', data.hospitalName);
+      formData.append('email', data.adminEmail);
+      formData.append('password', data.password);
+      formData.append('role', 'hospital');
+      formData.append('registrationNumber', data.regNumber);
+      formData.append('facilityType', data.facilityType);
+      formData.append('beds', data.bedCapacity);
+      if (data.certificate[0]) {
+        formData.append('certificate', data.certificate[0]);
+      }
+
+      await authService.signup('hospital', formData);
       
       toast.success('Registration successful. Hospital verification initiated.');
       navigate('/verify-otp', { state: { email: data.adminEmail, type: 'registration' } });
@@ -195,6 +200,22 @@ const HospitalSignup = () => {
                   placeholder="xxxxxxxx"
                   className="h-14 rounded-3xl"
                 />
+
+                <div className="space-y-1">
+                  <label className="text-xs font-black uppercase tracking-widest text-teal-50/40 ml-4 mb-2 block">Hospital Certificate (PDF/Image)</label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none">
+                      <FileText className="h-5 w-5 text-teal-50/40 group-focus-within:text-white transition-colors" />
+                    </div>
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      {...register('certificate')}
+                      className={`w-full h-14 rounded-3xl bg-white/10 border ${errors.certificate ? 'border-red-400' : 'border-white/10'} text-white pl-14 pr-6 py-4 outline-none focus:border-white transition-all cursor-pointer file:hidden`}
+                    />
+                  </div>
+                  {errors.certificate && <p className="text-[10px] text-red-200 ml-4 font-bold uppercase tracking-tighter mt-1">{errors.certificate.message}</p>}
+                </div>
               </div>
 
               <motion.div variants={itemVariants} className="pt-4">

@@ -1,33 +1,76 @@
 import api from './api';
 
 const authService = {
+  /**
+   * Login a user. Role is automatically detected by the backend.
+   */
   login: async (email, password) => {
-    const response = await api.post('/auth/login', { email, password }, { withCredentials: true });
+    const response = await api.post('/auth/login', { email, password });
     return response.data;
   },
 
-  logout: async () => {
-    const response = await api.get('/auth/logout');
+  /**
+   * Register a user based on their role.
+   */
+  signup: async (role, userData) => {
+    const response = await api.post(`/auth/${role}/register`, userData);
     return response.data;
   },
 
-  getCurrentUser: async () => {
-    const response = await api.get('/auth/me');
+  /**
+   * Logout a user.
+   */
+  logout: async (role) => {
+    const response = await api.post(`/auth/${role}/logout`);
     return response.data;
   },
 
-  signup: async (userData) => {
-    const response = await api.post('/auth/signup', userData);
-    return response.data;
-  },
-
-  verifyOtp: async (email, otp, type = '2fa') => {
+  /**
+   * Verify OTP for email verification.
+   */
+  verifyOtp: async (email, otp, type = 'registration') => {
     const response = await api.post('/auth/verify-otp', { email, otp, type });
     return response.data;
   },
 
-  resendOtp: async (email, type = '2fa') => {
+  /**
+   * Resend OTP.
+   */
+  resendOtp: async (email, type = 'registration') => {
     const response = await api.post('/auth/resend-otp', { email, type });
+    return response.data;
+  },
+
+  /**
+   * Request password reset OTP.
+   */
+  forgotPassword: async (email) => {
+    const response = await api.post('/auth/forgot-password', { email });
+    return response.data;
+  },
+
+  /**
+   * Reset password with OTP.
+   */
+  resetPassword: async (email, otp, password) => {
+    const response = await api.post('/auth/reset-password', { email, otp, password });
+    return response.data;
+  },
+
+  /**
+   * Get user profile. If role is 'me', it calls the global session check.
+   */
+  getCurrentUser: async (role) => {
+    const endpoint = role === 'me' ? '/auth/me' : `/auth/${role}/profile`;
+    const response = await api.get(endpoint);
+    return response.data;
+  },
+
+  /**
+   * Refresh access token.
+   */
+  refresh: async (role) => {
+    const response = await api.post(`/auth/${role}/refresh`);
     return response.data;
   }
 };

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+const { comparePassword, hashPassword } = require('../utils/passwordUtils');
 
 const userSchema = mongoose.Schema({
     name: {
@@ -20,23 +20,42 @@ const userSchema = mongoose.Schema({
         required: true,
         enum: ['patient', 'doctor', 'hospital', 'admin'],
     },
+    bloodGroup: {
+        type: String,
+        enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
+    },
+    certificate: {
+        type: String, // URL to Cloudinary
+    },
+    resetPasswordToken: String,
+    resetPasswordExpires: Date,
+    isVerified: {
+        type: Boolean,
+        default: false,
+    },
 }, {
     timestamps: true,
 });
 
 // Method to compare password
 userSchema.methods.matchPassword = async function (enteredPassword) {
-    return await bcrypt.compare(enteredPassword, this.password);
+    const isMatch = await comparePassword(enteredPassword, this.password);
+    console.log(`Password match check for ${this.email}: ${isMatch}`);
+    return isMatch;
 };
 
 // Middleware to hash password before saving
-userSchema.pre('save', async function (next) {
+// Refactored to use native async/await without next() for Mongoose 7/8 compatibility
+userSchema.pre('save', async function () {
     if (!this.isModified('password')) {
-        next();
+        return;
     }
-
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
+    
+    try {
+        this.password = await hashPassword(this.password);
+    } catch (error) {
+        throw error;
+    }
 });
 
 const User = mongoose.model('User', userSchema);
