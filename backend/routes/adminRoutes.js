@@ -3,7 +3,8 @@ const router = express.Router();
 const {
     getPendingRegistrations,
     approveRegistration,
-    rejectRegistration
+    rejectRegistration,
+    downloadCertificate
 } = require('../controllers/adminController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -15,5 +16,6 @@ router.use((req, res, next) => {
 router.get('/registrations', getPendingRegistrations);
 router.post('/approve/:id', approveRegistration);
 router.post('/reject/:id', rejectRegistration);
+router.get('/download-certificate', downloadCertificate);
 
 module.exports = router;

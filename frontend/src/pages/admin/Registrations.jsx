@@ -5,6 +5,7 @@ import {
   Building2, Stethoscope, Search, Check, X, FileText, Download, ShieldAlert
 } from 'lucide-react';
 import adminService from '../../services/adminService';
+import api from '../../services/api';
 import toast from 'react-hot-toast';
 
 const Registrations = () => {
@@ -73,8 +74,35 @@ const Registrations = () => {
     }
   };
 
-  const openCertModal = (url) => {
+  const [downloadingId, setDownloadingId] = useState(null);
+
+  const handleDownload = async (url, id) => {
+    try {
+      setDownloadingId(id);
+      const response = await api.get(`/admin/download-certificate?url=${encodeURIComponent(url)}`, {
+        responseType: 'blob'
+      });
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', `certificate-${id.substring(0, 8)}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      toast.error('Failed to download certificate. Please try again.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const [activeAppId, setActiveAppId] = useState(null);
+
+  const openCertModal = (url, id) => {
     setActiveCertUrl(url);
+    setActiveAppId(id);
     setCertModalOpen(true);
   };
 
@@ -139,7 +167,7 @@ const Registrations = () => {
                  <Button 
                    variant="outline" 
                    fullWidth 
-                   onClick={() => openCertModal(app.certPreview)}
+                   onClick={() => openCertModal(app.certPreview, app.id)}
                    className="text-xs font-black rounded-xl border-gray-200"
                  >
                     <FileText size={14} className="mr-2" /> View Certificate
@@ -214,19 +242,57 @@ const Registrations = () => {
           <div className="relative w-full max-w-4xl max-h-full flex flex-col items-center justify-center z-10 animate-in zoom-in-95 duration-200">
              
              <div className="w-full flex justify-end gap-4 mb-4">
-               <button className="h-10 px-6 rounded-full bg-white/10 hover:bg-white/20 text-white font-black text-xs uppercase tracking-widest flex items-center gap-2 backdrop-blur-md transition-all">
-                  <Download size={14} /> Download Secure Copy
+               <button 
+                 onClick={() => window.open(activeCertUrl, '_blank')}
+                 className="h-10 px-6 rounded-full bg-white/10 hover:bg-white/20 text-white font-black text-xs uppercase tracking-widest flex items-center gap-2 backdrop-blur-md transition-all"
+               >
+                  <Download size={14} /> Open Original File
                </button>
                <button onClick={() => setCertModalOpen(false)} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur-md transition-all">
                   <X size={20} />
                </button>
              </div>
 
-             <div className="w-full bg-black/50 rounded-[32px] overflow-hidden border border-white/10 shadow-2xl flex items-center justify-center min-h-[40vh]">
+             <div className="w-full bg-black/50 rounded-[32px] overflow-hidden border border-white/10 shadow-2xl flex items-center justify-center min-h-[50vh] p-4">
                {activeCertUrl ? (
-                 <img src={activeCertUrl} alt="Certificate Validation Wrapper" className="w-full h-auto max-h-[70vh] object-contain" />
+                 <div className="flex flex-col items-center gap-6 w-full">
+                   <img 
+                     src={activeCertUrl.toLowerCase().endsWith('.pdf') ? activeCertUrl.replace(/\.pdf$/i, '.jpg') : activeCertUrl} 
+                     alt="Certificate Preview" 
+                     className="max-w-full max-h-[60vh] rounded-xl shadow-2xl border border-white/10"
+                     onError={(e) => {
+                       // Fallback if JPG conversion fails: show a document icon
+                       e.target.style.display = 'none';
+                       document.getElementById('pdf-fallback').style.display = 'block';
+                     }}
+                   />
+                   <div id="pdf-fallback" className="hidden text-center py-12">
+                      <FileText size={64} className="text-white/20 mx-auto mb-4" />
+                      <p className="text-white font-bold">Document Preview Ready</p>
+                   </div>
+                   
+                   <button 
+                     disabled={downloadingId === activeAppId}
+                     onClick={() => handleDownload(activeCertUrl, activeAppId)}
+                     className={`bg-[#0D9488] hover:bg-[#0D9488]/80 text-white font-black rounded-2xl px-8 py-3 shadow-xl shadow-[#0D9488]/20 transition-all flex items-center justify-center gap-2 ${downloadingId === activeAppId ? 'opacity-50 cursor-not-allowed' : ''}`}
+                   >
+                     {downloadingId === activeAppId ? (
+                       <>
+                         <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/20 border-t-white"></div>
+                         Securely Fetching...
+                       </>
+                     ) : (
+                       <>
+                         <Download size={16} /> Download Full Certificate
+                       </>
+                     )}
+                   </button>
+                 </div>
                ) : (
-                 <p className="text-white">Unable to render image</p>
+                 <div className="text-center py-20">
+                   <ShieldAlert size={48} className="text-white/20 mx-auto mb-4" />
+                   <p className="text-white font-bold">No certificate file was uploaded for this account.</p>
+                 </div>
                )}
              </div>
 

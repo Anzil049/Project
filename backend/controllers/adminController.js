@@ -1,4 +1,5 @@
 const asyncHandler = require('express-async-handler');
+const axios = require('axios');
 const User = require('../models/User');
 const Doctor = require('../models/Doctor');
 const Hospital = require('../models/Hospital');
@@ -12,7 +13,7 @@ const getPendingRegistrations = asyncHandler(async (req, res) => {
     const pendingUsers = await User.find({ 
         role: { $in: ['doctor', 'hospital'] },
         isVerified: true,
-        isApproved: false
+        isApproved: { $ne: true }
     }).select('-password').sort({ createdAt: -1 });
 
     const registrations = [];
@@ -111,8 +112,89 @@ const rejectRegistration = asyncHandler(async (req, res) => {
     res.json({ message: 'Registration rejected and user deleted successfully' });
 });
 
+// @desc    Proxy to download/view certificate with correct headers
+// @route   GET /api/admin/download-certificate
+// @access  Private/Admin
+const downloadCertificate = asyncHandler(async (req, res) => {
+    const { url } = req.query;
+
+    console.log('Proxying download for URL:', url);
+
+    if (!url) {
+        res.status(400);
+        throw new Error('URL is required');
+    }
+
+    try {
+        const cloudinary = require('cloudinary').v2;
+        
+        // Configuration
+        cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key: process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET,
+        });
+
+        // Extract public ID more reliably
+        const urlParts = url.split('/');
+        const medcareIndex = urlParts.findIndex(part => part === 'medcare_certificates');
+        let publicId = null;
+        if (medcareIndex !== -1) {
+            const idWithExt = urlParts.slice(medcareIndex).join('/');
+            // Remove the extension properly (everything after the last dot)
+            publicId = idWithExt.substring(0, idWithExt.lastIndexOf('.'));
+        }
+
+        let downloadUrl = url;
+        if (publicId) {
+            // Use the official private download URL generator
+            downloadUrl = cloudinary.utils.private_download_url(publicId, 'pdf', {
+                resource_type: 'image',
+                type: 'upload',
+                attachment: true
+            });
+        }
+
+        const response = await axios({
+            method: 'get',
+            url: downloadUrl,
+            responseType: 'arraybuffer'
+        });
+
+        // Force correct headers for PDF viewing/downloading
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename=certificate.pdf');
+        
+        res.send(response.data);
+    } catch (error) {
+        const fs = require('fs');
+        const urlParts = url.split('/');
+        const medcareIndex = urlParts.findIndex(part => part === 'medcare_certificates');
+        const idWithExt = medcareIndex !== -1 ? urlParts.slice(medcareIndex).join('/') : 'NOT_FOUND';
+        
+        // Regenerate signed URL for logging
+        const cloudinary = require('cloudinary').v2;
+        cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key: process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET,
+        });
+        const publicId = idWithExt.substring(0, idWithExt.lastIndexOf('.'));
+        const signedUrlLog = cloudinary.utils.private_download_url(publicId, 'pdf', { resource_type: 'image', type: 'upload' });
+
+        const errorLog = `Error: ${error.message}\nURL: ${url}\nSIGNED_URL: ${signedUrlLog}\nID_EXTRACTED: ${publicId}\nStatus: ${error.response?.status}\nData: ${error.response?.data?.toString()}`;
+        fs.writeFileSync('_proxy_error.log', errorLog);
+        
+        res.status(500).json({ 
+            message: 'Failed to fetch certificate from storage',
+            error: error.message 
+        });
+    }
+});
+
 module.exports = {
     getPendingRegistrations,
     approveRegistration,
-    rejectRegistration
+    rejectRegistration,
+    downloadCertificate
 };
