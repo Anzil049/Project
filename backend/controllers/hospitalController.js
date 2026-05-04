@@ -30,6 +30,7 @@ const addDoctor = asyncHandler(async (req, res) => {
         role: 'doctor',
         phone,
         isVerified: true, // Bypassing OTP as they are created by a verified hospital
+        isApproved: true, // Hospital-added doctors are pre-approved
         isFirstLogin: true,
     });
 

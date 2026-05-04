@@ -4,18 +4,20 @@ const {
     getPendingRegistrations,
     approveRegistration,
     rejectRegistration,
-    downloadCertificate
+    downloadCertificate,
+    getAllApprovedDoctors,
+    getAllApprovedHospitals
 } = require('../controllers/adminController');
 const { protect } = require('../middleware/authMiddleware');
 
 // Protect all admin routes
-router.use((req, res, next) => {
-    return protect('admin')(req, res, next);
-});
+router.use(protect('admin'));
 
 router.get('/registrations', getPendingRegistrations);
 router.post('/approve/:id', approveRegistration);
 router.post('/reject/:id', rejectRegistration);
 router.get('/download-certificate', downloadCertificate);
+router.get('/doctors', getAllApprovedDoctors);
+router.get('/hospitals', getAllApprovedHospitals);
 
 module.exports = router;

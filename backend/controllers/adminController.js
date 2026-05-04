@@ -192,9 +192,68 @@ const downloadCertificate = asyncHandler(async (req, res) => {
     }
 });
 
+// @desc    Get all approved doctors
+// @route   GET /api/admin/doctors
+// @access  Private/Admin
+// @desc    Get all approved doctors
+// @route   GET /api/admin/doctors
+// @access  Private/Admin
+const getAllApprovedDoctors = asyncHandler(async (req, res) => {
+    // Fetch all doctors that are approved
+    const approvedUsers = await User.find({ role: 'doctor', isApproved: true }).select('-password');
+    
+    const doctorsList = [];
+    for (const user of approvedUsers) {
+        const doctorProfile = await Doctor.findOne({ user: user._id })
+            .populate({
+                path: 'hospitalId',
+                select: 'name'
+            });
+
+        doctorsList.push({
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone,
+            specialization: doctorProfile?.specialization || 'General',
+            experience: doctorProfile?.experience || 'N/A',
+            licenseNumber: doctorProfile?.licenseNumber || 'N/A',
+            hospitalName: doctorProfile?.hospitalId?.name || 'Independent',
+            status: 'active'
+        });
+    }
+
+    res.json(doctorsList);
+});
+
+// @desc    Get all approved hospitals
+// @route   GET /api/admin/hospitals
+// @access  Private/Admin
+const getAllApprovedHospitals = asyncHandler(async (req, res) => {
+    const approvedHospitals = await User.find({ role: 'hospital', isApproved: true }).select('-password');
+
+    const hospitalsList = [];
+    for (const hospitalUser of approvedHospitals) {
+        const doctorsCount = await Doctor.countDocuments({ hospitalId: hospitalUser._id });
+        
+        hospitalsList.push({
+            id: hospitalUser._id,
+            name: hospitalUser.name,
+            email: hospitalUser.email,
+            phone: hospitalUser.phone,
+            doctorsCount: doctorsCount,
+            status: 'active'
+        });
+    }
+
+    res.json(hospitalsList);
+});
+
 module.exports = {
     getPendingRegistrations,
     approveRegistration,
     rejectRegistration,
-    downloadCertificate
+    downloadCertificate,
+    getAllApprovedDoctors,
+    getAllApprovedHospitals
 };

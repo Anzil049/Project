@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button } from '../../components/common';
@@ -6,72 +6,37 @@ import {
   Stethoscope, Search, ExternalLink, ShieldOff, 
   Star, Building2, CheckCircle2
 } from 'lucide-react';
-
-const INITIAL_DOCTORS = [
-  {
-    id: 1,
-    name: 'Dr. Sarah Johnson',
-    specialty: 'Cardiologist',
-    hospital: 'Apollo Indraprastha Hospital',
-    rating: 4.9,
-    consultations: '3.2k',
-    status: 'active',
-    initials: 'SJ',
-    color: 'from-[#0D9488] to-[#115E59]',
-  },
-  {
-    id: 2,
-    name: 'Dr. Arjun Mehta',
-    specialty: 'Neurologist',
-    hospital: 'Fortis Escorts Heart Institute',
-    rating: 4.8,
-    consultations: '2.8k',
-    status: 'active',
-    initials: 'AM',
-    color: 'from-[#F97316] to-[#EA580C]',
-  },
-  {
-    id: 3,
-    name: 'Dr. Priya Sharma',
-    specialty: 'Dermatologist',
-    hospital: 'Max Super Speciality',
-    rating: 4.9,
-    consultations: '1.9k',
-    status: 'active',
-    initials: 'PS',
-    color: 'from-[#8B5CF6] to-[#6D28D9]',
-  },
-  {
-    id: 4,
-    name: 'Dr. James Wilson',
-    specialty: 'Orthopedic',
-    hospital: 'Sunrise General Clinic',
-    rating: 4.7,
-    consultations: '980',
-    status: 'blocked',
-    initials: 'JW',
-    color: 'from-[#FBBF24] to-[#D97706]',
-  },
-  {
-    id: 5,
-    name: 'Dr. Meera Nair',
-    specialty: 'Gynecologist',
-    hospital: 'MediCare Heights',
-    rating: 4.6,
-    consultations: '2.1k',
-    status: 'active',
-    initials: 'MN',
-    color: 'from-[#EC4899] to-[#DB2777]',
-  },
-];
+import adminService from '../../services/adminService';
 
 const AdminDoctors = () => {
   const navigate = useNavigate();
-  const [doctors, setDoctors] = useState(INITIAL_DOCTORS);
+  const [doctors, setDoctors] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
 
+  useEffect(() => {
+    fetchDoctors();
+  }, []);
+
+  const fetchDoctors = async () => {
+    try {
+      setLoading(true);
+      const data = await adminService.getApprovedDoctors();
+      setDoctors(data);
+    } catch (error) {
+      console.error('Failed to fetch doctors:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getInitials = (name) => {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+  };
+
   const toggleDoctorStatus = (id) => {
+    // This would normally call an API to block/unblock
     setDoctors(prev => prev.map(doc =>
       doc.id === id
         ? { ...doc, status: doc.status === 'active' ? 'blocked' : 'active' }
@@ -80,7 +45,7 @@ const AdminDoctors = () => {
   };
 
   const filtered = doctors
-    .filter(d => d.name.toLowerCase().includes(searchQuery.toLowerCase()) || d.specialty.toLowerCase().includes(searchQuery.toLowerCase()))
+    .filter(d => d.name.toLowerCase().includes(searchQuery.toLowerCase()) || d.specialization.toLowerCase().includes(searchQuery.toLowerCase()))
     .filter(d => filterStatus === 'all' || d.status === filterStatus);
 
   return (
@@ -131,31 +96,38 @@ const AdminDoctors = () => {
                   <th className="py-5 px-6 text-[10px] font-black uppercase tracking-widest text-navy/40">Doctor</th>
                   <th className="py-5 px-6 text-[10px] font-black uppercase tracking-widest text-navy/40">Specialty</th>
                   <th className="py-5 px-6 text-[10px] font-black uppercase tracking-widest text-navy/40">Affiliated Hospital</th>
-                  <th className="py-5 px-6 text-[10px] font-black uppercase tracking-widest text-navy/40">Rating</th>
-                  <th className="py-5 px-6 text-[10px] font-black uppercase tracking-widest text-navy/40">Consultations</th>
-                  <th className="py-5 px-6 text-[10px] font-black uppercase tracking-widest text-navy/40">Status</th>
                   <th className="py-5 px-6 text-[10px] font-black uppercase tracking-widest text-navy/40 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map((doc) => (
+                {loading ? (
+                   <tr>
+                     <td colSpan="4" className="py-20 text-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-[#0D9488] mx-auto mb-4"></div>
+                        <p className="text-navy/40 font-bold">Synchronizing registry...</p>
+                     </td>
+                   </tr>
+                ) : filtered.map((doc) => (
                   <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors group">
                     {/* Doctor Identity */}
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${doc.status === 'active' ? doc.color : 'from-gray-200 to-gray-300'} flex items-center justify-center text-white text-xs font-black shrink-0`}>
-                          {doc.initials}
+                        <div className={`w-10 h-10 rounded-xl bg-gradient-to-br from-[#0D9488] to-[#115E59] flex items-center justify-center text-white text-xs font-black shrink-0`}>
+                          {getInitials(doc.name)}
                         </div>
-                        <span className={`text-sm font-black ${doc.status === 'active' ? 'text-navy' : 'text-navy/40 line-through'}`}>
-                          {doc.name}
-                        </span>
+                        <div className="flex flex-col">
+                          <span className={`text-sm font-black text-navy`}>
+                            {doc.name}
+                          </span>
+                          <span className="text-[10px] font-bold text-navy/40 uppercase tracking-widest">{doc.email}</span>
+                        </div>
                       </div>
                     </td>
 
                     {/* Specialty */}
                     <td className="py-4 px-6">
-                      <span className="text-xs font-black uppercase tracking-widest text-navy/50 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-                        {doc.specialty}
+                      <span className="text-xs font-black uppercase tracking-widest text-[#0D9488] bg-[#0D9488]/5 px-3 py-1.5 rounded-lg border border-[#0D9488]/10">
+                        {doc.specialization}
                       </span>
                     </td>
 
@@ -163,66 +135,25 @@ const AdminDoctors = () => {
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-2 text-navy/60">
                         <Building2 size={14} className="text-navy/30 shrink-0" />
-                        <span className={`text-xs font-bold ${doc.status === 'active' ? 'text-navy/60' : 'text-navy/30'}`}>
-                          {doc.hospital}
+                        <span className={`text-xs font-bold text-navy/60`}>
+                          {doc.hospitalName}
                         </span>
                       </div>
                     </td>
 
-                    {/* Rating */}
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-1.5">
-                        <Star size={13} className="text-amber-400 fill-amber-400" />
-                        <span className={`text-sm font-bold ${doc.status === 'active' ? 'text-navy' : 'text-navy/40'}`}>
-                          {doc.rating}
-                        </span>
-                      </div>
-                    </td>
-
-                    {/* Consultations */}
-                    <td className="py-4 px-6">
-                      <span className={`text-sm font-bold ${doc.status === 'active' ? 'text-navy' : 'text-navy/40'}`}>
-                        {doc.consultations}
-                      </span>
-                    </td>
-
-                    {/* Status */}
-                    <td className="py-4 px-6">
-                      {doc.status === 'active' ? (
-                        <div className="flex items-center gap-2 text-[#0D9488]">
-                          <span className="w-2 h-2 rounded-full bg-[#0D9488] animate-pulse"></span>
-                          <span className="text-[10px] font-black uppercase tracking-widest">Active</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-red-500">
-                          <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                          <span className="text-[10px] font-black uppercase tracking-widest">Blocked</span>
-                        </div>
-                      )}
-                    </td>
 
                     {/* Actions */}
                     <td className="py-4 px-6">
                       <div className="flex items-center justify-end gap-3">
-                        {doc.status === 'active' ? (
-                          <Button
-                            onClick={() => toggleDoctorStatus(doc.id)}
-                            variant="danger"
-                            className="h-8 px-4 text-[10px] font-black uppercase tracking-widest rounded-lg border-none"
-                          >
-                            Block
-                          </Button>
-                        ) : (
-                          <Button
-                            onClick={() => toggleDoctorStatus(doc.id)}
-                            variant="outline"
-                            className="h-8 px-4 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-green-500 hover:!text-white hover:border-green-500 transition-colors"
-                          >
-                            Unblock
-                          </Button>
-                        )}
+                        <Button
+                          onClick={() => toggleDoctorStatus(doc.id)}
+                          variant={doc.status === 'active' ? 'danger' : 'outline'}
+                          className={`h-8 px-4 text-[10px] font-black uppercase tracking-widest rounded-lg ${doc.status === 'active' ? 'border-none' : 'hover:bg-green-500 hover:!text-white hover:border-green-500'}`}
+                        >
+                          {doc.status === 'active' ? 'Block' : 'Unblock'}
+                        </Button>
                         <button
-                          onClick={() => navigate(`/doctor/profile`)}
+                          onClick={() => navigate(`/doctor/profile/${doc.id}`)}
                           className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 text-navy/40 hover:text-[#0D9488] hover:border-[#0D9488] hover:bg-gray-50 transition-all"
                           title="View Doctor Profile"
                         >
@@ -235,7 +166,7 @@ const AdminDoctors = () => {
 
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan="7" className="py-16 text-center">
+                    <td colSpan="4" className="py-16 text-center">
                       <Stethoscope size={40} className="mx-auto text-gray-200 mb-3" />
                       <p className="text-sm font-bold text-navy/40">No doctors found matching your search.</p>
                     </td>

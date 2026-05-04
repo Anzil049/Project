@@ -23,6 +23,16 @@ const adminService = {
   rejectRegistration: async (id, reason) => {
     const response = await api.post(`/admin/reject/${id}`, { reason });
     return response.data;
+  },
+
+  getApprovedDoctors: async () => {
+    const response = await api.get('/admin/doctors');
+    return response.data;
+  },
+
+  getApprovedHospitals: async () => {
+    const response = await api.get('/admin/hospitals');
+    return response.data;
   }
 };
 
