@@ -2,18 +2,50 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
-  withCredentials: true, // Crucial for sending/receiving HttpOnly cookies
+  withCredentials: true, // Still send cookies when available
 });
 
-// Note: We are NO LONGER using localStorage for tokens as per security best practices.
-// Cookies are handled automatically by the browser and the backend.
+/**
+ * Gets the Bearer token for the current tab's active role.
+ * Falls back to checking all roles if no active role is set in sessionStorage.
+ */
+const getActiveToken = () => {
+  const activeRole = sessionStorage.getItem('medcare_active_role');
+  if (activeRole) {
+    return localStorage.getItem(`medcare_token_${activeRole}`);
+  }
 
+  // Fallback: try all roles (e.g., first page load before role is set in sessionStorage)
+  const roles = ['patient', 'doctor', 'hospital', 'admin'];
+  for (const role of roles) {
+    const token = localStorage.getItem(`medcare_token_${role}`);
+    if (token) return token;
+  }
+  return null;
+};
+
+// Request interceptor: attach Bearer token from storage on every request
+api.interceptors.request.use(
+  (config) => {
+    const token = getActiveToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor: handle 401 errors globally
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Handle global errors here (e.g., redirect to login on 401)
     if (error.response?.status === 401) {
-      // Potentially trigger a refresh token flow or logout
+      // Token expired or invalid — clear stale token for active role
+      const activeRole = sessionStorage.getItem('medcare_active_role');
+      if (activeRole) {
+        localStorage.removeItem(`medcare_token_${activeRole}`);
+      }
     }
     return Promise.reject(error);
   }

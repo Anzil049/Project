@@ -36,6 +36,10 @@ const userSchema = mongoose.Schema({
         type: Boolean,
         default: false,
     },
+    isApproved: {
+        type: Boolean,
+        default: false, // Will be set to true for patients during registration, but false for doctors/hospitals until admin approves
+    },
     isFirstLogin: {
         type: Boolean,
         default: false,

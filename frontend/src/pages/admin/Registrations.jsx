@@ -1,43 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button, Badge } from '../../components/common';
 import { 
   Building2, Stethoscope, Search, Check, X, FileText, Download, ShieldAlert
 } from 'lucide-react';
-
-// Mock Applications Data
-const INITIAL_APPLICATIONS = [
-  {
-    id: 1,
-    name: 'MediCare Heights Hospital',
-    type: 'hospital',
-    submittedAt: 'Today, 09:40 AM',
-    email: 'onboarding@medicareheights.com',
-    certPreview: 'https://images.unsplash.com/photo-1622359218206-a05e2edbaaea?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-    status: 'pending'
-  },
-  {
-    id: 2,
-    name: 'Dr. Anita Roy',
-    type: 'doctor',
-    submittedAt: 'Yesterday, 04:15 PM',
-    email: 'aroy.neuro@gmail.com',
-    certPreview: 'https://images.unsplash.com/photo-1576089704204-7a39e830e9ff?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-    status: 'pending'
-  },
-  {
-    id: 3,
-    name: 'Sunshine Pediatric Clinic',
-    type: 'hospital',
-    submittedAt: 'Oct 14, 2023',
-    email: 'admin@sunshineclinic.in',
-    certPreview: 'https://images.unsplash.com/photo-1622359218206-a05e2edbaaea?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-    status: 'pending'
-  }
-];
+import adminService from '../../services/adminService';
+import toast from 'react-hot-toast';
 
 const Registrations = () => {
-  const [applications, setApplications] = useState(INITIAL_APPLICATIONS);
+  const [applications, setApplications] = useState([]);
+  const [loading, setLoading] = useState(true);
   
   // Modal States
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
@@ -47,10 +19,34 @@ const Registrations = () => {
   const [certModalOpen, setCertModalOpen] = useState(false);
   const [activeCertUrl, setActiveCertUrl] = useState(null);
 
+  const [processing, setProcessing] = useState(false);
+
+  useEffect(() => {
+    fetchRegistrations();
+  }, []);
+
+  const fetchRegistrations = async () => {
+    try {
+      setLoading(true);
+      const data = await adminService.getPendingRegistrations();
+      setApplications(data);
+    } catch (error) {
+      toast.error('Failed to load pending registrations');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Actions
-  const handleApprove = (id) => {
-    setApplications(prev => prev.filter(app => app.id !== id));
-    // In production, dispatch approval via API here
+  const handleApprove = async (id) => {
+    try {
+      toast.loading('Approving application...', { id: 'approve' });
+      await adminService.approveRegistration(id);
+      setApplications(prev => prev.filter(app => app.id !== id));
+      toast.success('Application approved successfully!', { id: 'approve' });
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to approve application', { id: 'approve' });
+    }
   };
 
   const openRejectModal = (id) => {
@@ -59,12 +55,22 @@ const Registrations = () => {
     setRejectModalOpen(true);
   };
 
-  const submitRejection = () => {
+  const submitRejection = async () => {
     if (!rejectionReason.trim()) return;
-    setApplications(prev => prev.filter(app => app.id !== selectedRejectId));
-    setRejectModalOpen(false);
-    setSelectedRejectId(null);
-    // In production, dispatch rejection payload via API here
+    
+    try {
+      setProcessing(true);
+      toast.loading('Rejecting application...', { id: 'reject' });
+      await adminService.rejectRegistration(selectedRejectId, rejectionReason);
+      setApplications(prev => prev.filter(app => app.id !== selectedRejectId));
+      setRejectModalOpen(false);
+      setSelectedRejectId(null);
+      toast.success('Application rejected and user notified.', { id: 'reject' });
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to reject application', { id: 'reject' });
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const openCertModal = (url) => {
@@ -98,15 +104,18 @@ const Registrations = () => {
 
         {/* Applications Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-           {applications.length === 0 && (
+           {loading ? (
+             <div className="col-span-full py-20 text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-[#0D9488] mx-auto mb-4"></div>
+                <p className="text-navy/60 font-bold">Loading registrations...</p>
+             </div>
+           ) : applications.length === 0 ? (
              <div className="col-span-full py-20 text-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-[32px]">
                 <ShieldAlert size={48} className="mx-auto text-gray-300 mb-4" />
                 <h3 className="text-xl font-black text-navy">Queue Clear!</h3>
                 <p className="text-sm font-bold text-navy/40 mt-2">There are no pending registrations awaiting review.</p>
              </div>
-           )}
-
-           {applications.map((app) => (
+           ) : applications.map((app) => (
              <Card key={app.id} className="p-6 border border-gray-100 bg-white hover:shadow-xl transition-all duration-300 flex flex-col group">
                <div className="flex items-start justify-between mb-6">
                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${app.type === 'hospital' ? 'bg-blue-50 text-blue-500' : 'bg-purple-50 text-purple-500'}`}>
@@ -122,7 +131,7 @@ const Registrations = () => {
                  <p className="text-xs font-bold text-navy/40 line-clamp-1">{app.email}</p>
                  <div className="mt-4 inline-block bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
                     <p className="text-[10px] font-black uppercase text-navy/40 tracking-widest leading-none">Submitted</p>
-                    <p className="text-xs font-bold text-navy mt-1">{app.submittedAt}</p>
+                    <p className="text-xs font-bold text-navy mt-1">{new Date(app.submittedAt).toLocaleString()}</p>
                  </div>
                </div>
 
@@ -187,7 +196,8 @@ const Registrations = () => {
                 <Button 
                    variant="danger" 
                    onClick={submitRejection} 
-                   disabled={!rejectionReason.trim()}
+                   disabled={!rejectionReason.trim() || processing}
+                   loading={processing}
                    className="rounded-xl px-6 font-black text-xs shadow-lg shadow-red-500/20"
                 >
                    Drop Final Rejection

@@ -23,8 +23,13 @@ const loginUserGeneric = asyncHandler(async (req, res) => {
             throw new Error('Please verify your email to login');
         }
 
+        if (!user.isApproved && (user.role === 'doctor' || user.role === 'hospital')) {
+            res.status(403);
+            throw new Error('Account pending admin approval');
+        }
+
         // Automatically generate tokens for the user's specific role
-        generateTokens(res, user._id, user.role);
+        const { accessToken } = generateTokens(res, user._id, user.role);
 
         res.json({
             _id: user._id,
@@ -33,6 +38,7 @@ const loginUserGeneric = asyncHandler(async (req, res) => {
             role: user.role,
             isVerified: user.isVerified,
             isFirstLogin: user.isFirstLogin,
+            token: accessToken,
         });
     } else {
         res.status(401);
@@ -55,13 +61,19 @@ const loginUser = asyncHandler(async (req, res) => {
             throw new Error(`Invalid credentials for role: ${role}`);
         }
 
-        generateTokens(res, user._id, user.role);
+        if (!user.isApproved && (user.role === 'doctor' || user.role === 'hospital')) {
+            res.status(403);
+            throw new Error('Account pending admin approval');
+        }
+
+        const { accessToken } = generateTokens(res, user._id, user.role);
 
         res.json({
             _id: user._id,
             name: user.name,
             email: user.email,
             role: user.role,
+            token: accessToken,
         });
     } else {
         res.status(401);
@@ -90,6 +102,7 @@ const registerUser = asyncHandler(async (req, res) => {
             user.role = role;
             user.bloodGroup = role === 'patient' ? bloodGroup : null;
             user.certificate = req.file ? req.file.path : null;
+            user.isApproved = role === 'patient'; // Patients are auto-approved
             await user.save();
 
             // We should also update or create the profile, but for simplicity we will handle it below by checking if profile exists
@@ -103,6 +116,7 @@ const registerUser = asyncHandler(async (req, res) => {
             role,
             bloodGroup: role === 'patient' ? bloodGroup : null,
             certificate: req.file ? req.file.path : null,
+            isApproved: role === 'patient', // Patients are auto-approved
         });
     }
 

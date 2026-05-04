@@ -58,6 +58,7 @@ import useUiStore from './store/uiStore';
 import { Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import ErrorBoundary from './components/shared/ErrorBoundary';
+import authService from './services/authService';
 
 const DashboardRedirect = () => {
   const { role } = useAuthStore();
@@ -78,11 +79,28 @@ function App() {
 
   useEffect(() => {
     const checkAuth = async () => {
+      // Check if this tab has an active role (sessionStorage is per-tab)
+      const activeRole = sessionStorage.getItem('medcare_active_role');
+      const hasToken = activeRole
+        ? !!localStorage.getItem(`medcare_token_${activeRole}`)
+        : ['patient', 'doctor', 'hospital', 'admin'].some(r => !!localStorage.getItem(`medcare_token_${r}`));
+
+      if (!hasToken) {
+        // No token at all, skip the API call
+        setLoading(false);
+        return;
+      }
+
       try {
-        const userData = await authService.getCurrentUser('me'); // 'me' is our special global endpoint
+        const userData = await authService.getCurrentUser('me');
+        // Restore the active role in sessionStorage if it was lost (e.g., new tab with shared localStorage)
+        if (!activeRole && userData.role) {
+          sessionStorage.setItem('medcare_active_role', userData.role);
+        }
         login(userData);
       } catch (err) {
-        // No active session, logout store
+        // No active session, clear stale data
+        console.error('Session restore failed:', err);
         setLoading(false);
       }
     };

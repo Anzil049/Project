@@ -9,8 +9,24 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   BarChart, Bar, Legend
 } from 'recharts';
+import adminService from '../../services/adminService';
+import { useNavigate } from 'react-router-dom';
 
 const AdminDashboard = () => {
+  const [pendingRegistrations, setPendingRegistrations] = React.useState([]);
+  const navigate = useNavigate();
+
+  React.useEffect(() => {
+    const fetchPending = async () => {
+      try {
+        const data = await adminService.getPendingRegistrations();
+        setPendingRegistrations(data.slice(0, 3)); // Only show top 3 on dashboard
+      } catch (err) {
+        console.error("Failed to fetch recent pending registrations", err);
+      }
+    };
+    fetchPending();
+  }, []);
   // Mock Data for Charts
   const revenueData = [
     { name: 'Jan', revenue: 4000 },
@@ -158,6 +174,46 @@ const AdminDashboard = () => {
            </Card>
 
         </div>
+
+        {/* Recent Pending Registrations Section */}
+        <div className="mt-8">
+           <div className="flex items-center justify-between mb-6">
+              <div>
+                 <h2 className="text-xl font-black text-navy mb-1">Pending Approvals</h2>
+                 <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest">Applications awaiting review</p>
+              </div>
+              <button 
+                 onClick={() => navigate('/admin/registrations')}
+                 className="text-xs font-black text-white bg-navy px-5 py-2.5 rounded-xl hover:bg-[#0D9488] transition-colors"
+              >
+                 View All Queue
+              </button>
+           </div>
+           
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {pendingRegistrations.length === 0 ? (
+                 <div className="col-span-full py-12 text-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-3xl">
+                    <p className="text-sm font-bold text-navy/40">No pending registrations right now.</p>
+                 </div>
+              ) : pendingRegistrations.map((app) => (
+                 <Card key={app.id} className="p-5 border border-gray-100 bg-white hover:border-[#0D9488]/30 transition-all cursor-pointer group" onClick={() => navigate('/admin/registrations')}>
+                    <div className="flex items-start gap-4">
+                       <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center ${app.type === 'hospital' ? 'bg-blue-50 text-blue-500' : 'bg-purple-50 text-purple-500'}`}>
+                          {app.type === 'hospital' ? <Building2 size={20} /> : <Stethoscope size={20} />}
+                       </div>
+                       <div className="flex-1 min-w-0">
+                          <h4 className="text-sm font-black text-navy truncate group-hover:text-[#0D9488] transition-colors">{app.name}</h4>
+                          <p className="text-[10px] font-bold text-navy/40 uppercase tracking-wider truncate mb-2">{app.type}</p>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 bg-amber-50 px-2 py-1 rounded-md">
+                             Action Required
+                          </span>
+                       </div>
+                    </div>
+                 </Card>
+              ))}
+           </div>
+        </div>
+
       </div>
     </DashboardLayout>
   );

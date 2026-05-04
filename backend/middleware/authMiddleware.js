@@ -7,8 +7,15 @@ const jwt = require('jsonwebtoken');
 const protect = (role) => async (req, res, next) => {
     let token;
 
-    // Look for the specific token for this role in cookies
-    token = req.cookies[`accessToken_${role}`];
+    // 1. Try Authorization Bearer header first (hybrid strategy)
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+        token = req.headers.authorization.split(' ')[1];
+    }
+
+    // 2. Fallback to role-specific cookie
+    if (!token) {
+        token = req.cookies[`accessToken_${role}`];
+    }
 
     if (token) {
         try {

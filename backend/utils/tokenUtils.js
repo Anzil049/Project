@@ -12,16 +12,16 @@ const generateTokens = (res, userId, role) => {
     // Set Access Token Cookie
     res.cookie(`accessToken_${role}`, accessToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV !== 'development',
-        sameSite: 'strict',
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
         maxAge: 15 * 60 * 1000, // 15 minutes
     });
 
     // Set Refresh Token Cookie
     res.cookie(`refreshToken_${role}`, refreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV !== 'development',
-        sameSite: 'strict',
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
