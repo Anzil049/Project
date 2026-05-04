@@ -6,20 +6,13 @@ const api = axios.create({
 });
 
 /**
- * Gets the Bearer token for the current tab's active role.
- * Falls back to checking all roles if no active role is set in sessionStorage.
+ * Gets the Bearer token for the current tab's active role only.
+ * Returns null if this tab has no active session.
  */
 const getActiveToken = () => {
   const activeRole = sessionStorage.getItem('medcare_active_role');
   if (activeRole) {
     return localStorage.getItem(`medcare_token_${activeRole}`);
-  }
-
-  // Fallback: try all roles (e.g., first page load before role is set in sessionStorage)
-  const roles = ['patient', 'doctor', 'hospital', 'admin'];
-  for (const role of roles) {
-    const token = localStorage.getItem(`medcare_token_${role}`);
-    if (token) return token;
   }
   return null;
 };

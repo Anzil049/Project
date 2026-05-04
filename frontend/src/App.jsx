@@ -74,19 +74,36 @@ const DashboardRedirect = () => {
   return <Navigate to={dashboardMap[role] || ROUTES.PATIENT.DASHBOARD} replace />;
 };
 
+/**
+ * GuestRoute — only accessible to users who are NOT logged in.
+ * If already authenticated, redirects to their dashboard.
+ */
+const GuestRoute = ({ children }) => {
+  const { isAuthenticated, role } = useAuthStore();
+
+  if (isAuthenticated) {
+    const dashboardMap = {
+      patient: ROUTES.PATIENT.DASHBOARD,
+      hospital: ROUTES.HOSPITAL.DASHBOARD,
+      doctor: ROUTES.DOCTOR.DASHBOARD,
+      admin: ROUTES.ADMIN.DASHBOARD
+    };
+    return <Navigate to={dashboardMap[role] || '/'} replace />;
+  }
+
+  return children;
+};
+
 function App() {
   const { login, setLoading, loading } = useAuthStore();
 
   useEffect(() => {
     const checkAuth = async () => {
-      // Check if this tab has an active role (sessionStorage is per-tab)
+      // Only restore session if THIS tab was previously logged in (sessionStorage is per-tab).
+      // New tabs have no sessionStorage, so they start as guest — letting users log in as any role.
       const activeRole = sessionStorage.getItem('medcare_active_role');
-      const hasToken = activeRole
-        ? !!localStorage.getItem(`medcare_token_${activeRole}`)
-        : ['patient', 'doctor', 'hospital', 'admin'].some(r => !!localStorage.getItem(`medcare_token_${r}`));
 
-      if (!hasToken) {
-        // No token at all, skip the API call
+      if (!activeRole || !localStorage.getItem(`medcare_token_${activeRole}`)) {
         setLoading(false);
         return;
       }
@@ -138,14 +155,14 @@ function App() {
           <Route path={ROUTES.PUBLIC_HOSPITAL} element={<HospitalDetails />} />
           
           {/* Authentication Routes */}
-          <Route path={ROUTES.LOGIN} element={<Login />} />
-          <Route path={ROUTES.SIGNUP} element={<Signup />} />
-          <Route path={ROUTES.SIGNUP_DOCTOR} element={<DoctorSignup />} />
-          <Route path={ROUTES.SIGNUP_HOSPITAL} element={<HospitalSignup />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/verify-otp" element={<VerifyOtp />} />
-          <Route path={ROUTES.CHANGE_PASSWORD} element={<ChangePassword />} />
+          <Route path={ROUTES.LOGIN} element={<GuestRoute><Login /></GuestRoute>} />
+          <Route path={ROUTES.SIGNUP} element={<GuestRoute><Signup /></GuestRoute>} />
+          <Route path={ROUTES.SIGNUP_DOCTOR} element={<GuestRoute><DoctorSignup /></GuestRoute>} />
+          <Route path={ROUTES.SIGNUP_HOSPITAL} element={<GuestRoute><HospitalSignup /></GuestRoute>} />
+          <Route path="/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
+          <Route path="/reset-password" element={<GuestRoute><ResetPassword /></GuestRoute>} />
+          <Route path="/verify-otp" element={<GuestRoute><VerifyOtp /></GuestRoute>} />
+          <Route path={ROUTES.CHANGE_PASSWORD} element={<GuestRoute><ChangePassword /></GuestRoute>} />
           <Route path={ROUTES.PRIVACY} element={<PrivacyPolicy />} />
           <Route path={ROUTES.TERMS} element={<TermsOfService />} />
           <Route path="/emergency" element={<Emergency />} />
