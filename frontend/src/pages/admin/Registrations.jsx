@@ -74,27 +74,33 @@ const Registrations = () => {
     }
   };
 
-  const [downloadingId, setDownloadingId] = useState(null);
+  const [downloadingAction, setDownloadingAction] = useState(null); // 'view-ID' or 'download-ID'
 
-  const handleDownload = async (url, id) => {
+  const handleDownload = async (url, id, shouldDownload = true) => {
+    const actionKey = `${shouldDownload ? 'download' : 'view'}-${id}`;
     try {
-      setDownloadingId(id);
+      setDownloadingAction(actionKey);
       const response = await api.get(`/admin/download-certificate?url=${encodeURIComponent(url)}`, {
         responseType: 'blob'
       });
       const blob = new Blob([response.data], { type: 'application/pdf' });
       const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.setAttribute('download', `certificate-${id.substring(0, 8)}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(blobUrl);
+      
+      if (shouldDownload) {
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.setAttribute('download', `certificate-${id.substring(0, 8)}.pdf`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 100);
+      } else {
+        window.open(blobUrl, '_blank');
+      }
     } catch (error) {
-      toast.error('Failed to download certificate. Please try again.');
+      toast.error('Failed to access document. Please try again.');
     } finally {
-      setDownloadingId(null);
+      setDownloadingAction(null);
     }
   };
 
@@ -243,13 +249,19 @@ const Registrations = () => {
              
              <div className="w-full flex justify-end gap-4 mb-4">
                <button 
-                 onClick={() => window.open(activeCertUrl, '_blank')}
-                 className="h-10 px-6 rounded-full bg-white/10 hover:bg-white/20 text-white font-black text-xs uppercase tracking-widest flex items-center gap-2 backdrop-blur-md transition-all"
+                 disabled={downloadingAction !== null}
+                 onClick={() => handleDownload(activeCertUrl, activeAppId, false)}
+                 className="h-10 px-6 rounded-full bg-white/10 hover:bg-white/20 text-white font-black text-xs uppercase tracking-widest flex items-center gap-2 backdrop-blur-md transition-all disabled:opacity-50"
                >
-                  <Download size={14} /> Open Original File
+                  {downloadingAction === `view-${activeAppId}` ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/20 border-t-white"></div>
+                  ) : (
+                    <Download size={14} />
+                  )}
+                  {downloadingAction === `view-${activeAppId}` ? 'Loading...' : 'Open Original File'}
                </button>
                <button onClick={() => setCertModalOpen(false)} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur-md transition-all">
-                  <X size={20} />
+                   <X size={20} />
                </button>
              </div>
 
@@ -272,11 +284,11 @@ const Registrations = () => {
                    </div>
                    
                    <button 
-                     disabled={downloadingId === activeAppId}
-                     onClick={() => handleDownload(activeCertUrl, activeAppId)}
-                     className={`bg-[#0D9488] hover:bg-[#0D9488]/80 text-white font-black rounded-2xl px-8 py-3 shadow-xl shadow-[#0D9488]/20 transition-all flex items-center justify-center gap-2 ${downloadingId === activeAppId ? 'opacity-50 cursor-not-allowed' : ''}`}
+                     disabled={downloadingAction !== null}
+                     onClick={() => handleDownload(activeCertUrl, activeAppId, true)}
+                     className={`bg-[#0D9488] hover:bg-[#0D9488]/80 text-white font-black rounded-2xl px-8 py-3 shadow-xl shadow-[#0D9488]/20 transition-all flex items-center justify-center gap-2 ${downloadingAction !== null ? 'opacity-50 cursor-not-allowed' : ''}`}
                    >
-                     {downloadingId === activeAppId ? (
+                     {downloadingAction === `download-${activeAppId}` ? (
                        <>
                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/20 border-t-white"></div>
                          Securely Fetching...
