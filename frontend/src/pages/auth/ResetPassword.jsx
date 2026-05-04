@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Lock, Eye, EyeOff, ShieldCheck, ArrowLeft, Save } from 'lucide-react';
+import { Lock, ShieldCheck, ArrowLeft, Save } from 'lucide-react';
 import { Button, Input } from '../../components/common';
 import authService from '../../services/authService';
 import { ROUTES } from '../../constants/routes';
@@ -11,7 +11,6 @@ import medicalImage from '../../assets/login.png';
 const ResetPassword = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   
   const navigate = useNavigate();
@@ -68,7 +67,7 @@ const ResetPassword = () => {
             <form onSubmit={handleSubmit} className="space-y-6">
               <Input
                 label="New Password"
-                type={showPassword ? 'text' : 'password'}
+                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 icon={Lock}
@@ -78,7 +77,7 @@ const ResetPassword = () => {
               />
               <Input
                 label="Confirm Password"
-                type={showPassword ? 'text' : 'password'}
+                type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 icon={ShieldCheck}
@@ -86,12 +85,6 @@ const ResetPassword = () => {
                 required
                 className="bg-transparent border-white/20 text-white placeholder:text-white/30 h-16 rounded-3xl"
               />
-
-              <div className="flex items-center justify-between px-2">
-                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-[10px] font-black uppercase tracking-widest text-white/60 hover:text-white flex items-center gap-2">
-                    {showPassword ? <EyeOff size={14} /> : <Eye size={14} />} {showPassword ? 'Hide' : 'Show'} Password
-                 </button>
-              </div>
 
               <Button type="submit" loading={loading} className="py-5 text-sm font-black uppercase rounded-3xl bg-[#08665E] text-white hover:bg-[#0D9488] shadow-xl">
                 Reset Password <Save size={16} className="ml-3" />

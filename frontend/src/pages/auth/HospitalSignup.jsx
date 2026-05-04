@@ -14,14 +14,13 @@ import useAuthStore from '../../store/authStore';
 import { ROUTES } from '../../constants/routes';
 import toast from 'react-hot-toast';
 import medicalImage from '../../assets/login.png';
-import { Eye, EyeOff } from 'lucide-react';
 
 const hospitalSignupSchema = z.object({
   hospitalName: z.string().min(3, 'Hospital name must be at least 3 characters'),
   adminEmail: z.string().email('Invalid email address'),
   regNumber: z.string().min(5, 'Registration number is required'),
   facilityType: z.string().min(2, 'Facility type is required (e.g. Multi-Specialty)'),
-  bedCapacity: z.string().min(1, 'Approximate bed capacity is required'),
+  bedCapacity: z.string().regex(/^[1-9]\d*$/, 'Bed capacity must be a valid number greater than 0').min(1, 'Approximate bed capacity is required'),
   password: z.string().min(8, 'Minimum 8 characters required'),
   confirmPassword: z.string(),
   certificate: z.any().refine((files) => files?.length > 0, "Registration certificate is required"),
@@ -32,7 +31,6 @@ const hospitalSignupSchema = z.object({
 
 const HospitalSignup = () => {
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
 
@@ -183,7 +181,7 @@ const HospitalSignup = () => {
 
                 <Input
                   label="Password"
-                  type={showPassword ? 'text' : 'password'}
+                  type="password"
                   {...register('password')}
                   error={errors.password?.message}
                   icon={Lock}
@@ -193,7 +191,7 @@ const HospitalSignup = () => {
                 
                 <Input
                   label="Confirm"
-                  type={showPassword ? 'text' : 'password'}
+                  type="password"
                   {...register('confirmPassword')}
                   error={errors.confirmPassword?.message}
                   icon={ShieldCheck}

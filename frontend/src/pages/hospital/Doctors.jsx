@@ -12,6 +12,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import toast from 'react-hot-toast';
+import hospitalService from '../../services/hospitalService';
 
 const doctorSchema = z.object({
   name: z.string().min(3, 'Name must be at least 3 characters'),
@@ -21,6 +22,8 @@ const doctorSchema = z.object({
   specialization: z.string().min(1, 'Please select a specialization'),
   customSpecialization: z.string().optional(),
   onlineConsultation: z.boolean().default(true),
+  licenseNumber: z.string().min(3, 'License number is required'),
+  experience: z.string().min(1, 'Experience is required'),
   slots: z.array(z.object({
     start: z.string(),
     end: z.string()
@@ -43,50 +46,41 @@ const HospitalDoctors = () => {
   const fileInputRef = useRef(null);
 
   // Mock Data
-  const [doctors, setDoctors] = useState([
-    { 
-      id: 1, 
-      name: 'Dr. Sarah Wilson', 
-      specialization: 'Cardiology', 
-      email: 'sarah.w@medcare.com', 
-      phone: '+91 98765 43210', 
-      image: '/images/doctors/sarah.png',
-      slots: [{ start: '09:00', end: '13:00' }, { start: '17:00', end: '20:00' }], 
-      availableDays: ['Mon', 'Wed', 'Fri'],
-      appointmentsToday: 12,
-      maxTokens: 25,
-      onlineConsultation: true,
-      status: 'On Duty'
-    },
-    { 
-      id: 2, 
-      name: 'Dr. Anil Kumar', 
-      specialization: 'Neurology', 
-      email: 'anil.k@medcare.com', 
-      phone: '+91 98765 43211', 
-      image: '/images/doctors/anil.png',
-      slots: [{ start: '11:00', end: '17:00' }], 
-      availableDays: allDays,
-      appointmentsToday: 8,
-      maxTokens: 15,
-      onlineConsultation: true,
-      status: 'On Duty'
-    },
-    { 
-      id: 3, 
-      name: 'Dr. James Chen', 
-      specialization: 'Orthopedics', 
-      email: 'james.c@medcare.com', 
-      phone: '+91 98765 43212', 
-      image: '/images/doctors/james.png',
-      slots: [{ start: '10:00', end: '14:00' }], 
-      availableDays: weekdays,
-      appointmentsToday: 5,
-      maxTokens: 20,
-      onlineConsultation: false,
-      status: 'On Break'
+  const [doctors, setDoctors] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchDoctors();
+  }, []);
+
+  const fetchDoctors = async () => {
+    try {
+      setLoading(true);
+      const data = await hospitalService.getDoctors();
+      // Map data to match the UI format
+      const formattedDoctors = data.map(doc => ({
+        id: doc._id,
+        name: doc.user?.name || 'Unknown',
+        email: doc.user?.email || '',
+        phone: doc.user?.phone || '',
+        specialization: doc.specialization,
+        licenseNumber: doc.licenseNumber,
+        experience: doc.experience,
+        image: doc.user?.certificate || '', // Assuming image is handled here or mock it
+        slots: doc.slots || [],
+        availableDays: doc.availableDays || [],
+        maxTokens: doc.maxTokens,
+        onlineConsultation: doc.onlineConsultation,
+        appointmentsToday: 0, // Mock for now
+        status: 'On Duty'
+      }));
+      setDoctors(formattedDoctors);
+    } catch (err) {
+      toast.error('Failed to fetch doctors');
+    } finally {
+      setLoading(false);
     }
-  ]);
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -142,6 +136,8 @@ const HospitalDoctors = () => {
         customSpecialization: specializations.includes(doctor.specialization) ? '' : doctor.specialization,
         email: doctor.email,
         phone: doctor.phone,
+        licenseNumber: doctor.licenseNumber || '',
+        experience: doctor.experience || '',
         maxTokens: doctor.maxTokens || 20,
         slots: [...doctor.slots],
         availableDays: [...doctor.availableDays],
@@ -156,6 +152,8 @@ const HospitalDoctors = () => {
         customSpecialization: '',
         email: '',
         phone: '',
+        licenseNumber: '',
+        experience: '',
         maxTokens: 20,
         slots: [{ start: '09:00', end: '17:00' }],
         availableDays: allDays,
@@ -226,27 +224,27 @@ const HospitalDoctors = () => {
     ), { duration: 5000 });
   };
 
-  const onFormSubmit = (data) => {
+  const onFormSubmit = async (data) => {
     const finalSpecialization = data.specialization === 'Other' 
       ? data.customSpecialization 
       : data.specialization;
 
-    const doctorData = {
-      id: editingDoctor ? editingDoctor.id : Math.max(...doctors.map(d => d.id), 0) + 1,
-      ...data,
-      specialization: finalSpecialization,
-      appointmentsToday: editingDoctor ? editingDoctor.appointmentsToday : 0,
-      status: 'On Duty'
-    };
-
-    if (editingDoctor) {
-      setDoctors(doctors.map(d => d.id === editingDoctor.id ? doctorData : d));
-      toast.success('Practitioner profile updated successfully!');
-    } else {
-      setDoctors([...doctors, doctorData]);
-      toast.success('New doctor registered successfully!');
+    try {
+      if (editingDoctor) {
+        // Handle edit (not implemented yet)
+        toast.error('Editing doctor is not implemented yet.');
+      } else {
+        const response = await hospitalService.addDoctor({
+          ...data,
+          specialization: finalSpecialization
+        });
+        toast.success(response.message || 'New doctor registered successfully!');
+        fetchDoctors(); // Refresh the list
+      }
+      setIsModalOpen(false);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to process request.');
     }
-    setIsModalOpen(false);
   };
 
   const formatDays = (days) => {
@@ -727,6 +725,21 @@ const HospitalDoctors = () => {
                   placeholder="+91 XXXXX XXXXX"
                   {...register('phone')}
                   error={errors.phone?.message}
+               />
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <Input 
+                  label="License Number"
+                  placeholder="e.g. MD-12345"
+                  {...register('licenseNumber')}
+                  error={errors.licenseNumber?.message}
+               />
+               <Input 
+                  label="Years of Experience"
+                  placeholder="e.g. 10"
+                  {...register('experience')}
+                  error={errors.experience?.message}
                />
              </div>
 

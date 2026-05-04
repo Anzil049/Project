@@ -1,5 +1,5 @@
 import React, { useState, forwardRef } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 const Input = forwardRef(({ 
   label, 
@@ -16,6 +16,10 @@ const Input = forwardRef(({
   ...props
 }, ref) => {
   const [isFocused, setIsFocused] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const isPasswordType = type === 'password';
+  const currentType = isPasswordType && showPassword ? 'text' : type;
 
   return (
     <div className="flex flex-col gap-1 w-full">
@@ -31,7 +35,7 @@ const Input = forwardRef(({
         <input
           id={name}
           name={name}
-          type={type}
+          type={currentType}
           value={value}
           onChange={onChange}
           onBlur={onBlur}
@@ -54,6 +58,17 @@ const Input = forwardRef(({
         />
 
         {/* Removed Floating Label as per user request */}
+
+        {isPasswordType && (
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-navy/40 hover:text-[#0D9488] transition-colors z-10 outline-none"
+            tabIndex="-1"
+          >
+            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
+        )}
       </div>
 
       {/* Error Message */}

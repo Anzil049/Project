@@ -45,6 +45,7 @@ import HospitalSignup from './pages/auth/HospitalSignup';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
 import VerifyOtp from './pages/auth/VerifyOtp';
+import ChangePassword from './pages/auth/ChangePassword';
 import PrivacyPolicy from './pages/public/PrivacyPolicy';
 import TermsOfService from './pages/public/TermsOfService';
 import NotFound from './pages/shared/NotFound';
@@ -126,6 +127,7 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/verify-otp" element={<VerifyOtp />} />
+          <Route path={ROUTES.CHANGE_PASSWORD} element={<ChangePassword />} />
           <Route path={ROUTES.PRIVACY} element={<PrivacyPolicy />} />
           <Route path={ROUTES.TERMS} element={<TermsOfService />} />
           <Route path="/emergency" element={<Emergency />} />

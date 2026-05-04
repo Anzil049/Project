@@ -28,7 +28,6 @@ const signupSchema = z.object({
 
 const Signup = () => {
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
 
@@ -155,7 +154,7 @@ const Signup = () => {
 
                 <Input
                   label="Password"
-                  type={showPassword ? 'text' : 'password'}
+                  type="password"
                   {...register('password')}
                   error={errors.password?.message}
                   icon={Lock}
@@ -165,7 +164,7 @@ const Signup = () => {
                 
                 <Input
                   label="Confirm Password"
-                  type={showPassword ? 'text' : 'password'}
+                  type="password"
                   {...register('confirmPassword')}
                   error={errors.confirmPassword?.message}
                   icon={ShieldCheck}

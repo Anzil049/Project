@@ -34,6 +34,7 @@ app.get('/', (req, res) => {
 
 // Role-based route imports
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/hospital', require('./routes/hospitalRoutes'));
 
 // Error Handling
 app.use(notFound);

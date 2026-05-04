@@ -58,6 +58,14 @@ const authService = {
   },
 
   /**
+   * Change password on first login
+   */
+  changeFirstPassword: async (email, currentPassword, newPassword) => {
+    const response = await api.post('/auth/change-password', { email, currentPassword, newPassword });
+    return response.data;
+  },
+
+  /**
    * Get user profile. If role is 'me', it calls the global session check.
    */
   getCurrentUser: async (role) => {

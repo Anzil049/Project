@@ -4,6 +4,7 @@ export const ROUTES = {
   SIGNUP: '/signup',
   SIGNUP_DOCTOR: '/signup/doctor',
   SIGNUP_HOSPITAL: '/signup/hospital',
+  CHANGE_PASSWORD: '/change-password',
   ABOUT: '/about',
   SERVICES: '/services',
   CONTACT: '/contact',

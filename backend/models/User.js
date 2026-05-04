@@ -24,12 +24,19 @@ const userSchema = mongoose.Schema({
         type: String,
         enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
     },
+    phone: {
+        type: String,
+    },
     certificate: {
         type: String, // URL to Cloudinary
     },
     resetPasswordToken: String,
     resetPasswordExpires: Date,
     isVerified: {
+        type: Boolean,
+        default: false,
+    },
+    isFirstLogin: {
         type: Boolean,
         default: false,
     },

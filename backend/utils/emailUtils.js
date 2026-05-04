@@ -57,4 +57,34 @@ const sendOTPEmail = async (email, otp, type = 'verification') => {
     });
 };
 
-module.exports = { sendEmail, sendOTPEmail };
+const sendDoctorCredentialsEmail = async (email, name, tempPassword) => {
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1f2f1; border-radius: 10px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #0D9488; margin: 0;">MedCare</h1>
+                <p style="color: #64748b; font-size: 14px;">Your Trusted Healthcare Partner</p>
+            </div>
+            <div style="background-color: #f8fafc; padding: 30px; border-radius: 8px;">
+                <h2 style="color: #1e293b; margin-top: 0;">Welcome, Dr. ${name}!</h2>
+                <p style="color: #475569; font-size: 16px; margin-bottom: 25px;">
+                    Your profile has been created on the MedCare platform by your hospital. You can now login using the temporary credentials below:
+                </p>
+                <div style="background-color: #e2e8f0; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                    <p style="margin: 0 0 10px 0;"><strong>Email:</strong> ${email}</p>
+                    <p style="margin: 0;"><strong>Temporary Password:</strong> <span style="font-family: monospace; font-size: 18px; color: #0D9488;">${tempPassword}</span></p>
+                </div>
+                <p style="color: #475569; font-size: 14px; margin-bottom: 0;">
+                    <em>Note: For security reasons, you will be required to change your password upon your first login.</em>
+                </p>
+            </div>
+        </div>
+    `;
+
+    await sendEmail({
+        email,
+        subject: 'Your MedCare Doctor Account Credentials',
+        html,
+    });
+};
+
+module.exports = { sendEmail, sendOTPEmail, sendDoctorCredentialsEmail };

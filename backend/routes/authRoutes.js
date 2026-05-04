@@ -8,6 +8,7 @@ const {
     resendOTP,
     forgotPassword,
     resetPassword,
+    changeFirstPassword,
     logoutUser,
     refreshAccessToken,
     getUserProfile,
@@ -25,6 +26,7 @@ router.post('/verify-otp', verifyOTP);
 router.post('/resend-otp', resendOTP);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);
+router.post('/change-password', changeFirstPassword);
 
 // Registration with optional certificate upload
 router.post('/:role/register', 

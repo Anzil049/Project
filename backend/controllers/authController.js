@@ -1,6 +1,8 @@
 const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
 const OTP = require('../models/OTP');
+const Hospital = require('../models/Hospital');
+const Doctor = require('../models/Doctor');
 const { generateTokens, clearTokens } = require('../utils/tokenUtils');
 const { sendOTPEmail, sendResetEmail } = require('../utils/emailUtils');
 const jwt = require('jsonwebtoken');
@@ -30,6 +32,7 @@ const loginUserGeneric = asyncHandler(async (req, res) => {
             email: user.email,
             role: user.role,
             isVerified: user.isVerified,
+            isFirstLogin: user.isFirstLogin,
         });
     } else {
         res.status(401);
@@ -70,7 +73,7 @@ const loginUser = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/:role/register
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
-    const { name, email, password, bloodGroup } = req.body;
+    const { name, email, password, bloodGroup, registrationNumber, facilityType, beds, licenseNumber, specialization, experience } = req.body;
     const { role } = req.params;
 
     let user = await User.findOne({ email });
@@ -88,6 +91,8 @@ const registerUser = asyncHandler(async (req, res) => {
             user.bloodGroup = role === 'patient' ? bloodGroup : null;
             user.certificate = req.file ? req.file.path : null;
             await user.save();
+
+            // We should also update or create the profile, but for simplicity we will handle it below by checking if profile exists
         }
     } else {
         // Create new user if they don't exist
@@ -102,6 +107,20 @@ const registerUser = asyncHandler(async (req, res) => {
     }
 
     if (user) {
+        if (role === 'hospital') {
+            await Hospital.findOneAndUpdate(
+                { user: user._id },
+                { registrationNumber, facilityType, beds },
+                { upsert: true, new: true }
+            );
+        } else if (role === 'doctor') {
+            await Doctor.findOneAndUpdate(
+                { user: user._id },
+                { licenseNumber, specialization, experience },
+                { upsert: true, new: true }
+            );
+        }
+
         // Generate a random 6-digit OTP
         const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
         
@@ -175,10 +194,11 @@ const verifyOTP = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/resend-otp
 // @access  Public
 const resendOTP = asyncHandler(async (req, res) => {
-    const { email } = req.body;
+    const { email, type } = req.body;
     const normalizedEmail = email.toLowerCase();
+    const isRecovery = type === 'recovery' || type === 'reset' || type === '2fa';
 
-    console.log(`Resend OTP request for: ${normalizedEmail}`);
+    console.log(`Resend OTP request for: ${normalizedEmail}, type: ${type}`);
 
     const user = await User.findOne({ email: normalizedEmail });
 
@@ -187,25 +207,25 @@ const resendOTP = asyncHandler(async (req, res) => {
         throw new Error('User not found');
     }
 
-    if (user.isVerified) {
+    if (!isRecovery && user.isVerified) {
         res.status(400);
         throw new Error('Account already verified');
     }
 
     // Delete any existing OTPs for this email
-    await OTP.deleteMany({ email });
+    await OTP.deleteMany({ email: normalizedEmail });
 
     // Generate a new 6-digit OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     
     // Store new OTP
     await OTP.create({
-        email,
+        email: normalizedEmail,
         otp: otpCode,
     });
 
     // Send new OTP
-    await sendOTPEmail(email, otpCode);
+    await sendOTPEmail(normalizedEmail, otpCode, isRecovery ? 'reset' : 'verification');
 
     res.status(200).json({ message: 'New OTP sent to your email' });
 });
@@ -330,6 +350,26 @@ const resetPassword = asyncHandler(async (req, res) => {
     res.status(200).json({ message: 'Password reset successful. You can now login.' });
 });
 
+// @desc    Change First Password
+// @route   POST /api/auth/change-password
+// @access  Private (or Public if using current password)
+const changeFirstPassword = asyncHandler(async (req, res) => {
+    const { email, currentPassword, newPassword } = req.body;
+
+    const user = await User.findOne({ email });
+
+    if (user && (await user.matchPassword(currentPassword))) {
+        user.password = newPassword;
+        user.isFirstLogin = false;
+        await user.save();
+
+        res.status(200).json({ message: 'Password changed successfully. You can now login with your new password.' });
+    } else {
+        res.status(401);
+        throw new Error('Invalid email or current password');
+    }
+});
+
 module.exports = {
     loginUserGeneric,
     loginUser,
@@ -338,6 +378,7 @@ module.exports = {
     resendOTP,
     forgotPassword,
     resetPassword,
+    changeFirstPassword,
     logoutUser,
     refreshAccessToken,
     getUserProfile,
