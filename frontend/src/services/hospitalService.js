@@ -16,6 +16,22 @@ const hospitalService = {
     const response = await api.get('/hospital/doctors');
     return response.data;
   },
+
+  /**
+   * Toggle doctor status (Block/Unblock)
+   */
+  toggleDoctorStatus: async (doctorId) => {
+    const response = await api.patch(`/hospital/doctors/${doctorId}/status`);
+    return response.data;
+  },
+
+  /**
+   * Delete doctor completely
+   */
+  deleteDoctor: async (doctorId) => {
+    const response = await api.delete(`/hospital/doctors/${doctorId}`);
+    return response.data;
+  },
 };
 
 export default hospitalService;

@@ -33,11 +33,22 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid — clear stale token for active role
+    const status = error.response?.status;
+    const isBlocked = error.response?.data?.isBlocked;
+
+    if (status === 401 || (status === 403 && isBlocked)) {
+      // Token expired, invalid, or user is blocked
       const activeRole = sessionStorage.getItem('medcare_active_role');
+      
       if (activeRole) {
         localStorage.removeItem(`medcare_token_${activeRole}`);
+      }
+      
+      // If user is blocked, force a clear and redirect
+      if (isBlocked) {
+        sessionStorage.clear();
+        // We use window.location for a hard redirect to the login page
+        window.location.href = `/login?blocked=true&role=${activeRole || ''}`;
       }
     }
     return Promise.reject(error);

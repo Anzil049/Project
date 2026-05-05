@@ -6,6 +6,7 @@ import {
   Building2, Search, ExternalLink, ShieldOff, CheckCircle2, MoreVertical, Plus
 } from 'lucide-react';
 import adminService from '../../services/adminService';
+import toast from 'react-hot-toast';
 
 // Mock Data
 const HospitalsDirectory = () => {
@@ -30,12 +31,16 @@ const HospitalsDirectory = () => {
     }
   };
 
-  const toggleHospitalStatus = (id) => {
-    setHospitals(prev => prev.map(hospital => 
-      hospital.id === id 
-        ? { ...hospital, status: hospital.status === 'active' ? 'blocked' : 'active' }
-        : hospital
-    ));
+  const toggleHospitalStatus = async (id) => {
+    try {
+      const response = await adminService.toggleUserStatus(id);
+      setHospitals(prev => prev.map(hospital => 
+        hospital.id === id ? { ...hospital, status: response.status } : hospital
+      ));
+      toast.success(response.message);
+    } catch (err) {
+      toast.error('Failed to update status');
+    }
   };
 
   const filteredHospitals = hospitals.filter(hospital => 

@@ -27,7 +27,11 @@ if (process.env.NODE_ENV === 'development') {
     app.use(morgan('dev'));
 }
 
+const { apiLimiter } = require('./middleware/rateLimitMiddleware');
+
 // Routes
+app.use('/api', apiLimiter);
+
 app.get('/', (req, res) => {
     res.send('API is running...');
 });

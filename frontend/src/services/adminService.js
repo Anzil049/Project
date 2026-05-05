@@ -33,6 +33,16 @@ const adminService = {
   getApprovedHospitals: async () => {
     const response = await api.get('/admin/hospitals');
     return response.data;
+  },
+
+  getPatients: async () => {
+    const response = await api.get('/admin/patients');
+    return response.data;
+  },
+  
+  toggleUserStatus: async (id) => {
+    const response = await api.patch(`/admin/users/${id}/status`);
+    return response.data;
   }
 };
 

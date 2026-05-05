@@ -6,7 +6,7 @@ import {
   Mail, Phone, Clock, Stethoscope, 
   ChevronRight, MoreVertical, Calendar,
   AlertCircle, Hash, X, Check, Camera, Image as ImageIcon,
-  Video, VideoOff
+  Video, VideoOff, ShieldOff, Lock, Unlock, ShieldCheck, Loader2
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -48,6 +48,7 @@ const HospitalDoctors = () => {
   // Mock Data
   const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchDoctors();
@@ -72,7 +73,7 @@ const HospitalDoctors = () => {
         maxTokens: doc.maxTokens,
         onlineConsultation: doc.onlineConsultation,
         appointmentsToday: 0, // Mock for now
-        status: 'On Duty'
+        status: doc.user?.status || 'active'
       }));
       setDoctors(formattedDoctors);
     } catch (err) {
@@ -201,27 +202,73 @@ const HospitalDoctors = () => {
     setValue('slots', newSlots);
   };
 
+  const handleToggleStatus = async (id) => {
+    try {
+      const response = await hospitalService.toggleDoctorStatus(id);
+      toast.success(response.message);
+      fetchDoctors();
+    } catch (err) {
+      toast.error('Failed to update doctor status');
+    }
+  };
+
   const handleDelete = (id) => {
+    const doctor = doctors.find(d => d.id === id);
+    
     toast((t) => (
-      <div className="flex flex-col gap-3">
-        <p className="font-bold text-navy">Are you sure you want to delete this record?</p>
-        <div className="flex gap-2">
+      <div className="flex flex-col gap-4 p-1">
+        <div>
+          <p className="font-black text-navy text-sm uppercase tracking-tight">Manage Practitioner</p>
+          <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest mt-1">Choose action for {doctor.name}</p>
+        </div>
+        
+        <div className="grid grid-cols-1 gap-2">
           <Button 
-            variant="danger" 
-            className="h-8 py-0 text-[10px] font-black uppercase tracking-widest px-4 border-none"
-            onClick={() => {
-              setDoctors(doctors.filter(d => d.id !== id));
-              toast.success('Doctor record deleted', { id: t.id });
+            className="bg-red-500 hover:bg-red-600 text-white h-10 py-0 text-[10px] font-black uppercase tracking-widest rounded-xl border-none shadow-lg shadow-red-500/20"
+            onClick={async () => {
+              toast.dismiss(t.id);
+              try {
+                await hospitalService.deleteDoctor(id);
+                toast.success('Doctor record deleted completely');
+                fetchDoctors();
+              } catch (err) {
+                toast.error('Failed to delete doctor');
+              }
             }}
-          >Delete</Button>
+          >
+            <Trash2 size={14} className="mr-2" /> Delete Completely
+          </Button>
+          
           <Button 
-            variant="outline" 
-            className="h-8 py-0 text-[10px] font-black uppercase tracking-widest px-4"
+            className="bg-amber-500 hover:bg-amber-600 text-white h-10 py-0 text-[10px] font-black uppercase tracking-widest rounded-xl border-none shadow-lg shadow-amber-500/20"
+            onClick={() => {
+              toast.dismiss(t.id);
+              handleToggleStatus(id);
+            }}
+          >
+            <Lock size={14} className="mr-2" /> {doctor.status === 'active' ? 'Block Access' : 'Unblock Access'}
+          </Button>
+          
+          <Button 
+            variant="ghost" 
+            className="h-10 py-0 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-gray-100"
             onClick={() => toast.dismiss(t.id)}
-          >Cancel</Button>
+          >
+            Cancel
+          </Button>
         </div>
       </div>
-    ), { duration: 5000 });
+    ), { 
+      duration: 6000,
+      position: 'top-center',
+      style: {
+        minWidth: '320px',
+        padding: '16px',
+        borderRadius: '24px',
+        border: '1px solid #f1f5f9',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+      }
+    });
   };
 
   const onFormSubmit = async (data) => {
@@ -230,6 +277,7 @@ const HospitalDoctors = () => {
       : data.specialization;
 
     try {
+      setSubmitting(true);
       if (editingDoctor) {
         // Handle edit (not implemented yet)
         toast.error('Editing doctor is not implemented yet.');
@@ -240,10 +288,12 @@ const HospitalDoctors = () => {
         });
         toast.success(response.message || 'New doctor registered successfully!');
         fetchDoctors(); // Refresh the list
+        setIsModalOpen(false);
       }
-      setIsModalOpen(false);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to process request.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -377,8 +427,15 @@ const HospitalDoctors = () => {
                              <button onClick={() => handleOpenViewModal(doctor)} className="p-2 text-navy/30 hover:text-[#0D9488] hover:bg-[#0D9488]/10 rounded-xl transition-all" title="View Public Profile">
                                 <Eye size={18} />
                              </button>
-                             <button onClick={() => handleDelete(doctor.id)} className="p-2 text-navy/30 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Delete Record">
-                                <Trash2 size={18} />
+                             <button 
+                                onClick={() => handleToggleStatus(doctor.id)} 
+                                className={`p-2 rounded-xl transition-all ${doctor.status === 'active' ? 'text-navy/30 hover:text-amber-500 hover:bg-amber-50' : 'text-amber-500 bg-amber-50 hover:bg-amber-100'}`} 
+                                title={doctor.status === 'active' ? 'Block Doctor' : 'Unblock Doctor'}
+                             >
+                                {doctor.status === 'active' ? <Unlock size={18} /> : <Lock size={18} />}
+                             </button>
+                             <button onClick={() => handleDelete(doctor.id)} className="p-2 text-navy/30 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Manage Record">
+                                 <Trash2 size={18} />
                              </button>
                           </div>
                         </td>
@@ -415,6 +472,12 @@ const HospitalDoctors = () => {
                     <div className="flex gap-1.5">
                       <button onClick={() => handleOpenViewModal(doctor)} className="p-2 text-[#0D9488] bg-[#0D9488]/10 rounded-lg"><Eye size={16} /></button>
                       <button onClick={() => handleOpenModal(doctor)} className="p-2 text-blue-500 bg-blue-50 rounded-lg"><Edit2 size={16} /></button>
+                      <button 
+                        onClick={() => handleToggleStatus(doctor.id)} 
+                        className={`p-2 rounded-lg ${doctor.status === 'active' ? 'text-amber-500 bg-amber-50' : 'text-white bg-amber-500'}`}
+                      >
+                        {doctor.status === 'active' ? <Unlock size={16} /> : <Lock size={16} />}
+                      </button>
                       <button onClick={() => handleDelete(doctor.id)} className="p-2 text-red-500 bg-red-50 rounded-lg"><Trash2 size={16} /></button>
                     </div>
                   </div>
@@ -824,9 +887,17 @@ const HospitalDoctors = () => {
                 </Button>
                 <Button 
                    type="submit"
-                   className="flex-[2] bg-[#0D9488] hover:bg-[#115E59] shadow-lg shadow-[#0D9488]/20 h-14 rounded-2xl font-black text-[11px] uppercase tracking-widest border-none"
+                   disabled={submitting}
+                   className="flex-[2] bg-[#0D9488] hover:bg-[#115E59] shadow-lg shadow-[#0D9488]/20 h-14 rounded-2xl font-black text-[11px] uppercase tracking-widest border-none disabled:opacity-70"
                 >
-                   {editingDoctor ? 'Save Changes' : 'Register Doctor'}
+                   {submitting ? (
+                     <span className="flex items-center gap-2">
+                       <Loader2 size={16} className="animate-spin" />
+                       Processing...
+                     </span>
+                   ) : (
+                     editingDoctor ? 'Save Changes' : 'Register Doctor'
+                   )}
                 </Button>
              </div>
           </div>

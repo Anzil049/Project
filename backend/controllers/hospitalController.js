@@ -81,7 +81,59 @@ const getDoctors = asyncHandler(async (req, res) => {
     res.json(doctors);
 });
 
+// @desc    Toggle Doctor Status (Block/Unblock)
+// @route   PATCH /api/hospital/doctors/:id/status
+// @access  Private (Hospital)
+const toggleDoctorStatus = asyncHandler(async (req, res) => {
+    const doctorId = req.params.id; // This is the DOCTOR record ID, not user ID
+    const hospitalId = req.user.userId;
+
+    const doctor = await Doctor.findById(doctorId);
+    if (!doctor || doctor.hospitalId.toString() !== hospitalId.toString()) {
+        res.status(404);
+        throw new Error('Doctor not found or not affiliated with this hospital');
+    }
+
+    const user = await User.findById(doctor.user);
+    if (!user) {
+        res.status(404);
+        throw new Error('Associated user record not found');
+    }
+
+    user.status = user.status === 'active' ? 'blocked' : 'active';
+    await user.save();
+
+    res.json({
+        message: `Doctor ${user.status === 'active' ? 'unblocked' : 'blocked'} successfully`,
+        status: user.status
+    });
+});
+
+// @desc    Delete Doctor completely
+// @route   DELETE /api/hospital/doctors/:id
+// @access  Private (Hospital)
+const deleteDoctor = asyncHandler(async (req, res) => {
+    const doctorId = req.params.id;
+    const hospitalId = req.user.userId;
+
+    const doctor = await Doctor.findById(doctorId);
+    if (!doctor || doctor.hospitalId.toString() !== hospitalId.toString()) {
+        res.status(404);
+        throw new Error('Doctor not found or not affiliated with this hospital');
+    }
+
+    // Delete associated User record
+    await User.findByIdAndDelete(doctor.user);
+    
+    // Delete Doctor record
+    await Doctor.findByIdAndDelete(doctorId);
+
+    res.json({ message: 'Doctor and associated account deleted permanently' });
+});
+
 module.exports = {
     addDoctor,
     getDoctors,
+    toggleDoctorStatus,
+    deleteDoctor,
 };

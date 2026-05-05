@@ -52,6 +52,13 @@ const getCurrentUser = asyncHandler(async (req, res) => {
 
     const user = await User.findById(decodedUser.userId).select('-password');
     if (user) {
+        if (user.status === 'blocked') {
+            res.status(403);
+            return res.json({ 
+                message: 'Your account has been suspended. Access revoked.',
+                isBlocked: true 
+            });
+        }
         res.json(user);
     } else {
         res.status(404);

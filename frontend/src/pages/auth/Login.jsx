@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, AlertCircle, Facebook, Twitter } from 'lucide-react';
@@ -8,6 +8,7 @@ import useAuthStore from '../../store/authStore';
 import { ROLES } from '../../constants/roles';
 import { ROUTES } from '../../constants/routes';
 import medicalImage from '../../assets/login.png';
+import toast from 'react-hot-toast';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -17,6 +18,27 @@ const Login = () => {
   
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
+  
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('blocked') === 'true') {
+      const role = params.get('role');
+      let message = 'Your account has been suspended. Please contact the platform administrator.';
+      
+      if (role === 'doctor') {
+        message = 'Your account has been suspended. Please contact your hospital administrator.';
+      } else if (role === 'hospital') {
+        message = 'Your hospital account has been suspended. Please contact MedCare support.';
+      }
+
+      toast.error(message, {
+        duration: 8000,
+        id: 'blocked-toast'
+      });
+      // Clear the param from URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   const containerVariants = {
     hidden: { opacity: 0 },

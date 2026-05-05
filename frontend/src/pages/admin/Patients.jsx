@@ -1,73 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button } from '../../components/common';
 import { 
   Users, Search, ShieldOff, ShieldCheck,
   MapPin, Droplets, Phone, CalendarDays
 } from 'lucide-react';
-
-const INITIAL_PATIENTS = [
-  {
-    id: 1,
-    name: 'Radhika Thomas',
-    email: 'radhika.thomas@example.com',
-    phone: '+91 98765 43210',
-    city: 'Mumbai',
-    bloodGroup: 'O+',
-    joined: 'Jan 12, 2024',
-    appointments: 8,
-    status: 'active',
-    initials: 'RT',
-  },
-  {
-    id: 2,
-    name: 'Amit Patel',
-    email: 'amit.patel@example.com',
-    phone: '+91 98001 11223',
-    city: 'Ahmedabad',
-    bloodGroup: 'B+',
-    joined: 'Mar 5, 2024',
-    appointments: 3,
-    status: 'active',
-    initials: 'AP',
-  },
-  {
-    id: 3,
-    name: 'Sneha Reddy',
-    email: 'sneha.r@example.com',
-    phone: '+91 91234 56789',
-    city: 'Hyderabad',
-    bloodGroup: 'A-',
-    joined: 'Feb 18, 2024',
-    appointments: 15,
-    status: 'active',
-    initials: 'SR',
-  },
-  {
-    id: 4,
-    name: 'Karan Sinha',
-    email: 'karan.s@example.com',
-    phone: '+91 87654 32100',
-    city: 'Patna',
-    bloodGroup: 'AB+',
-    joined: 'Nov 30, 2023',
-    appointments: 1,
-    status: 'blocked',
-    initials: 'KS',
-  },
-  {
-    id: 5,
-    name: 'Divya Menon',
-    email: 'divya.menon@example.com',
-    phone: '+91 99887 76655',
-    city: 'Kochi',
-    bloodGroup: 'O-',
-    joined: 'Apr 2, 2024',
-    appointments: 6,
-    status: 'active',
-    initials: 'DM',
-  },
-];
+import adminService from '../../services/adminService';
+import toast from 'react-hot-toast';
 
 const BLOOD_COLORS = {
   'O+': 'bg-red-50 text-red-600',
@@ -81,21 +20,44 @@ const BLOOD_COLORS = {
 };
 
 const AdminPatients = () => {
-  const [patients, setPatients] = useState(INITIAL_PATIENTS);
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
 
-  const toggleStatus = (id) => {
-    setPatients(prev => prev.map(p =>
-      p.id === id ? { ...p, status: p.status === 'active' ? 'blocked' : 'active' } : p
-    ));
+  useEffect(() => {
+    fetchPatients();
+  }, []);
+
+  const fetchPatients = async () => {
+    try {
+      setLoading(true);
+      const data = await adminService.getPatients();
+      setPatients(data);
+    } catch (error) {
+      console.error('Failed to fetch patients:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleStatus = async (id) => {
+    try {
+      const response = await adminService.toggleUserStatus(id);
+      setPatients(prev => prev.map(p =>
+        p.id === id ? { ...p, status: response.status } : p
+      ));
+      toast.success(response.message);
+    } catch (err) {
+      toast.error('Failed to update status');
+    }
   };
 
   const filtered = patients
     .filter(p =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.city.toLowerCase().includes(searchQuery.toLowerCase())
+      (p.city && p.city.toLowerCase().includes(searchQuery.toLowerCase()))
     )
     .filter(p => filterStatus === 'all' || p.status === filterStatus);
 
@@ -164,7 +126,13 @@ const AdminPatients = () => {
 
         {/* Table */}
         <Card className="p-0 border border-gray-100 bg-white shadow-xl overflow-hidden rounded-[32px]">
-          <div className="overflow-x-auto">
+          {loading ? (
+             <div className="py-20 text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-[#0D9488] mx-auto mb-4"></div>
+                <p className="text-navy/40 font-bold">Synchronizing registry...</p>
+             </div>
+          ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100">
@@ -286,6 +254,7 @@ const AdminPatients = () => {
               </tbody>
             </table>
           </div>
+          )}
         </Card>
 
       </div>

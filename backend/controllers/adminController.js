@@ -135,8 +135,9 @@ const downloadCertificate = asyncHandler(async (req, res) => {
             api_secret: process.env.CLOUDINARY_API_SECRET,
         });
 
-        // Extract public ID more reliably
-        const urlParts = url.split('/');
+        // Decode the URL to handle special characters (like spaces) correctly
+        const decodedUrl = decodeURIComponent(url);
+        const urlParts = decodedUrl.split('/');
         const medcareIndex = urlParts.findIndex(part => part === 'medcare_certificates');
         let publicId = null;
         if (medcareIndex !== -1) {
@@ -161,9 +162,14 @@ const downloadCertificate = asyncHandler(async (req, res) => {
             responseType: 'arraybuffer'
         });
 
-        // Force correct headers for PDF viewing/downloading
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', 'attachment; filename=certificate.pdf');
+        // Determine content type based on extension
+        const ext = decodedUrl.split('.').pop().toLowerCase();
+        let contentType = 'application/pdf';
+        if (['jpg', 'jpeg'].includes(ext)) contentType = 'image/jpeg';
+        else if (ext === 'png') contentType = 'image/png';
+
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `inline; filename=certificate.${ext}`);
         
         res.send(response.data);
     } catch (error) {
@@ -219,7 +225,7 @@ const getAllApprovedDoctors = asyncHandler(async (req, res) => {
             experience: doctorProfile?.experience || 'N/A',
             licenseNumber: doctorProfile?.licenseNumber || 'N/A',
             hospitalName: doctorProfile?.hospitalId?.name || 'Independent',
-            status: 'active'
+            status: user.status || 'active'
         });
     }
 
@@ -242,11 +248,54 @@ const getAllApprovedHospitals = asyncHandler(async (req, res) => {
             email: hospitalUser.email,
             phone: hospitalUser.phone,
             doctorsCount: doctorsCount,
-            status: 'active'
+            status: hospitalUser.status || 'active'
         });
     }
 
     res.json(hospitalsList);
+});
+
+// @desc    Toggle user status (active/blocked)
+// @route   PATCH /api/admin/users/:id/status
+// @access  Private/Admin
+const toggleUserStatus = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+
+    user.status = user.status === 'blocked' ? 'active' : 'blocked';
+    await user.save();
+
+    res.json({ 
+        message: `User ${user.status === 'blocked' ? 'blocked' : 'unblocked'} successfully`,
+        status: user.status 
+    });
+});
+
+// @desc    Get all registered patients
+// @route   GET /api/admin/patients
+// @access  Private/Admin
+const getAllPatients = asyncHandler(async (req, res) => {
+    const patients = await User.find({ role: 'patient' }).select('-password').sort({ createdAt: -1 });
+    
+    const patientsList = patients.map(p => ({
+        id: p._id,
+        name: p.name,
+        email: p.email,
+        phone: p.phone,
+        status: p.status || 'active',
+        joined: new Date(p.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        // Dummy values for city/bloodGroup if they are not in User model (they are usually in profile)
+        city: 'N/A', 
+        bloodGroup: 'N/A',
+        appointments: 0, // Should be fetched from Appointment model
+        initials: p.name.split(' ').map(n => n[0]).join('').toUpperCase()
+    }));
+
+    res.json(patientsList);
 });
 
 module.exports = {
@@ -255,5 +304,7 @@ module.exports = {
     rejectRegistration,
     downloadCertificate,
     getAllApprovedDoctors,
-    getAllApprovedHospitals
+    getAllApprovedHospitals,
+    getAllPatients,
+    toggleUserStatus
 };

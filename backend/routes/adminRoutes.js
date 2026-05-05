@@ -6,7 +6,9 @@ const {
     rejectRegistration,
     downloadCertificate,
     getAllApprovedDoctors,
-    getAllApprovedHospitals
+    getAllApprovedHospitals,
+    getAllPatients,
+    toggleUserStatus
 } = require('../controllers/adminController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -19,5 +21,7 @@ router.post('/reject/:id', rejectRegistration);
 router.get('/download-certificate', downloadCertificate);
 router.get('/doctors', getAllApprovedDoctors);
 router.get('/hospitals', getAllApprovedHospitals);
+router.get('/patients', getAllPatients);
+router.patch('/users/:id/status', toggleUserStatus);
 
 module.exports = router;

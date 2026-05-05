@@ -28,6 +28,11 @@ const loginUserGeneric = asyncHandler(async (req, res) => {
             throw new Error('Account pending admin approval');
         }
 
+        if (user.status === 'blocked') {
+            res.status(403);
+            throw new Error('Your account has been suspended. Please contact support.');
+        }
+
         // Automatically generate tokens for the user's specific role
         const { accessToken } = generateTokens(res, user._id, user.role);
 
@@ -66,6 +71,11 @@ const loginUser = asyncHandler(async (req, res) => {
             throw new Error('Account pending admin approval');
         }
 
+        if (user.status === 'blocked') {
+            res.status(403);
+            throw new Error('Your account has been suspended. Please contact support.');
+        }
+
         const { accessToken } = generateTokens(res, user._id, user.role);
 
         res.json({
@@ -73,6 +83,7 @@ const loginUser = asyncHandler(async (req, res) => {
             name: user.name,
             email: user.email,
             role: user.role,
+            isFirstLogin: user.isFirstLogin,
             token: accessToken,
         });
     } else {
@@ -356,6 +367,7 @@ const resetPassword = asyncHandler(async (req, res) => {
     }
 
     user.password = password;
+    user.isFirstLogin = false; // If they reset via OTP, they have set their own password
     await user.save();
 
     // Delete the used OTP

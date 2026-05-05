@@ -83,18 +83,22 @@ const Registrations = () => {
       const response = await api.get(`/admin/download-certificate?url=${encodeURIComponent(url)}`, {
         responseType: 'blob'
       });
-      const blob = new Blob([response.data], { type: 'application/pdf' });
+      
+      const contentType = response.headers['content-type'] || 'application/pdf';
+      const blob = new Blob([response.data], { type: contentType });
       const blobUrl = window.URL.createObjectURL(blob);
       
       if (shouldDownload) {
+        const ext = url.split('.').pop().toLowerCase();
         const link = document.createElement('a');
         link.href = blobUrl;
-        link.setAttribute('download', `certificate-${id.substring(0, 8)}.pdf`);
+        link.setAttribute('download', `certificate-${id.substring(0, 8)}.${ext}`);
         document.body.appendChild(link);
         link.click();
         link.remove();
         setTimeout(() => window.URL.revokeObjectURL(blobUrl), 100);
       } else {
+        // For inline viewing, we open the blob URL which now has the correct content type
         window.open(blobUrl, '_blank');
       }
     } catch (error) {

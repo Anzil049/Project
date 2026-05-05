@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
 /**
  * Protect routes based on user role.
@@ -24,6 +25,15 @@ const protect = (role) => async (req, res, next) => {
             // Basic role check
             if (decoded.role !== role) {
                 return res.status(403).json({ message: 'Not authorized for this role' });
+            }
+
+            // Check if user is blocked in the database (Real-time enforcement)
+            const user = await User.findById(decoded.userId).select('status');
+            if (!user || user.status === 'blocked') {
+                return res.status(403).json({ 
+                    message: 'Your account has been suspended. Access revoked.',
+                    isBlocked: true 
+                });
             }
 
             req.user = decoded;

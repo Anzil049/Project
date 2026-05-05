@@ -79,9 +79,12 @@ const DashboardRedirect = () => {
  * If already authenticated, redirects to their dashboard.
  */
 const GuestRoute = ({ children }) => {
-  const { isAuthenticated, role } = useAuthStore();
+  const { isAuthenticated, role, user } = useAuthStore();
 
   if (isAuthenticated) {
+    if (user?.isFirstLogin) {
+      return <Navigate to={ROUTES.CHANGE_PASSWORD} replace />;
+    }
     const dashboardMap = {
       patient: ROUTES.PATIENT.DASHBOARD,
       hospital: ROUTES.HOSPITAL.DASHBOARD,
@@ -115,6 +118,9 @@ function App() {
           sessionStorage.setItem('medcare_active_role', userData.role);
         }
         login(userData);
+        if (userData.isFirstLogin && window.location.pathname !== ROUTES.CHANGE_PASSWORD) {
+          window.location.href = ROUTES.CHANGE_PASSWORD;
+        }
       } catch (err) {
         // No active session, clear stale data
         console.error('Session restore failed:', err);
@@ -122,6 +128,23 @@ function App() {
       }
     };
     checkAuth();
+
+    // Background check every 2 minutes to handle real-time blocking
+    const intervalId = setInterval(async () => {
+      const activeRole = sessionStorage.getItem('medcare_active_role');
+      if (activeRole && localStorage.getItem(`medcare_token_${activeRole}`)) {
+        try {
+          await authService.getCurrentUser('me');
+        } catch (err) {
+          if (err.response?.status === 403 && err.response?.data?.isBlocked) {
+            // Interceptor handles the redirect, but we stop the interval
+            clearInterval(intervalId);
+          }
+        }
+      }
+    }, 120000); // 2 minutes
+
+    return () => clearInterval(intervalId);
   }, [login, setLoading]);
 
   if (loading) {
@@ -162,7 +185,7 @@ function App() {
           <Route path="/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
           <Route path="/reset-password" element={<GuestRoute><ResetPassword /></GuestRoute>} />
           <Route path="/verify-otp" element={<GuestRoute><VerifyOtp /></GuestRoute>} />
-          <Route path={ROUTES.CHANGE_PASSWORD} element={<GuestRoute><ChangePassword /></GuestRoute>} />
+          <Route path={ROUTES.CHANGE_PASSWORD} element={<ChangePassword />} />
           <Route path={ROUTES.PRIVACY} element={<PrivacyPolicy />} />
           <Route path={ROUTES.TERMS} element={<TermsOfService />} />
           <Route path="/emergency" element={<Emergency />} />

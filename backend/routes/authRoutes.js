@@ -18,18 +18,20 @@ const { protect } = require('../middleware/authMiddleware');
 const validate = require('../middleware/validatorMiddleware');
 const { registerValidator, loginValidator } = require('../validators/authValidator');
 const upload = require('../config/multerConfig');
+const { authLimiter } = require('../middleware/rateLimitMiddleware');
 
 // Global Auth Routes
 router.get('/me', getCurrentUser);
-router.post('/login', loginValidator, validate, loginUserGeneric);
+router.post('/login', authLimiter, loginValidator, validate, loginUserGeneric);
 router.post('/verify-otp', verifyOTP);
 router.post('/resend-otp', resendOTP);
-router.post('/forgot-password', forgotPassword);
-router.post('/reset-password', resetPassword);
+router.post('/forgot-password', authLimiter, forgotPassword);
+router.post('/reset-password', authLimiter, resetPassword);
 router.post('/change-password', changeFirstPassword);
 
 // Registration with optional certificate upload
 router.post('/:role/register', 
+    authLimiter,
     upload.single('certificate'), // Handles file upload if present
     registerValidator, 
     validate, 

@@ -7,6 +7,7 @@ import {
   Star, Building2, CheckCircle2
 } from 'lucide-react';
 import adminService from '../../services/adminService';
+import toast from 'react-hot-toast';
 
 const AdminDoctors = () => {
   const navigate = useNavigate();
@@ -35,13 +36,16 @@ const AdminDoctors = () => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
 
-  const toggleDoctorStatus = (id) => {
-    // This would normally call an API to block/unblock
-    setDoctors(prev => prev.map(doc =>
-      doc.id === id
-        ? { ...doc, status: doc.status === 'active' ? 'blocked' : 'active' }
-        : doc
-    ));
+  const toggleDoctorStatus = async (id) => {
+    try {
+      const response = await adminService.toggleUserStatus(id);
+      setDoctors(prev => prev.map(doc =>
+        doc.id === id ? { ...doc, status: response.status } : doc
+      ));
+      toast.success(response.message);
+    } catch (err) {
+      toast.error('Failed to update status');
+    }
   };
 
   const filtered = doctors

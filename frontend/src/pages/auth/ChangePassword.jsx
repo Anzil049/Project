@@ -37,6 +37,12 @@ const ChangePassword = () => {
     setLoading(true);
     setError('');
 
+    if (!user) {
+      setError('User session not found. Please log in again.');
+      setLoading(false);
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       setError('New passwords do not match');
       setLoading(false);
