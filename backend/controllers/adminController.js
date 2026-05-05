@@ -125,6 +125,11 @@ const downloadCertificate = asyncHandler(async (req, res) => {
         throw new Error('URL is required');
     }
 
+    if (url.startsWith('blob:')) {
+        res.status(400);
+        throw new Error('Cannot proxy browser blob URLs');
+    }
+
     try {
         const cloudinary = require('cloudinary').v2;
         
@@ -147,9 +152,11 @@ const downloadCertificate = asyncHandler(async (req, res) => {
         }
 
         let downloadUrl = url;
+        const ext = decodedUrl.split('.').pop().toLowerCase();
+        
         if (publicId) {
             // Use the official private download URL generator
-            downloadUrl = cloudinary.utils.private_download_url(publicId, 'pdf', {
+            downloadUrl = cloudinary.utils.private_download_url(publicId, ext, {
                 resource_type: 'image',
                 type: 'upload',
                 attachment: true
@@ -163,7 +170,6 @@ const downloadCertificate = asyncHandler(async (req, res) => {
         });
 
         // Determine content type based on extension
-        const ext = decodedUrl.split('.').pop().toLowerCase();
         let contentType = 'application/pdf';
         if (['jpg', 'jpeg'].includes(ext)) contentType = 'image/jpeg';
         else if (ext === 'png') contentType = 'image/png';
@@ -225,7 +231,8 @@ const getAllApprovedDoctors = asyncHandler(async (req, res) => {
             experience: doctorProfile?.experience || 'N/A',
             licenseNumber: doctorProfile?.licenseNumber || 'N/A',
             hospitalName: doctorProfile?.hospitalId?.name || 'Independent',
-            status: user.status || 'active'
+            status: user.status || 'active',
+            isFeatured: doctorProfile?.isFeatured || false
         });
     }
 
@@ -248,7 +255,8 @@ const getAllApprovedHospitals = asyncHandler(async (req, res) => {
             email: hospitalUser.email,
             phone: hospitalUser.phone,
             doctorsCount: doctorsCount,
-            status: hospitalUser.status || 'active'
+            status: hospitalUser.status || 'active',
+            isFeatured: (await Hospital.findOne({ user: hospitalUser._id }))?.isFeatured || false
         });
     }
 
@@ -298,6 +306,80 @@ const getAllPatients = asyncHandler(async (req, res) => {
     res.json(patientsList);
 });
 
+// @desc    Toggle featured status
+// @route   PATCH /api/admin/featured/:role/:id
+// @access  Private/Admin
+const toggleFeatured = asyncHandler(async (req, res) => {
+    const { role, id } = req.params; // id is the User ID
+
+    if (role === 'doctor') {
+        const doctor = await Doctor.findOne({ user: id });
+        if (!doctor) {
+            res.status(404);
+            throw new Error('Doctor profile not found');
+        }
+        doctor.isFeatured = !doctor.isFeatured;
+        await doctor.save();
+        res.json({ message: `Doctor ${doctor.isFeatured ? 'featured' : 'unfeatured'}`, isFeatured: doctor.isFeatured });
+    } else if (role === 'hospital') {
+        const hospital = await Hospital.findOne({ user: id });
+        if (!hospital) {
+            res.status(404);
+            throw new Error('Hospital profile not found');
+        }
+        hospital.isFeatured = !hospital.isFeatured;
+        await hospital.save();
+        res.json({ message: `Hospital ${hospital.isFeatured ? 'featured' : 'unfeatured'}`, isFeatured: hospital.isFeatured });
+    } else {
+        res.status(400);
+        throw new Error('Invalid role for featured status');
+    }
+});
+
+// @desc    Get full doctor details for admin
+// @route   GET /api/admin/doctors/:id
+// @access  Private/Admin
+const getAdminDoctorDetails = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.params.id).select('-password');
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+
+    const doctorProfile = await Doctor.findOne({ user: user._id })
+        .populate({
+            path: 'hospitalId',
+            select: 'name email phone'
+        });
+
+    res.json({
+        ...user._doc,
+        profile: doctorProfile
+    });
+});
+
+// @desc    Delete a user completely
+// @route   DELETE /api/admin/users/:id
+// @access  Private/Admin
+const deleteUser = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+
+    if (user.role === 'doctor') {
+        await Doctor.findOneAndDelete({ user: user._id });
+    } else if (user.role === 'hospital') {
+        await Hospital.findOneAndDelete({ user: user._id });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+
+    res.json({ message: 'User and profile removed completely' });
+});
+
 module.exports = {
     getPendingRegistrations,
     approveRegistration,
@@ -306,5 +388,8 @@ module.exports = {
     getAllApprovedDoctors,
     getAllApprovedHospitals,
     getAllPatients,
-    toggleUserStatus
+    toggleUserStatus,
+    toggleFeatured,
+    getAdminDoctorDetails,
+    deleteUser
 };

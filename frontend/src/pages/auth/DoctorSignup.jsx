@@ -19,7 +19,8 @@ const doctorSignupSchema = z.object({
   fullName: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
   licenseNumber: z.string().min(5, 'Valid license number is required'),
-  specialization: z.string().min(2, 'Specialization is required'),
+  specialization: z.string().min(1, 'Please select a specialization'),
+  customSpecialization: z.string().optional(),
   experience: z.string().regex(/^\d+$/, 'Experience must be a valid positive number').min(1, 'Years of experience is required'),
   password: z.string().min(8, 'Minimum 8 characters required'),
   confirmPassword: z.string(),
@@ -27,6 +28,14 @@ const doctorSignupSchema = z.object({
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
+}).refine(data => {
+  if (data.specialization === 'Other' && !data.customSpecialization) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Please specify your specialization",
+  path: ["customSpecialization"]
 });
 
 const DoctorSignup = () => {
@@ -41,6 +50,7 @@ const DoctorSignup = () => {
       email: '',
       licenseNumber: '',
       specialization: '',
+      customSpecialization: '',
       experience: '',
       password: '',
       confirmPassword: ''
@@ -50,13 +60,15 @@ const DoctorSignup = () => {
   const onSubmit = async (data) => {
     setLoading(true);
     try {
+      const finalSpecialization = data.specialization === 'Other' ? data.customSpecialization : data.specialization;
+      
       const formData = new FormData();
       formData.append('name', data.fullName);
       formData.append('email', data.email);
       formData.append('password', data.password);
       formData.append('role', 'doctor');
       formData.append('licenseNumber', data.licenseNumber);
-      formData.append('specialization', data.specialization);
+      formData.append('specialization', finalSpecialization);
       formData.append('experience', data.experience);
       if (data.certificate[0]) {
         formData.append('certificate', data.certificate[0]);
@@ -72,6 +84,12 @@ const DoctorSignup = () => {
       setLoading(false);
     }
   };
+
+  const selectedSpecialization = watch('specialization');
+  const specializations = [
+    'Cardiology', 'Neurology', 'Orthopedics', 'Pediatrics', 
+    'Dermatology', 'Gastroenterology', 'General Medicine'
+  ];
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -159,14 +177,48 @@ const DoctorSignup = () => {
                   className="h-14 rounded-3xl"
                 />
 
-                <Input
-                  label="Specialization"
-                  {...register('specialization')}
-                  error={errors.specialization?.message}
-                  icon={Stethoscope}
-                  placeholder="Cardiologist"
-                  className="h-14 rounded-3xl"
-                />
+                <div className="flex flex-col gap-1 w-full">
+                  <div className={`relative group h-14 rounded-3xl`}>
+                    <div className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors duration-200 z-10 peer-focus-within:text-[#0D9488] ${selectedSpecialization ? 'text-navy' : 'text-navy/40'}`}>
+                      <Stethoscope size={20} strokeWidth={2} />
+                    </div>
+                    <select
+                      {...register('specialization')}
+                      className={`
+                        w-full h-full bg-white border-2 rounded-3xl pl-12 pr-10 transition-all duration-200 outline-none font-body text-navy appearance-none cursor-pointer
+                        ${errors.specialization ? 'border-red-500 bg-red-50/10' : 'border-gray-100 focus:border-[#0D9488]'}
+                        ${!selectedSpecialization ? 'text-navy/30' : 'text-navy'}
+                        peer
+                      `}
+                    >
+                      <option value="" disabled>Select Specialization</option>
+                      {specializations.map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                      <option value="Other">Other Specialist...</option>
+                    </select>
+                    {/* Custom Arrow */}
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-navy/40 group-focus-within:text-[#0D9488] transition-colors">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </div>
+                  </div>
+                  {errors.specialization && (
+                    <div className="flex items-center gap-1.5 px-2 mt-1">
+                      <span className="text-red-200 text-[11px] font-bold leading-tight">{errors.specialization.message}</span>
+                    </div>
+                  )}
+                </div>
+
+                {selectedSpecialization === 'Other' && (
+                  <Input
+                    label="Specify Specialization"
+                    {...register('customSpecialization')}
+                    error={errors.customSpecialization?.message}
+                    icon={Stethoscope}
+                    placeholder="E.g. Radiologist"
+                    className="h-14 rounded-3xl"
+                  />
+                )}
 
                 <Input
                   label="Experience (Years)"
@@ -177,42 +229,62 @@ const DoctorSignup = () => {
                   className="h-14 rounded-3xl"
                 />
 
-                <div className="hidden md:block"></div>
-
-                <Input
-                  label="Password"
-                  type="password"
-                  {...register('password')}
-                  error={errors.password?.message}
-                  icon={Lock}
-                  placeholder="xxxxxxxx"
-                  className="h-14 rounded-3xl"
-                />
                 
-                <Input
-                  label="Confirm"
-                  type="password"
-                  {...register('confirmPassword')}
-                  error={errors.confirmPassword?.message}
-                  icon={ShieldCheck}
-                  placeholder="xxxxxxxx"
-                  className="h-14 rounded-3xl"
-                />
 
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase tracking-widest text-teal-50/40 ml-4 mb-2 block">Doctor Certificate (PDF/Image)</label>
-                  <div className="relative group">
-                    <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none">
-                      <FileText className="h-5 w-5 text-teal-50/40 group-focus-within:text-white transition-colors" />
+                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-7">
+                  <Input
+                    label="Password"
+                    type="password"
+                    {...register('password')}
+                    error={errors.password?.message}
+                    icon={Lock}
+                    placeholder="xxxxxxxx"
+                    className="h-14 rounded-3xl"
+                  />
+                  
+                  <Input
+                    label="Confirm"
+                    type="password"
+                    {...register('confirmPassword')}
+                    error={errors.confirmPassword?.message}
+                    icon={ShieldCheck}
+                    placeholder="xxxxxxxx"
+                    className="h-14 rounded-3xl"
+                  />
+                </div>
+
+                <div className="md:col-span-2 space-y-1">
+                  <div className="relative group h-14">
+                    {/* Background & Border */}
+                    <div className={`absolute inset-0 rounded-3xl bg-white border-2 transition-all duration-200 ${errors.certificate ? 'border-red-500 bg-red-50/10' : 'border-gray-100 group-focus-within:border-[#0D9488]'}`} />
+                    
+                    {/* Icon */}
+                    <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none z-10 text-navy/40 group-focus-within:text-[#0D9488] transition-colors">
+                      <FileText className="h-5 w-5" />
                     </div>
+
+                    {/* Text Display */}
+                    <div className="absolute inset-y-0 left-14 right-6 flex items-center pointer-events-none z-10">
+                      {watch('certificate')?.[0] ? (
+                        <span className="text-navy text-sm font-bold truncate animate-in fade-in slide-in-from-left-1 duration-300">
+                          {watch('certificate')[0].name}
+                        </span>
+                      ) : (
+                        <span className="text-navy/30 text-sm font-medium">
+                          Upload Professional Certificate (PDF/Image)
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Hidden Native Input */}
                     <input
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png"
                       {...register('certificate')}
-                      className={`w-full h-14 rounded-3xl bg-white/10 border ${errors.certificate ? 'border-red-400' : 'border-white/10'} text-white pl-14 pr-6 py-4 outline-none focus:border-white transition-all cursor-pointer file:hidden`}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
                     />
                   </div>
-                  {errors.certificate && <p className="text-[10px] text-red-200 ml-4 font-bold uppercase tracking-tighter mt-1">{errors.certificate.message}</p>}
+                  {errors.certificate && <p className="text-[11px] text-red-200 ml-4 font-bold leading-tight mt-1">{errors.certificate.message}</p>}
                 </div>
               </div>
 

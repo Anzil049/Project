@@ -4,7 +4,7 @@ import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button } from '../../components/common';
 import { 
   Stethoscope, Search, ExternalLink, ShieldOff, 
-  Star, Building2, CheckCircle2
+  Star, Building2, CheckCircle2, Lock, Unlock, Trash2
 } from 'lucide-react';
 import adminService from '../../services/adminService';
 import toast from 'react-hot-toast';
@@ -46,6 +46,75 @@ const AdminDoctors = () => {
     } catch (err) {
       toast.error('Failed to update status');
     }
+  };
+
+  const toggleFeatured = async (id) => {
+    try {
+      const response = await adminService.toggleFeatured('doctor', id);
+      setDoctors(prev => prev.map(doc =>
+        doc.id === id ? { ...doc, isFeatured: response.isFeatured } : doc
+      ));
+      toast.success(response.message);
+    } catch (err) {
+      toast.error('Failed to update featured status');
+    }
+  };
+
+  const handleDeleteDoctor = (id, name, currentStatus) => {
+    toast((t) => (
+      <div className="flex flex-col gap-4 p-1">
+        <div>
+          <p className="font-black text-navy text-sm uppercase tracking-tight">Manage Practitioner</p>
+          <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest mt-1">Choose action for Dr. {name}</p>
+        </div>
+        
+        <div className="grid grid-cols-1 gap-2">
+          <Button 
+            className="bg-red-500 hover:bg-red-600 text-white h-10 py-0 text-[10px] font-black uppercase tracking-widest rounded-xl border-none shadow-lg shadow-red-500/20"
+            onClick={async () => {
+              toast.dismiss(t.id);
+              try {
+                await adminService.deleteUser(id);
+                setDoctors(prev => prev.filter(doc => doc.id !== id));
+                toast.success('Doctor record deleted completely');
+              } catch (err) {
+                toast.error('Failed to delete doctor');
+              }
+            }}
+          >
+            <Trash2 size={14} className="mr-2" /> Delete Completely
+          </Button>
+          
+          <Button 
+            className="bg-amber-500 hover:bg-amber-600 text-white h-10 py-0 text-[10px] font-black uppercase tracking-widest rounded-xl border-none shadow-lg shadow-amber-500/20"
+            onClick={() => {
+              toast.dismiss(t.id);
+              toggleDoctorStatus(id);
+            }}
+          >
+            <Lock size={14} className="mr-2" /> {currentStatus === 'active' ? 'Block Access' : 'Unblock Access'}
+          </Button>
+          
+          <button 
+            className="text-[10px] font-bold text-navy/20 uppercase tracking-widest hover:text-navy/40 transition-colors py-2"
+            onClick={() => toast.dismiss(t.id)}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: 5000,
+      position: 'top-center',
+      style: {
+        borderRadius: '24px',
+        background: '#fff',
+        color: '#0f172a',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+        padding: '16px',
+        border: '1px solid #f1f5f9'
+      },
+    });
   };
 
   const filtered = doctors
@@ -149,17 +218,31 @@ const AdminDoctors = () => {
                     {/* Actions */}
                     <td className="py-4 px-6">
                       <div className="flex items-center justify-end gap-3">
-                        <Button
-                          onClick={() => toggleDoctorStatus(doc.id)}
-                          variant={doc.status === 'active' ? 'danger' : 'outline'}
-                          className={`h-8 px-4 text-[10px] font-black uppercase tracking-widest rounded-lg ${doc.status === 'active' ? 'border-none' : 'hover:bg-green-500 hover:!text-white hover:border-green-500'}`}
-                        >
-                          {doc.status === 'active' ? 'Block' : 'Unblock'}
-                        </Button>
                         <button
-                          onClick={() => navigate(`/doctor/profile/${doc.id}`)}
+                          onClick={() => toggleFeatured(doc.id)}
+                          className={`h-8 w-8 flex items-center justify-center rounded-lg border transition-all ${doc.isFeatured ? 'bg-yellow-50 border-yellow-200 text-yellow-500 shadow-sm' : 'border-gray-200 text-navy/20 hover:text-yellow-500 hover:bg-yellow-50'}`}
+                          title={doc.isFeatured ? 'Remove from Featured' : 'Mark as Featured'}
+                        >
+                          <Star size={16} fill={doc.isFeatured ? 'currentColor' : 'none'} />
+                        </button>
+                        <button
+                          onClick={() => toggleDoctorStatus(doc.id)}
+                          className={`h-8 w-8 flex items-center justify-center rounded-lg border transition-all ${doc.status === 'active' ? 'border-gray-200 text-navy/20 hover:text-amber-500 hover:bg-amber-50' : 'bg-amber-50 border-amber-200 text-amber-500 shadow-sm'}`}
+                          title={doc.status === 'active' ? 'Block Doctor' : 'Unblock Doctor'}
+                        >
+                          {doc.status === 'active' ? <Unlock size={16} /> : <Lock size={16} />}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteDoctor(doc.id, doc.name, doc.status)}
+                          className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 text-navy/20 hover:text-red-500 hover:bg-red-50 transition-all"
+                          title="Delete Doctor Completely"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => navigate(`/admin/doctor/${doc.id}`)}
                           className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 text-navy/40 hover:text-[#0D9488] hover:border-[#0D9488] hover:bg-gray-50 transition-all"
-                          title="View Doctor Profile"
+                          title="View Doctor Details"
                         >
                           <ExternalLink size={16} />
                         </button>

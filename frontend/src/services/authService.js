@@ -80,6 +80,14 @@ const authService = {
   refresh: async (role) => {
     const response = await api.post(`/auth/${role}/refresh`);
     return response.data;
+  },
+
+  /**
+   * Get featured doctors and hospitals for landing page
+   */
+  getFeaturedData: async () => {
+    const response = await api.get('/auth/featured');
+    return response.data;
   }
 };
 

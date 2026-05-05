@@ -43,6 +43,21 @@ const adminService = {
   toggleUserStatus: async (id) => {
     const response = await api.patch(`/admin/users/${id}/status`);
     return response.data;
+  },
+
+  toggleFeatured: async (role, id) => {
+    const response = await api.patch(`/admin/featured/${role}/${id}`);
+    return response.data;
+  },
+
+  getDoctorDetails: async (id) => {
+    const response = await api.get(`/admin/doctors/${id}`);
+    return response.data;
+  },
+  
+  deleteUser: async (id) => {
+    const response = await api.delete(`/admin/users/${id}`);
+    return response.data;
   }
 };
 

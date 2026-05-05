@@ -13,7 +13,7 @@ const {
     refreshAccessToken,
     getUserProfile,
 } = require('../controllers/authController');
-const { getCurrentUser } = require('../controllers/userController');
+const { getCurrentUser, getFeaturedData } = require('../controllers/userController');
 const { protect } = require('../middleware/authMiddleware');
 const validate = require('../middleware/validatorMiddleware');
 const { registerValidator, loginValidator } = require('../validators/authValidator');
@@ -22,6 +22,7 @@ const { authLimiter } = require('../middleware/rateLimitMiddleware');
 
 // Global Auth Routes
 router.get('/me', getCurrentUser);
+router.get('/featured', getFeaturedData);
 router.post('/login', authLimiter, loginValidator, validate, loginUserGeneric);
 router.post('/verify-otp', verifyOTP);
 router.post('/resend-otp', resendOTP);

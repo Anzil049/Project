@@ -37,6 +37,10 @@ const doctorSchema = mongoose.Schema({
         start: String,
         end: String,
     }],
+    isFeatured: {
+        type: Boolean,
+        default: false,
+    },
 }, {
     timestamps: true,
 });

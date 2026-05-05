@@ -8,7 +8,10 @@ const {
     getAllApprovedDoctors,
     getAllApprovedHospitals,
     getAllPatients,
-    toggleUserStatus
+    toggleUserStatus,
+    toggleFeatured,
+    getAdminDoctorDetails,
+    deleteUser
 } = require('../controllers/adminController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -20,8 +23,11 @@ router.post('/approve/:id', approveRegistration);
 router.post('/reject/:id', rejectRegistration);
 router.get('/download-certificate', downloadCertificate);
 router.get('/doctors', getAllApprovedDoctors);
+router.get('/doctors/:id', getAdminDoctorDetails);
 router.get('/hospitals', getAllApprovedHospitals);
 router.get('/patients', getAllPatients);
 router.patch('/users/:id/status', toggleUserStatus);
+router.patch('/featured/:role/:id', toggleFeatured);
+router.delete('/users/:id', deleteUser);
 
 module.exports = router;

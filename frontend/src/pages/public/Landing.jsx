@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Stethoscope, HeartPulse, Brain, Shield, Clock, Users, Star,
@@ -12,6 +12,7 @@ import useScrollReveal from '../../hooks/useScrollReveal';
 import hero3d from '../../assets/hero_3d.png';
 import telemedicineImg from '../../assets/telemedicine.png';
 import { ROUTES } from '../../constants/routes';
+import authService from '../../services/authService';
 
 const Landing = () => {
   const navigate = useNavigate();
@@ -19,21 +20,41 @@ const Landing = () => {
   const [currentDoctor, setCurrentDoctor] = useState(0);
   const [currentReview, setCurrentReview] = useState(0);
   const [currentHospital, setCurrentHospital] = useState(0);
+  const [doctors, setDoctors] = useState([]);
+  const [hospitals, setHospitals] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const hospitals = [
-    { id: 'h-1', name: 'Apollo Indraprastha', type: 'Multi-Specialty Private', rating: 4.8, beds: '500+', loc: 'New Delhi', image: 'https://images.unsplash.com/photo-1587351021759-3e566b6af7cc?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80' },
-    { id: 'h-2', name: 'Fortis Escorts', type: 'Cardiac Institute', rating: 4.7, beds: '300+', loc: 'Mumbai', image: 'https://images.unsplash.com/photo-1538108149393-cebb47acddb2?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80' },
-    { id: 'h-3', name: 'Medanta Medicity', type: 'Multi-Specialty', rating: 4.9, beds: '1000+', loc: 'Gurugram', image: 'https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80' },
-    { id: 'h-4', name: 'Max Health', type: 'Super Specialty', rating: 4.6, beds: '450+', loc: 'Bangalore', image: 'https://images.unsplash.com/photo-1586773860418-d37222d8fce3?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80' },
-  ];
+  useEffect(() => {
+    const fetchFeatured = async () => {
+      try {
+        const data = await authService.getFeaturedData();
+        // Add some default styling colors for doctors if not present
+        const coloredDoctors = data.doctors.map((doc, i) => ({
+          ...doc,
+          color: ['from-[#0D9488] to-[#115E59]', 'from-[#FF7043] to-[#E64A19]', 'from-[#8B5CF6] to-[#6D28D9]', 'from-[#FBBF24] to-[#D97706]', 'from-[#EC4899] to-[#BE185D]'][i % 5],
+          initials: doc.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase(),
+          rating: (4.5 + Math.random() * 0.5).toFixed(1),
+          exp: doc.experience || '10 yrs'
+        }));
+        
+        const styledHospitals = data.hospitals.map(hosp => ({
+          ...hosp,
+          rating: (4.5 + Math.random() * 0.5).toFixed(1),
+          loc: 'Near You',
+          type: hosp.facilityType,
+          image: hosp.image || 'https://images.unsplash.com/photo-1587351021759-3e566b6af7cc?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80'
+        }));
 
-  const doctors = [
-    { id: 'd-1', name: 'Dr. Sarah Johnson', spec: 'Cardiologist', rating: 4.9, exp: '12 yrs', initials: 'SJ', color: 'from-[#0D9488] to-[#115E59]' },
-    { id: 'd-2', name: 'Dr. Arjun Mehta', spec: 'Neurologist', rating: 4.8, exp: '10 yrs', initials: 'AM', color: 'from-[#FF7043] to-[#E64A19]' },
-    { id: 'd-3', name: 'Dr. Priya Sharma', spec: 'Dermatologist', rating: 4.9, exp: '8 yrs', initials: 'PS', color: 'from-[#8B5CF6] to-[#6D28D9]' },
-    { id: 'd-4', name: 'Dr. James Wilson', spec: 'Orthopedic', rating: 4.7, exp: '15 yrs', initials: 'JW', color: 'from-[#FBBF24] to-[#D97706]' },
-    { id: 'd-6', name: 'Dr. Ananya Roy', spec: 'Pediatrician', rating: 4.8, exp: '9 yrs', initials: 'AR', color: 'from-[#EC4899] to-[#BE185D]' },
-  ];
+        setDoctors(coloredDoctors);
+        setHospitals(styledHospitals);
+      } catch (error) {
+        console.error('Failed to fetch featured data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchFeatured();
+  }, []);
 
   const reviews = [
     { text: "MedCare made it incredibly easy to find a specialist. I booked an appointment within minutes and the doctor was fantastic!", name: 'Radhika Thomas', loc: 'Bangalore', initials: 'RT' },
@@ -205,15 +226,15 @@ const Landing = () => {
           </div>
 
           <div className="grid grid-flow-col auto-cols-[85%] sm:auto-cols-[45%] lg:auto-cols-auto lg:grid-flow-row lg:grid-cols-3 gap-6 overflow-x-auto snap-x snap-mandatory py-8 px-4 -mx-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] stagger-children">
-            {doctors.map((doc, i) => (
+            {doctors.length > 0 ? doctors.map((doc, i) => (
               <div key={i} className={`snap-center bg-white p-6 rounded-2xl border border-gray-200 group hover:shadow-2xl hover:-translate-y-3 !transition-all !duration-1000 hover:!delay-[150ms] ease-out ${i >= currentDoctor && i < currentDoctor + 3 ? '' : 'lg:hidden'}`}>
                 <div className="flex items-center gap-4 mb-5">
-                  <div className={`w-16 h-16 bg-gradient-to-br ${doc.color} rounded-2xl flex items-center justify-center text-white text-xl font-bold`}>
-                    {doc.initials}
+                  <div className={`w-16 h-16 bg-gradient-to-br ${doc.color} rounded-2xl flex items-center justify-center text-white text-xl font-bold overflow-hidden shadow-inner`}>
+                    {doc.image ? <img src={doc.image} alt={doc.name} className="w-full h-full object-cover" /> : doc.initials}
                   </div>
                   <div>
                     <h4 className="font-heading font-bold text-[#0C1A2E]">{doc.name}</h4>
-                    <p className="text-[#0C1A2E]/40 text-sm">{doc.spec}</p>
+                    <p className="text-[#0C1A2E]/40 text-sm">{doc.specialization}</p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between mb-5">
@@ -232,7 +253,11 @@ const Landing = () => {
                   Book Appointment
                 </Button>
               </div>
-            ))}
+            )) : (
+              <div className="col-span-full py-10 text-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                <p className="text-navy/40 font-bold">Discover our featured specialists soon!</p>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -259,7 +284,7 @@ const Landing = () => {
           </div>
 
           <div className="grid grid-flow-col auto-cols-[85%] sm:auto-cols-[45%] lg:auto-cols-auto lg:grid-flow-row lg:grid-cols-3 gap-6 overflow-x-auto snap-x snap-mandatory py-8 px-4 -mx-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] stagger-children">
-            {hospitals.map((hosp, i) => (
+            {hospitals.length > 0 ? hospitals.map((hosp, i) => (
               <div 
                 key={i} 
                 onClick={() => navigate(ROUTES.PUBLIC_HOSPITAL.replace(':id', hosp.id))}
@@ -292,7 +317,11 @@ const Landing = () => {
                   </div>
                 </div>
               </div>
-            ))}
+            )) : (
+              <div className="col-span-full py-10 text-center bg-white rounded-2xl border-2 border-dashed border-gray-200 w-full">
+                <p className="text-navy/40 font-bold">New featured facilities coming soon!</p>
+              </div>
+            )}
           </div>
         </div>
       </section>

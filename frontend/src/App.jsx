@@ -34,6 +34,7 @@ import Registrations from './pages/admin/Registrations';
 import AdminHospitals from './pages/admin/Hospitals';
 import AdminRevenue from './pages/admin/Revenue';
 import AdminDoctors from './pages/admin/Doctors';
+import AdminDoctorDetails from './pages/admin/DoctorDetails';
 import AdminPatients from './pages/admin/Patients';
 import AdminBloodBank from './pages/admin/BloodBank';
 import AdminProfile from './pages/admin/Profile';
@@ -250,6 +251,7 @@ function App() {
                 <Route path="hospitals" element={<AdminHospitals />} />
                 <Route path="revenue" element={<AdminRevenue />} />
                 <Route path="doctors" element={<AdminDoctors />} />
+                <Route path="doctor/:id" element={<AdminDoctorDetails />} />
                 <Route path="patients" element={<AdminPatients />} />
                 <Route path="blood-bank" element={<AdminBloodBank />} />
                 <Route path="profile" element={<AdminProfile />} />

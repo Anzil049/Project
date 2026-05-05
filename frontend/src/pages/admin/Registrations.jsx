@@ -21,6 +21,8 @@ const Registrations = () => {
   const [activeCertUrl, setActiveCertUrl] = useState(null);
 
   const [processing, setProcessing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
     fetchRegistrations();
@@ -45,6 +47,8 @@ const Registrations = () => {
       await adminService.approveRegistration(id);
       setApplications(prev => prev.filter(app => app.id !== id));
       toast.success('Application approved successfully!', { id: 'approve' });
+      // Extra safety: re-fetch to ensure sync
+      setTimeout(fetchRegistrations, 500);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to approve application', { id: 'approve' });
     }
@@ -71,34 +75,48 @@ const Registrations = () => {
       toast.error(error.response?.data?.message || 'Failed to reject application', { id: 'reject' });
     } finally {
       setProcessing(false);
+      // Extra safety: re-fetch
+      setTimeout(fetchRegistrations, 500);
     }
   };
 
   const [downloadingAction, setDownloadingAction] = useState(null); // 'view-ID' or 'download-ID'
 
   const handleDownload = async (url, id, shouldDownload = true) => {
+    if (!url) return;
+    
     const actionKey = `${shouldDownload ? 'download' : 'view'}-${id}`;
+    
     try {
       setDownloadingAction(actionKey);
-      const response = await api.get(`/admin/download-certificate?url=${encodeURIComponent(url)}`, {
-        responseType: 'blob'
-      });
       
-      const contentType = response.headers['content-type'] || 'application/pdf';
-      const blob = new Blob([response.data], { type: contentType });
-      const blobUrl = window.URL.createObjectURL(blob);
+      let blobUrl = url;
+      
+      // If it's not already a local blob URL, fetch it via proxy
+      if (!url.startsWith('blob:')) {
+        console.log('Fetching via proxy:', url);
+        const response = await api.get(`/admin/download-certificate?url=${encodeURIComponent(url)}`, {
+          responseType: 'blob'
+        });
+        const contentType = response.headers['content-type'] || 'application/pdf';
+        const blob = new Blob([response.data], { type: contentType });
+        blobUrl = window.URL.createObjectURL(blob);
+      }
       
       if (shouldDownload) {
-        const ext = url.split('.').pop().toLowerCase();
         const link = document.createElement('a');
         link.href = blobUrl;
-        link.setAttribute('download', `certificate-${id.substring(0, 8)}.${ext}`);
+        // Try to guess extension from original url if possible, otherwise default to pdf
+        const ext = url.includes('.') ? url.split('.').pop().toLowerCase().split('?')[0] : 'pdf';
+        link.setAttribute('download', `certificate-${id.substring(0, 8)}.${ext === 'blob' ? 'pdf' : ext}`);
         document.body.appendChild(link);
         link.click();
         link.remove();
-        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 100);
+        // Only revoke if we created it here (i.e. if it wasn't passed as a blob)
+        if (!url.startsWith('blob:')) {
+          setTimeout(() => window.URL.revokeObjectURL(blobUrl), 100);
+        }
       } else {
-        // For inline viewing, we open the blob URL which now has the correct content type
         window.open(blobUrl, '_blank');
       }
     } catch (error) {
@@ -110,11 +128,49 @@ const Registrations = () => {
 
   const [activeAppId, setActiveAppId] = useState(null);
 
-  const openCertModal = (url, id) => {
-    setActiveCertUrl(url);
-    setActiveAppId(id);
-    setCertModalOpen(true);
+  const openCertModal = async (url, id) => {
+    if (!url) {
+      setActiveCertUrl(null);
+      setCertModalOpen(true);
+      return;
+    }
+
+    try {
+      setPreviewLoading(true);
+      setActiveCertUrl(null);
+      setCertModalOpen(true);
+      
+      const response = await api.get(`/admin/download-certificate?url=${encodeURIComponent(url)}`, {
+        responseType: 'blob'
+      });
+      
+      const contentType = response.headers['content-type'] || 'application/pdf';
+      const blob = new Blob([response.data], { type: contentType });
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      setActiveCertUrl(blobUrl);
+      setActiveAppId(id);
+    } catch (error) {
+      toast.error('Failed to load certificate preview');
+      setCertModalOpen(false);
+    } finally {
+      setPreviewLoading(false);
+    }
   };
+
+  const closeCertModal = () => {
+    if (activeCertUrl && activeCertUrl.startsWith('blob:')) {
+      window.URL.revokeObjectURL(activeCertUrl);
+    }
+    setActiveCertUrl(null);
+    setCertModalOpen(false);
+  };
+
+  const filteredApplications = applications.filter(app => 
+    app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    app.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    app.type.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <DashboardLayout title="Verification Queue" role="admin">
@@ -135,6 +191,8 @@ const Registrations = () => {
              <input 
                type="text" 
                placeholder="Search registry..." 
+               value={searchQuery}
+               onChange={(e) => setSearchQuery(e.target.value)}
                className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3 pl-10 pr-4 text-sm font-bold text-navy outline-none focus:border-[#0D9488] transition-all"
              />
           </div>
@@ -147,13 +205,15 @@ const Registrations = () => {
                 <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-[#0D9488] mx-auto mb-4"></div>
                 <p className="text-navy/60 font-bold">Loading registrations...</p>
              </div>
-           ) : applications.length === 0 ? (
+           ) : filteredApplications.length === 0 ? (
              <div className="col-span-full py-20 text-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-[32px]">
                 <ShieldAlert size={48} className="mx-auto text-gray-300 mb-4" />
-                <h3 className="text-xl font-black text-navy">Queue Clear!</h3>
-                <p className="text-sm font-bold text-navy/40 mt-2">There are no pending registrations awaiting review.</p>
+                <h3 className="text-xl font-black text-navy">{searchQuery ? 'No Matches' : 'Queue Clear!'}</h3>
+                <p className="text-sm font-bold text-navy/40 mt-2">
+                  {searchQuery ? `We couldn't find any results for "${searchQuery}"` : 'There are no pending registrations awaiting review.'}
+                </p>
              </div>
-           ) : applications.map((app) => (
+           ) : filteredApplications.map((app) => (
              <Card key={app.id} className="p-6 border border-gray-100 bg-white hover:shadow-xl transition-all duration-300 flex flex-col group">
                <div className="flex items-start justify-between mb-6">
                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${app.type === 'hospital' ? 'bg-blue-50 text-blue-500' : 'bg-purple-50 text-purple-500'}`}>
@@ -248,12 +308,12 @@ const Registrations = () => {
       {/* CERTIFICATE VIEWER MODAL */}
       {certModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-12 animate-in fade-in duration-200">
-          <div className="absolute inset-0 bg-navy/90 backdrop-blur-md" onClick={() => setCertModalOpen(false)}></div>
+          <div className="absolute inset-0 bg-navy/90 backdrop-blur-md" onClick={closeCertModal}></div>
           <div className="relative w-full max-w-4xl max-h-full flex flex-col items-center justify-center z-10 animate-in zoom-in-95 duration-200">
              
              <div className="w-full flex justify-end gap-4 mb-4">
                <button 
-                 disabled={downloadingAction !== null}
+                 disabled={downloadingAction !== null || previewLoading}
                  onClick={() => handleDownload(activeCertUrl, activeAppId, false)}
                  className="h-10 px-6 rounded-full bg-white/10 hover:bg-white/20 text-white font-black text-xs uppercase tracking-widest flex items-center gap-2 backdrop-blur-md transition-all disabled:opacity-50"
                >
@@ -264,20 +324,25 @@ const Registrations = () => {
                   )}
                   {downloadingAction === `view-${activeAppId}` ? 'Loading...' : 'Open Original File'}
                </button>
-               <button onClick={() => setCertModalOpen(false)} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur-md transition-all">
+               <button onClick={closeCertModal} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur-md transition-all">
                    <X size={20} />
                </button>
              </div>
 
              <div className="w-full bg-black/50 rounded-[32px] overflow-hidden border border-white/10 shadow-2xl flex items-center justify-center min-h-[50vh] p-4">
-               {activeCertUrl ? (
+               {previewLoading ? (
+                 <div className="text-center py-20">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-white mx-auto mb-4"></div>
+                    <p className="text-white font-bold">Securely fetching document...</p>
+                 </div>
+               ) : activeCertUrl ? (
                  <div className="flex flex-col items-center gap-6 w-full">
                    <img 
-                     src={activeCertUrl.toLowerCase().endsWith('.pdf') ? activeCertUrl.replace(/\.pdf$/i, '.jpg') : activeCertUrl} 
+                     src={activeCertUrl} 
                      alt="Certificate Preview" 
                      className="max-w-full max-h-[60vh] rounded-xl shadow-2xl border border-white/10"
                      onError={(e) => {
-                       // Fallback if JPG conversion fails: show a document icon
+                       // If it's a PDF, the blob will fail as an img src
                        e.target.style.display = 'none';
                        document.getElementById('pdf-fallback').style.display = 'block';
                      }}

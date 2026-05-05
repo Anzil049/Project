@@ -1,6 +1,8 @@
 const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const Doctor = require('../models/Doctor');
+const Hospital = require('../models/Hospital');
 
 // @desc    Get current user by checking all role cookies
 // @route   GET /api/auth/me
@@ -66,4 +68,55 @@ const getCurrentUser = asyncHandler(async (req, res) => {
     }
 });
 
-module.exports = { getCurrentUser };
+// @desc    Get featured doctors and hospitals for landing page
+// @route   GET /api/public/featured
+// @access  Public
+const getFeaturedData = asyncHandler(async (req, res) => {
+    // Fetch featured doctors
+    const featuredDoctorsProfiles = await Doctor.find({ isFeatured: true })
+        .populate({
+            path: 'user',
+            select: 'name email phone status image'
+        })
+        .populate({
+            path: 'hospitalId',
+            select: 'name'
+        });
+    
+    // Filter out blocked doctors
+    const featuredDoctors = featuredDoctorsProfiles
+        .filter(doc => doc.user && doc.user.status !== 'blocked')
+        .map(doc => ({
+            id: doc.user._id,
+            name: doc.user.name,
+            specialization: doc.specialization,
+            experience: doc.experience,
+            hospitalName: doc.hospitalId?.name || 'Independent',
+            image: doc.user.image || null
+        }));
+
+    // Fetch featured hospitals
+    const featuredHospitalsProfiles = await Hospital.find({ isFeatured: true })
+        .populate({
+            path: 'user',
+            select: 'name email phone status image'
+        });
+    
+    // Filter out blocked hospitals
+    const featuredHospitals = featuredHospitalsProfiles
+        .filter(hosp => hosp.user && hosp.user.status !== 'blocked')
+        .map(hosp => ({
+            id: hosp.user._id,
+            name: hosp.user.name,
+            facilityType: hosp.facilityType,
+            beds: hosp.beds,
+            image: hosp.user.image || null
+        }));
+
+    res.json({
+        doctors: featuredDoctors,
+        hospitals: featuredHospitals
+    });
+});
+
+module.exports = { getCurrentUser, getFeaturedData };

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button, Badge, ResponsiveTable } from '../../components/common';
 import { 
-  Building2, Search, ExternalLink, ShieldOff, CheckCircle2, MoreVertical, Plus
+  Building2, Search, ExternalLink, ShieldOff, CheckCircle2, MoreVertical, Plus, Star, Lock, Unlock, Trash2
 } from 'lucide-react';
 import adminService from '../../services/adminService';
 import toast from 'react-hot-toast';
@@ -41,6 +41,75 @@ const HospitalsDirectory = () => {
     } catch (err) {
       toast.error('Failed to update status');
     }
+  };
+
+  const toggleFeatured = async (id) => {
+    try {
+      const response = await adminService.toggleFeatured('hospital', id);
+      setHospitals(prev => prev.map(hosp => 
+        hosp.id === id ? { ...hosp, isFeatured: response.isFeatured } : hosp
+      ));
+      toast.success(response.message);
+    } catch (err) {
+      toast.error('Failed to update featured status');
+    }
+  };
+
+  const handleDeleteHospital = (id, name, currentStatus) => {
+    toast((t) => (
+      <div className="flex flex-col gap-4 p-1">
+        <div>
+          <p className="font-black text-navy text-sm uppercase tracking-tight">Manage Facility</p>
+          <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest mt-1">Choose action for {name}</p>
+        </div>
+        
+        <div className="grid grid-cols-1 gap-2">
+          <Button 
+            className="bg-red-500 hover:bg-red-600 text-white h-10 py-0 text-[10px] font-black uppercase tracking-widest rounded-xl border-none shadow-lg shadow-red-500/20"
+            onClick={async () => {
+              toast.dismiss(t.id);
+              try {
+                await adminService.deleteUser(id);
+                setHospitals(prev => prev.filter(hosp => hosp.id !== id));
+                toast.success('Hospital record deleted completely');
+              } catch (err) {
+                toast.error('Failed to delete hospital');
+              }
+            }}
+          >
+            <Trash2 size={14} className="mr-2" /> Delete Completely
+          </Button>
+          
+          <Button 
+            className="bg-amber-500 hover:bg-amber-600 text-white h-10 py-0 text-[10px] font-black uppercase tracking-widest rounded-xl border-none shadow-lg shadow-amber-500/20"
+            onClick={() => {
+              toast.dismiss(t.id);
+              toggleHospitalStatus(id);
+            }}
+          >
+            <Lock size={14} className="mr-2" /> {currentStatus === 'active' ? 'Block Access' : 'Unblock Access'}
+          </Button>
+          
+          <button 
+            className="text-[10px] font-bold text-navy/20 uppercase tracking-widest hover:text-navy/40 transition-colors py-2"
+            onClick={() => toast.dismiss(t.id)}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: 5000,
+      position: 'top-center',
+      style: {
+        borderRadius: '24px',
+        background: '#fff',
+        color: '#0f172a',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+        padding: '16px',
+        border: '1px solid #f1f5f9'
+      },
+    });
   };
 
   const filteredHospitals = hospitals.filter(hospital => 
@@ -139,13 +208,27 @@ const HospitalsDirectory = () => {
                data={filteredHospitals}
                renderActions={(hospital) => (
                  <div className="flex items-center justify-end gap-3 transition-opacity">
-                   <Button 
-                     onClick={() => toggleHospitalStatus(hospital.id)}
-                     variant={hospital.status === 'active' ? 'danger' : 'outline'}
-                     className={`h-8 px-4 text-[10px] font-black uppercase tracking-widest rounded-lg ${hospital.status === 'active' ? 'border-none' : 'hover:bg-green-500 hover:!text-white hover:border-green-500'}`}
+                   <button
+                     onClick={() => toggleFeatured(hospital.id)}
+                     className={`h-8 w-8 flex items-center justify-center rounded-lg border transition-all ${hospital.isFeatured ? 'bg-yellow-50 border-yellow-200 text-yellow-500 shadow-sm' : 'border-gray-200 text-navy/20 hover:text-yellow-500 hover:bg-yellow-50'}`}
+                     title={hospital.isFeatured ? 'Remove from Featured' : 'Mark as Featured'}
                    >
-                      {hospital.status === 'active' ? 'Block' : 'Unblock'}
-                   </Button>
+                     <Star size={16} fill={hospital.isFeatured ? 'currentColor' : 'none'} />
+                   </button>
+                    <button
+                      onClick={() => toggleHospitalStatus(hospital.id)}
+                      className={`h-8 w-8 flex items-center justify-center rounded-lg border transition-all ${hospital.status === 'active' ? 'border-gray-200 text-navy/20 hover:text-amber-500 hover:bg-amber-50' : 'bg-amber-50 border-amber-200 text-amber-500 shadow-sm'}`}
+                      title={hospital.status === 'active' ? 'Block Hospital' : 'Unblock Hospital'}
+                    >
+                      {hospital.status === 'active' ? <Unlock size={16} /> : <Lock size={16} />}
+                    </button>
+                    <button
+                      onClick={() => handleDeleteHospital(hospital.id, hospital.name, hospital.status)}
+                      className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 text-navy/20 hover:text-red-500 hover:bg-red-50 transition-all"
+                      title="Delete Hospital Completely"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                    <button 
                      onClick={() => navigate(`/hospitals/${hospital.id}`)}
                      className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 text-navy/40 hover:text-[#0D9488] hover:border-[#0D9488] hover:bg-gray-50 transition-all focus:outline-none focus:ring-2 focus:ring-[#0D9488]/20"
