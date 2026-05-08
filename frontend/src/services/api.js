@@ -40,16 +40,16 @@ api.interceptors.response.use(
       // Token expired, invalid, or user is blocked
       const activeRole = sessionStorage.getItem('medcare_active_role');
       
-      if (activeRole) {
-        localStorage.removeItem(`medcare_token_${activeRole}`);
-      }
+      // Clear data and notify store
+      localStorage.removeItem(`medcare_token_${activeRole}`);
+      sessionStorage.removeItem('medcare_active_role');
+
+      // Hard redirect to login page
+      const redirectUrl = isBlocked 
+        ? `/login?blocked=true&role=${activeRole || ''}`
+        : `/login?sessionExpired=true&role=${activeRole || ''}`;
       
-      // If user is blocked, force a clear and redirect
-      if (isBlocked) {
-        sessionStorage.clear();
-        // We use window.location for a hard redirect to the login page
-        window.location.href = `/login?blocked=true&role=${activeRole || ''}`;
-      }
+      window.location.href = redirectUrl;
     }
     return Promise.reject(error);
   }

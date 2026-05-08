@@ -88,6 +88,28 @@ const authService = {
   getFeaturedData: async () => {
     const response = await api.get('/auth/featured');
     return response.data;
+  },
+
+  /**
+   * Update current user profile
+   */
+  updateProfile: async (profileData) => {
+    const response = await api.put('/auth/profile', profileData);
+    return response.data;
+  },
+
+  /**
+   * Upload image to cloud storage
+   */
+  uploadImage: async (file) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    const response = await api.post('/auth/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data.url;
   }
 };
 

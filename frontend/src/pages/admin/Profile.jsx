@@ -5,18 +5,23 @@ import {
   User, Mail, Shield, Lock, Camera, Save, CheckCircle2
 } from 'lucide-react';
 
+import useAuthStore from '../../store/authStore';
+import authService from '../../services/authService';
+import { toast } from 'react-hot-toast';
+
 const AdminProfile = () => {
+  const { user, updateUser } = useAuthStore();
   const [activeTab, setActiveTab] = useState('personal');
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef(null);
 
   const [profileData, setProfileData] = useState({
-    firstName: 'System',
-    lastName: 'Administrator',
-    email: 'admin@medcare.com',
-    phone: '+1 (555) 000-0000',
-    role: 'Super Admin',
-    avatarUrl: null
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: user?.phone || '',
+    role: user?.role === 'admin' ? 'Super Admin' : user?.role,
+    image: user?.image || null
   });
 
   const [passwordForm, setPasswordForm] = useState({
@@ -43,9 +48,24 @@ const AdminProfile = () => {
     }
   };
 
-  const handleSaveProfile = () => {
-    setIsEditing(false);
-    console.log("Saving Admin Profile:", profileData);
+  const handleSaveProfile = async () => {
+    setIsSaving(true);
+    try {
+      const updateData = {
+        name: profileData.name,
+        phone: profileData.phone,
+        image: profileData.image
+      };
+
+      const result = await authService.updateProfile(updateData);
+      updateUser(result);
+      toast.success('Admin profile updated');
+      setIsEditing(false);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update admin profile');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -74,6 +94,7 @@ const AdminProfile = () => {
                  </Button>
                  <Button 
                    onClick={handleSaveProfile}
+                   loading={isSaving}
                    className="bg-[#0D9488] text-white rounded-[20px] font-black text-xs px-8 shadow-xl shadow-[#0D9488]/20 border-none flex items-center gap-2"
                  >
                    <Save size={14} /> Save Changes
@@ -99,10 +120,10 @@ const AdminProfile = () => {
                       onClick={handleAvatarClick}
                       className={`relative w-28 h-28 rounded-full border-4 border-white shadow-xl shadow-navy/5 overflow-hidden flex items-center justify-center bg-gray-50 mx-auto ${isEditing ? 'cursor-pointer' : ''}`}
                     >
-                      {profileData.avatarUrl ? (
-                         <img src={profileData.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                      {profileData.image ? (
+                         <img src={profileData.image} alt="Avatar" className="w-full h-full object-cover" />
                       ) : (
-                         <Avatar name={`${profileData.firstName} ${profileData.lastName}`} size="xl" className="w-full h-full text-3xl" />
+                         <Avatar name={profileData.name} size="xl" className="w-full h-full text-3xl" />
                       )}
                       {isEditing && (
                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -119,7 +140,7 @@ const AdminProfile = () => {
                    </div>
                  </div>
 
-                 <h3 className="text-xl font-black text-navy leading-tight">{profileData.firstName} {profileData.lastName}</h3>
+                 <h3 className="text-xl font-black text-navy leading-tight">{profileData.name}</h3>
                  <p className="text-[10px] font-black text-[#0D9488] uppercase tracking-[0.2em] mt-1 mb-4">{profileData.role}</p>
                  
                  <Badge variant="success" className="mx-auto bg-green-50 text-green-600 border-none text-[9px] uppercase font-black px-3">
@@ -164,18 +185,14 @@ const AdminProfile = () => {
                        </div>
 
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <Input 
-                            label="First Name" 
-                            value={profileData.firstName} 
-                            disabled={!isEditing}
-                            onChange={(e) => handleInputChange('firstName', e.target.value)}
-                          />
-                          <Input 
-                            label="Last Name" 
-                            value={profileData.lastName} 
-                            disabled={!isEditing}
-                            onChange={(e) => handleInputChange('lastName', e.target.value)}
-                          />
+                          <div className="md:col-span-2">
+                            <Input 
+                              label="Full Name" 
+                              value={profileData.name} 
+                              disabled={!isEditing}
+                              onChange={(e) => handleInputChange('name', e.target.value)}
+                            />
+                          </div>
                           <Input 
                             label="Email Address" 
                             type="email"

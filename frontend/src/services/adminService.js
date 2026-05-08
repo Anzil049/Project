@@ -9,6 +9,11 @@ const adminService = {
     return response.data;
   },
 
+  getApprovedRegistrations: async () => {
+    const response = await api.get('/admin/registrations/approved');
+    return response.data;
+  },
+
   /**
    * Approve a registration
    */

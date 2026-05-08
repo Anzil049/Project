@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { addDoctor, getDoctors, toggleDoctorStatus, deleteDoctor } = require('../controllers/hospitalController');
+const { 
+    addDoctor, 
+    getDoctors, 
+    toggleDoctorStatus, 
+    deleteDoctor,
+    updateDoctor 
+} = require('../controllers/hospitalController');
 const { protect } = require('../middleware/authMiddleware');
 
 const { doctorAddLimiter } = require('../middleware/rateLimitMiddleware');
@@ -17,6 +23,7 @@ router.post('/doctors', doctorAddLimiter, addDoctor);
 // @route   GET /api/hospital/doctors
 // @access  Private (Hospital)
 router.get('/doctors', getDoctors);
+router.put('/doctors/:id', updateDoctor);
 router.patch('/doctors/:id/status', toggleDoctorStatus);
 router.delete('/doctors/:id', deleteDoctor);
 

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
-import { Card, Button, Input, Badge } from '../../components/common';
+import { Card, Button, Input, Badge, LocationPicker, Avatar } from '../../components/common';
 import { 
   User, Mail, Phone, MapPin, 
   Shield, Camera, UploadCloud, X, Save,
@@ -8,34 +8,44 @@ import {
 } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 
+import authService from '../../services/authService';
+import { toast } from 'react-hot-toast';
+import { compressImage } from '../../utils/imageUtils';
+
 const PatientProfile = () => {
-  const { user } = useAuthStore();
+  const { user, updateUser } = useAuthStore();
   const [activeTab, setActiveTab] = useState('personal');
+  const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [avatarFile, setAvatarFile] = useState(null);
   const fileInputRef = useRef(null);
 
-  // Core structured data
+  // Core structured data initialized from real user data
   const [profile, setProfile] = useState({
-    name: user?.name || 'Sarah Johnson',
-    email: user?.email || 'sarah.j@example.com',
-    phone: '+91 98765 43210',
-    dob: '1992-05-14',
-    gender: 'Female',
-    address: '42 Lotus Apartments, Indiranagar',
-    city: 'Bangalore',
-    state: 'Karnataka',
-    zip: '560038',
-    avatarImage: user?.avatar || null,
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: user?.phone || '',
+    avatarImage: user?.image || null,
+    bloodGroup: user?.bloodGroup || '',
     
-    bloodGroup: 'O+',
-    height: '165',
-    weight: '62',
-    allergies: 'Penicillin, Dust mites',
-    chronicConditions: 'Mild Asthma',
+    dob: user?.dob || '',
+    gender: user?.gender || '',
+    address: user?.address || '',
+    city: user?.city || '',
+    state: user?.state || '',
+    zip: user?.zip || '',
     
-    emgName: 'Michael Johnson',
-    emgRelation: 'Spouse',
-    emgPhone: '+91 98765 00000',
+    height: user?.height || '',
+    weight: user?.weight || '',
+    allergies: user?.allergies || '',
+    chronicConditions: user?.chronicConditions || '',
+    
+    emgName: user?.emgName || '',
+    emgRelation: user?.emgRelation || '',
+    emgPhone: user?.emgPhone || '',
+    
+    latitude: user?.location?.coordinates?.[1] || null,
+    longitude: user?.location?.coordinates?.[0] || null,
   });
 
   const [passwordForm, setPasswordForm] = useState({
@@ -49,18 +59,48 @@ const PatientProfile = () => {
     if (file) {
       const url = URL.createObjectURL(file);
       setProfile(prev => ({ ...prev, avatarImage: url }));
+      setAvatarFile(file);
     }
   };
 
   const removeImage = () => {
     setProfile(prev => ({ ...prev, avatarImage: null }));
+    setAvatarFile(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setIsSaving(true);
-    setTimeout(() => {
+    try {
+      let finalImageUrl = profile.avatarImage;
+
+      if (avatarFile) {
+        toast.loading('Compressing & Uploading profile picture...', { id: 'upload-avatar' });
+        const compressed = await compressImage(avatarFile);
+        finalImageUrl = await authService.uploadImage(compressed);
+        toast.success('Profile picture uploaded', { id: 'upload-avatar' });
+      }
+
+      const updateData = {
+        name: profile.name,
+        phone: profile.phone,
+        bloodGroup: profile.bloodGroup,
+        image: finalImageUrl,
+        location: (profile.latitude && profile.longitude) ? {
+          type: 'Point',
+          coordinates: [parseFloat(profile.longitude), parseFloat(profile.latitude)]
+        } : undefined
+      };
+
+      const result = await authService.updateProfile(updateData);
+      updateUser(result);
+      setIsEditing(false);
+      setAvatarFile(null);
+      toast.success('Profile updated successfully');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update profile');
+    } finally {
       setIsSaving(false);
-    }, 1000);
+    }
   };
 
   return (
@@ -78,42 +118,67 @@ const PatientProfile = () => {
             </p>
           </div>
           
-          <Button 
-            onClick={handleSave}
-            loading={isSaving}
-            className="bg-[#0D9488] text-white rounded-[20px] font-black text-xs px-8 shadow-xl shadow-[#0D9488]/20 border-none flex items-center gap-2 transition-all hover:scale-105"
-          >
-            {!isSaving && <Save size={14} />} Save Changes
-          </Button>
+          <div className="flex items-center gap-4">
+             {isEditing ? (
+                <>
+                   <Button 
+                      variant="outline"
+                      onClick={() => setIsEditing(false)}
+                      className="rounded-[20px] font-bold text-xs px-6 border-gray-200"
+                   >
+                      Discard
+                   </Button>
+                   <Button 
+                      onClick={handleSave}
+                      loading={isSaving}
+                      className="bg-[#0D9488] text-white rounded-[20px] font-black text-xs px-8 shadow-xl shadow-[#0D9488]/20 border-none flex items-center gap-2 transition-all hover:scale-105"
+                   >
+                      <Save size={14} /> Save Changes
+                   </Button>
+                </>
+             ) : (
+                <Button 
+                   onClick={() => setIsEditing(true)}
+                   className="bg-navy text-white rounded-[20px] font-black text-xs px-8 shadow-lg shadow-navy/20 border-none"
+                >
+                   Edit Profile
+                </Button>
+             )}
+          </div>
         </div>
 
         {/* Avatar Box */}
         <Card className="p-8 mb-8 bg-white border border-gray-100 rounded-[40px] shadow-2xl shadow-navy/5 flex flex-col sm:flex-row items-center gap-8">
            <div className="relative group shrink-0">
-             <div className="w-32 h-32 rounded-[32px] overflow-hidden bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center relative">
-               {profile.avatarImage ? (
-                 <img src={profile.avatarImage} alt="Profile" className="w-full h-full object-cover" />
-               ) : (
-                 <User size={40} className="text-gray-300" />
-               )}
-               <div className="absolute inset-0 bg-navy/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-sm">
-                  <button onClick={() => fileInputRef.current?.click()} className="w-8 h-8 rounded-full bg-white text-[#0D9488] flex items-center justify-center hover:scale-110 transition-transform">
-                     <Camera size={14} />
+              <Avatar src={profile.avatarImage} name={profile.name} size="xl" className="border-4 border-white shadow-xl" />
+              {isEditing && (
+                <div className="absolute inset-0 bg-navy/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-sm z-10">
+                  <button 
+                    onClick={() => fileInputRef.current?.click()} 
+                    className="w-8 h-8 rounded-full bg-white text-[#0D9488] flex items-center justify-center hover:scale-110 transition-transform"
+                    type="button"
+                  >
+                    <Camera size={14} />
                   </button>
                   {profile.avatarImage && (
-                     <button onClick={removeImage} className="w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center hover:scale-110 transition-transform">
+                    <button 
+                        onClick={removeImage} 
+                        className="w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center hover:scale-110 transition-transform"
+                        type="button"
+                    >
                         <X size={14} />
-                     </button>
+                    </button>
                   )}
-               </div>
-             </div>
-             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-             <div className="absolute -bottom-3 -right-3 bg-white p-1 rounded-full shadow-lg border border-gray-50">
-               <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-500">
-                  <Shield size={14} className="fill-green-100" />
-               </div>
-             </div>
+                </div>
+              )}
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+              <div className="absolute -bottom-3 -right-3 bg-white p-1 rounded-full shadow-lg border border-gray-50">
+                <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-500">
+                   <Shield size={14} className="fill-green-100" />
+                </div>
+              </div>
            </div>
+           
            <div className="text-center sm:text-left">
              <h2 className="text-3xl font-black text-navy tracking-tight mb-2">{profile.name}</h2>
              <p className="text-sm font-bold text-navy/40 flex items-center justify-center sm:justify-start gap-2 mb-4">
@@ -128,9 +193,10 @@ const PatientProfile = () => {
         {/* Tabs */}
         <div className="bg-white border-b border-gray-200 mb-8 sticky top-[72px] z-20">
            <div className="flex overflow-x-auto hide-scrollbar">
-              {['personal', 'medical', 'emergency', 'security'].map((tab) => (
+              {['personal', 'medical', 'location', 'emergency', 'security'].map((tab) => (
                  <button
                     key={tab}
+                    type="button"
                     onClick={() => setActiveTab(tab)}
                     className={`px-8 py-5 text-[10px] font-black uppercase tracking-widest transition-all border-b-[3px] whitespace-nowrap ${
                        activeTab === tab 
@@ -148,39 +214,88 @@ const PatientProfile = () => {
         <div className="space-y-6">
            {activeTab === 'personal' && (
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Input label="Full Name" value={profile.name} onChange={(e) => setProfile({...profile, name: e.target.value})} />
+                <Input label="Full Name" value={profile.name} onChange={(e) => setProfile({...profile, name: e.target.value})} disabled={!isEditing} />
                 <Input label="Email Address" value={profile.email} disabled />
-                <Input label="Phone Number" value={profile.phone} onChange={(e) => setProfile({...profile, phone: e.target.value})} />
+                <Input label="Phone Number" value={profile.phone} onChange={(e) => setProfile({...profile, phone: e.target.value})} disabled={!isEditing} />
                 <div className="grid grid-cols-2 gap-4">
-                   <Input label="DOB" type="date" value={profile.dob} onChange={(e) => setProfile({...profile, dob: e.target.value})} />
-                   <Input label="Gender" value={profile.gender} onChange={(e) => setProfile({...profile, gender: e.target.value})} />
+                   <Input label="DOB" type="date" value={profile.dob} onChange={(e) => setProfile({...profile, dob: e.target.value})} disabled={!isEditing} />
+                   <Input label="Gender" value={profile.gender} onChange={(e) => setProfile({...profile, gender: e.target.value})} disabled={!isEditing} />
                 </div>
                 <div className="md:col-span-2">
-                   <Input label="Address" value={profile.address} onChange={(e) => setProfile({...profile, address: e.target.value})} />
+                   <Input label="Address" value={profile.address} onChange={(e) => setProfile({...profile, address: e.target.value})} disabled={!isEditing} />
                 </div>
-                <Input label="City" value={profile.city} onChange={(e) => setProfile({...profile, city: e.target.value})} />
-                <Input label="State" value={profile.state} onChange={(e) => setProfile({...profile, state: e.target.value})} />
+                <Input label="City" value={profile.city} onChange={(e) => setProfile({...profile, city: e.target.value})} disabled={!isEditing} />
+                <Input label="State" value={profile.state} onChange={(e) => setProfile({...profile, state: e.target.value})} disabled={!isEditing} />
              </div>
            )}
 
            {activeTab === 'medical' && (
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Input label="Blood Group" value={profile.bloodGroup} onChange={(e) => setProfile({...profile, bloodGroup: e.target.value})} />
+                <Input label="Blood Group" value={profile.bloodGroup} onChange={(e) => setProfile({...profile, bloodGroup: e.target.value})} disabled={!isEditing} />
                 <div className="grid grid-cols-2 gap-4">
-                   <Input label="Height (cm)" type="number" value={profile.height} onChange={(e) => setProfile({...profile, height: e.target.value})} />
-                   <Input label="Weight (kg)" type="number" value={profile.weight} onChange={(e) => setProfile({...profile, weight: e.target.value})} />
+                   <Input label="Height (cm)" type="number" value={profile.height} onChange={(e) => setProfile({...profile, height: e.target.value})} disabled={!isEditing} />
+                   <Input label="Weight (kg)" type="number" value={profile.weight} onChange={(e) => setProfile({...profile, weight: e.target.value})} disabled={!isEditing} />
                 </div>
                 <div className="md:col-span-2">
-                   <textarea placeholder="Allergies" value={profile.allergies} onChange={(e) => setProfile({...profile, allergies: e.target.value})} className="w-full h-24 bg-gray-50 border border-gray-100 rounded-2xl p-4 outline-none resize-none" />
+                   <textarea 
+                     placeholder="Allergies" 
+                     value={profile.allergies} 
+                     onChange={(e) => setProfile({...profile, allergies: e.target.value})} 
+                     disabled={!isEditing}
+                     className="w-full h-24 bg-gray-50 border border-gray-100 rounded-2xl p-4 outline-none resize-none disabled:opacity-60 disabled:cursor-not-allowed" 
+                   />
                 </div>
+             </div>
+           )}
+
+           {activeTab === 'location' && (
+             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="flex items-center justify-between mb-2">
+                   <div>
+                      <h3 className="text-xl font-black text-navy">Set Your Location</h3>
+                      <p className="text-xs font-bold text-navy/40">This helps us find the nearest doctors and hospitals for you.</p>
+                   </div>
+                   {profile.latitude && (
+                      <Badge variant="success" className="font-black text-[9px] px-3 uppercase tracking-widest">
+                         Location Set
+                      </Badge>
+                   )}
+                </div>
+                
+                <LocationPicker 
+                   lat={profile.latitude}
+                   lng={profile.longitude}
+                   onLocationSelect={(lat, lng) => setProfile({...profile, latitude: lat, longitude: lng})}
+                   disabled={!isEditing}
+                />
+
+                {isEditing && (
+                  <Button 
+                    variant="outline"
+                    onClick={() => {
+                        if ("geolocation" in navigator) {
+                          navigator.geolocation.getCurrentPosition((pos) => {
+                              setProfile({
+                                ...profile,
+                                latitude: pos.coords.latitude,
+                                longitude: pos.coords.longitude
+                              });
+                          });
+                        }
+                    }}
+                    className="w-full py-4 rounded-2xl border-dashed border-2 text-[10px] font-black uppercase tracking-widest"
+                  >
+                    <MapPin size={14} className="mr-2" /> Detect My Current Location
+                  </Button>
+                )}
              </div>
            )}
 
            {activeTab === 'emergency' && (
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Input label="Contact Name" value={profile.emgName} onChange={(e) => setProfile({...profile, emgName: e.target.value})} />
-                <Input label="Relationship" value={profile.emgRelation} onChange={(e) => setProfile({...profile, emgRelation: e.target.value})} />
-                <Input label="Phone" value={profile.emgPhone} onChange={(e) => setProfile({...profile, emgPhone: e.target.value})} />
+                <Input label="Contact Name" value={profile.emgName} onChange={(e) => setProfile({...profile, emgName: e.target.value})} disabled={!isEditing} />
+                <Input label="Relationship" value={profile.emgRelation} onChange={(e) => setProfile({...profile, emgRelation: e.target.value})} disabled={!isEditing} />
+                <Input label="Phone" value={profile.emgPhone} onChange={(e) => setProfile({...profile, emgPhone: e.target.value})} disabled={!isEditing} />
              </div>
            )}
 

@@ -8,7 +8,7 @@ const crypto = require('crypto');
 // @route   POST /api/hospital/doctors
 // @access  Private (Hospital)
 const addDoctor = asyncHandler(async (req, res) => {
-    const { name, email, phone, specialization, maxTokens, slots, availableDays, onlineConsultation, licenseNumber, experience } = req.body;
+    const { name, email, phone, specialization, maxTokens, slots, availableDays, onlineConsultation, licenseNumber, experience, image } = req.body;
     const hospitalId = req.user.userId;
 
     // Check if user already exists
@@ -32,6 +32,7 @@ const addDoctor = asyncHandler(async (req, res) => {
         isVerified: true, // Bypassing OTP as they are created by a verified hospital
         isApproved: true, // Hospital-added doctors are pre-approved
         isFirstLogin: true,
+        image: image || null,
     });
 
     if (user) {
@@ -43,8 +44,9 @@ const addDoctor = asyncHandler(async (req, res) => {
             maxTokens: maxTokens || 20,
             slots: slots || [],
             availableDays: availableDays || [],
-            onlineConsultation: onlineConsultation ?? true,
-            licenseNumber: licenseNumber || 'N/A', // If added by hospital, they can put a placeholder if not provided upfront
+            onlineConsultation: false, // Hospital doctors only support physical visits
+            isAcceptingAppointments: req.body.isAcceptingAppointments ?? true,
+            licenseNumber: licenseNumber || 'N/A', 
             experience: experience || 'N/A',
         });
 
@@ -131,9 +133,56 @@ const deleteDoctor = asyncHandler(async (req, res) => {
     res.json({ message: 'Doctor and associated account deleted permanently' });
 });
 
+// @desc    Update Doctor profile (including schedule)
+// @route   PUT /api/hospital/doctors/:id
+// @access  Private (Hospital)
+const updateDoctor = asyncHandler(async (req, res) => {
+    const doctorId = req.params.id;
+    const hospitalId = req.user.userId;
+    const { 
+        name, email, phone, specialization, maxTokens, 
+        slots, availableDays, onlineConsultation, 
+        isAcceptingAppointments, licenseNumber, experience, image 
+    } = req.body;
+
+    const doctor = await Doctor.findById(doctorId);
+    if (!doctor || doctor.hospitalId.toString() !== hospitalId.toString()) {
+        res.status(404);
+        throw new Error('Doctor not found or not affiliated with this hospital');
+    }
+
+    // Update Doctor profile
+    doctor.specialization = specialization || doctor.specialization;
+    doctor.maxTokens = maxTokens !== undefined ? maxTokens : doctor.maxTokens;
+    doctor.slots = slots || doctor.slots;
+    doctor.availableDays = availableDays || doctor.availableDays;
+    doctor.onlineConsultation = onlineConsultation !== undefined ? onlineConsultation : doctor.onlineConsultation;
+    doctor.isAcceptingAppointments = isAcceptingAppointments !== undefined ? isAcceptingAppointments : doctor.isAcceptingAppointments;
+    doctor.licenseNumber = licenseNumber || doctor.licenseNumber;
+    doctor.experience = experience || doctor.experience;
+
+    await doctor.save();
+
+    // Update User if name/email/phone provided
+    const user = await User.findById(doctor.user);
+    if (user) {
+        if (name) user.name = name;
+        if (email) user.email = email.toLowerCase();
+        if (phone) user.phone = phone;
+        if (image) user.image = image;
+        await user.save();
+    }
+
+    res.json({ 
+        message: 'Doctor profile updated successfully', 
+        doctor 
+    });
+});
+
 module.exports = {
     addDoctor,
     getDoctors,
     toggleDoctorStatus,
     deleteDoctor,
+    updateDoctor,
 };

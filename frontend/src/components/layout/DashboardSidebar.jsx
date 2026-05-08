@@ -34,7 +34,9 @@ const DashboardSidebar = ({ role = ROLES.PATIENT }) => {
     [ROLES.DOCTOR]: [
       { name: 'Dashboard', icon: <LayoutGrid size={22} />, path: '/doctor/dashboard' },
       { name: 'Appointments', icon: <Calendar size={22} />, path: '/doctor/appointments' },
-      { name: 'Consultation', icon: <Video size={22} />, path: '/doctor/consultation/sessions' },
+      ...(user?.doctorProfile && !user?.doctorProfile?.hospitalId ? [
+        { name: 'Consultation', icon: <Video size={22} />, path: '/doctor/consultation/sessions' }
+      ] : []),
       { name: 'Availability', icon: <Activity size={22} />, path: '/doctor/availability' },
       { name: 'Prescriptions', icon: <ClipboardList size={22} />, path: '/doctor/prescriptions' },
       { name: 'Profile', icon: <User size={22} />, path: '/doctor/profile' },
@@ -95,7 +97,7 @@ const DashboardSidebar = ({ role = ROLES.PATIENT }) => {
       <div className="p-4 mt-auto border-t border-gray-100 bg-gray-50/50">
         <div className="bg-white p-4 rounded-2xl border border-gray-100 flex items-center gap-3 shadow-sm">
           <Avatar 
-            src={user?.avatar} 
+            src={user?.image} 
             name={user?.name || "Guest User"} 
             size="md" 
           />

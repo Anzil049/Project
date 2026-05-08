@@ -21,19 +21,26 @@ const Login = () => {
   
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('blocked') === 'true') {
+    const blocked = params.get('blocked') === 'true';
+    const sessionExpired = params.get('sessionExpired') === 'true';
+
+    if (blocked || sessionExpired) {
       const role = params.get('role');
-      let message = 'Your account has been suspended. Please contact the platform administrator.';
+      let message = sessionExpired 
+        ? 'Your session has expired. Please log in again to continue.'
+        : 'Your account has been suspended. Please contact the platform administrator.';
       
-      if (role === 'doctor') {
-        message = 'Your account has been suspended. Please contact your hospital administrator.';
-      } else if (role === 'hospital') {
-        message = 'Your hospital account has been suspended. Please contact MedCare support.';
+      if (!sessionExpired) {
+        if (role === 'doctor') {
+          message = 'Your account has been suspended. Please contact your hospital administrator.';
+        } else if (role === 'hospital') {
+          message = 'Your hospital account has been suspended. Please contact MedCare support.';
+        }
       }
 
       toast.error(message, {
         duration: 8000,
-        id: 'blocked-toast'
+        id: 'auth-toast'
       });
       // Clear the param from URL
       window.history.replaceState({}, document.title, window.location.pathname);

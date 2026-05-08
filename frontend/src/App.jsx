@@ -99,7 +99,16 @@ const GuestRoute = ({ children }) => {
 };
 
 function App() {
-  const { login, setLoading, loading } = useAuthStore();
+  const { user, isAuthenticated, role, login, setLoading, loading } = useAuthStore();
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const userRole = role ? role.charAt(0).toUpperCase() + role.slice(1) : '';
+      document.title = `${user.name} | ${userRole}`;
+    } else {
+      document.title = 'MedCare';
+    }
+  }, [isAuthenticated, user, role]);
 
   useEffect(() => {
     const checkAuth = async () => {

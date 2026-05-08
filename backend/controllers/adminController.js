@@ -42,6 +42,42 @@ const getPendingRegistrations = asyncHandler(async (req, res) => {
     res.json(registrations);
 });
 
+// @desc    Get approved registrations
+// @route   GET /api/admin/registrations/approved
+// @access  Private/Admin
+const getApprovedRegistrations = asyncHandler(async (req, res) => {
+    const approvedUsers = await User.find({ 
+        role: { $in: ['doctor', 'hospital'] },
+        isVerified: true,
+        isApproved: true
+    }).select('-password').sort({ updatedAt: -1 });
+
+    const registrations = [];
+
+    for (const user of approvedUsers) {
+        let specificData = null;
+        if (user.role === 'doctor') {
+            specificData = await Doctor.findOne({ user: user._id });
+        } else if (user.role === 'hospital') {
+            specificData = await Hospital.findOne({ user: user._id });
+        }
+
+        registrations.push({
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            type: user.role,
+            submittedAt: user.createdAt,
+            approvedAt: user.updatedAt,
+            certPreview: user.certificate || null,
+            status: 'approved',
+            details: specificData
+        });
+    }
+
+    res.json(registrations);
+});
+
 // @desc    Approve a registration
 // @route   POST /api/admin/approve/:id
 // @access  Private/Admin
@@ -382,6 +418,7 @@ const deleteUser = asyncHandler(async (req, res) => {
 
 module.exports = {
     getPendingRegistrations,
+    getApprovedRegistrations,
     approveRegistration,
     rejectRegistration,
     downloadCertificate,

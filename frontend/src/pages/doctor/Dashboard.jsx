@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import useAuthStore from '../../store/authStore';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { 
   Users, Calendar, Video, Star, 
@@ -12,8 +13,9 @@ import {
 import { Card, Button, Badge, Avatar, Modal, Input } from '../../components/common';
 
 const DoctorDashboard = () => {
+  const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState('upcoming');
-  const [isIndependent, setIsIndependent] = useState(false);
+
   
   // Prescription Modal State
   const [isPrescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
@@ -63,13 +65,14 @@ const DoctorDashboard = () => {
   };
 
   const rawAppointments = [
-    { id: 1, patient: 'Rajesh Khanna', time: '10:00 AM', type: 'Physical', status: 'Consulting', token: 1, age: 45, gender: 'Male', reason: 'Persistent abdominal discomfort and mild fever since 3 days.', vitals: { bp: '132/88', pulse: '78', temp: '99.1°F', weight: '74kg' } },
-    { id: 2, patient: 'Sneha Kapoor', time: '10:30 AM', type: 'Online', status: 'Next', token: 2, age: 28, gender: 'Female', reason: 'Post-op follow up and prescription renewal.', vitals: { bp: '110/70', pulse: '72', temp: '98.4°F', weight: '58kg' } },
-    { id: 3, patient: 'Arjun Mehra', time: '11:00 AM', type: 'Physical', status: 'Scheduled', token: 3, age: 52, gender: 'Male', reason: 'Annual cardiac screening and cholesterol review.', vitals: { bp: '145/95', pulse: '84', temp: '98.6°F', weight: '88kg' } },
-    { id: 4, patient: 'Priya Sharma', time: '11:30 AM', type: 'Online', status: 'Completed', token: 4, age: 34, gender: 'Female', reason: 'Follow up on laboratory results for chest pain.', vitals: { bp: '120/80', pulse: '70', temp: '98.6°F', weight: '65kg' } },
-    { id: 5, patient: 'Amit Verma', time: '12:00 PM', type: 'Physical', status: 'Scheduled', token: 5, age: 19, gender: 'Male', reason: 'Routine sports physical and vaccination update.', vitals: { bp: '118/76', pulse: '64', temp: '98.2°F', weight: '70kg' } }
+    { id: 1, patient: 'Rajesh Khanna', time: '10:00 AM', type: 'Physical', status: 'Consulting', token: 1, age: 45, gender: 'Male', reason: 'Persistent abdominal discomfort and mild fever since 3 days.', vitals: { bp: '132/88', pulse: '78', temp: '99.1Â°F', weight: '74kg' } },
+    { id: 2, patient: 'Sneha Kapoor', time: '10:30 AM', type: 'Online', status: 'Next', token: 2, age: 28, gender: 'Female', reason: 'Post-op follow up and prescription renewal.', vitals: { bp: '110/70', pulse: '72', temp: '98.4Â°F', weight: '58kg' } },
+    { id: 3, patient: 'Arjun Mehra', time: '11:00 AM', type: 'Physical', status: 'Scheduled', token: 3, age: 52, gender: 'Male', reason: 'Annual cardiac screening and cholesterol review.', vitals: { bp: '145/95', pulse: '84', temp: '98.6Â°F', weight: '88kg' } },
+    { id: 4, patient: 'Priya Sharma', time: '11:30 AM', type: 'Online', status: 'Completed', token: 4, age: 34, gender: 'Female', reason: 'Follow up on laboratory results for chest pain.', vitals: { bp: '120/80', pulse: '70', temp: '98.6Â°F', weight: '65kg' } },
+    { id: 5, patient: 'Amit Verma', time: '12:00 PM', type: 'Physical', status: 'Scheduled', token: 5, age: 19, gender: 'Male', reason: 'Routine sports physical and vaccination update.', vitals: { bp: '118/76', pulse: '64', temp: '98.2Â°F', weight: '70kg' } }
   ];
 
+  const isIndependent = !user?.doctorProfile?.hospitalId;
   const todayAppointments = isIndependent 
     ? rawAppointments 
     : rawAppointments.filter(app => app.type === 'Physical');
@@ -150,18 +153,12 @@ const DoctorDashboard = () => {
            <div className="space-y-2">
               <div className="flex items-center gap-4">
                  <h1 className="text-4xl font-heading font-black text-navy tracking-tight">
-                   Welcome, <span className="text-[#0D9488]">Dr. Wilson</span>
+                   Welcome, <span className="text-[#0D9488]">Dr. {user?.name?.split(' ').pop()}</span>
                  </h1>
-                 <button 
-                  onClick={() => setIsIndependent(!isIndependent)}
-                  className="px-4 py-1.5 bg-gray-100 rounded-full text-[9px] font-black uppercase tracking-widest text-navy/40 hover:bg-[#0D9488]/10 hover:text-[#0D9488] transition-all"
-                 >
-                    Switch to {isIndependent ? 'Hospital' : 'Independent'} Mode
-                 </button>
               </div>
               <p className="text-[10px] font-black text-navy/70 uppercase tracking-[0.25em] flex items-center gap-2">
                  <Activity size={14} className="text-[#0D9488]" /> 
-                 {isIndependent ? 'Independent Private Clinic' : 'City General Hospital • Cardiology'} • {todayAppointments.filter(a => a.status === 'Scheduled').length} Slots Remaining
+                 {isIndependent ? 'Independent Private Clinic' : 'City General Hospital'} â€¢ Cardiology â€¢ {todayAppointments.filter(a => a.status === 'Scheduled').length} Slots Remaining
               </p>
            </div>
         </div>
@@ -301,7 +298,7 @@ const DoctorDashboard = () => {
                        </div>
                     </Card>
                  </div>
-              )}
+               )}
            </div>
 
            {/* Sidebar: Next Patient & Utility */}
@@ -319,7 +316,7 @@ const DoctorDashboard = () => {
                     <div className="flex items-center justify-between">
                        <div className="space-y-1">
                           <h4 className="text-[10px] font-black uppercase tracking-[0.25em] text-white">Coming Up Next</h4>
-                          <p className="text-xs font-black text-[#0D9488]">Token T-{todayAppointments.find(a => a.status === 'Next' || a.status === 'Scheduled')?.token || 'No'} • {todayAppointments.find(a => a.status === 'Next' || a.status === 'Scheduled')?.type === 'Online' ? 'Digital Queue' : 'Live Queue'}</p>
+                          <p className="text-xs font-black text-[#0D9488]">Token T-{todayAppointments.find(a => a.status === 'Next' || a.status === 'Scheduled')?.token || 'No'} â€¢ {todayAppointments.find(a => a.status === 'Next' || a.status === 'Scheduled')?.type === 'Online' ? 'Digital Queue' : 'Live Queue'}</p>
                        </div>
                        <div className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/10">
                           <Activity size={20} className="text-white" />
@@ -330,7 +327,7 @@ const DoctorDashboard = () => {
                        <Avatar name={todayAppointments.find(a => a.status === 'Next' || a.status === 'Scheduled')?.patient || 'Next'} size="xl" className="ring-4 ring-white/10" />
                        <div>
                           <p className="font-heading font-black text-2xl leading-tight text-white">{todayAppointments.find(a => a.status === 'Next' || a.status === 'Scheduled')?.patient || 'No Patient'}</p>
-                          <p className="text-[11px] font-black text-white/70 uppercase tracking-widest mt-1 italic">{todayAppointments.find(a => a.status === 'Next' || a.status === 'Scheduled')?.type === 'Online' ? 'Video Consult' : 'Physical Visit'} • {todayAppointments.find(a => a.status === 'Next' || a.status === 'Scheduled')?.time}</p>
+                          <p className="text-[11px] font-black text-white/70 uppercase tracking-widest mt-1 italic">{todayAppointments.find(a => a.status === 'Next' || a.status === 'Scheduled')?.type === 'Online' ? 'Video Consult' : 'Physical Visit'} â€¢ {todayAppointments.find(a => a.status === 'Next' || a.status === 'Scheduled')?.time}</p>
                        </div>
                     </div>
 
@@ -368,7 +365,7 @@ const DoctorDashboard = () => {
               <Avatar name={selectedPatient?.patient} size="lg" />
               <div>
                 <p className="text-sm font-black text-navy uppercase tracking-widest leading-none mb-1">{selectedPatient?.patient}</p>
-                <p className="text-[10px] font-black text-[#0D9488] uppercase tracking-widest">Token T-{selectedPatient?.token} • {selectedPatient?.type} Visit</p>
+                <p className="text-[10px] font-black text-[#0D9488] uppercase tracking-widest">Token T-{selectedPatient?.token} â€¢ {selectedPatient?.type} Visit</p>
               </div>
             </div>
             <div className="text-right">
@@ -497,7 +494,7 @@ const DoctorDashboard = () => {
                     <h2 className="text-2xl font-black text-navy uppercase tracking-widest mb-1">{selectedPatient?.patient}</h2>
                     <div className="flex items-center gap-3">
                        <Badge className="bg-navy text-white text-[10px] px-4">Patient ID: #PAT-{selectedPatient?.id}024</Badge>
-                       <span className="text-xs font-black text-navy/40 uppercase tracking-widest">{selectedPatient?.gender} • {selectedPatient?.age} Years</span>
+                       <span className="text-xs font-black text-navy/40 uppercase tracking-widest">{selectedPatient?.gender} â€¢ {selectedPatient?.age} Years</span>
                     </div>
                  </div>
               </div>

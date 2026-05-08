@@ -23,18 +23,21 @@ const Registrations = () => {
   const [processing, setProcessing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'approved'
 
   useEffect(() => {
     fetchRegistrations();
-  }, []);
+  }, [activeTab]);
 
   const fetchRegistrations = async () => {
     try {
       setLoading(true);
-      const data = await adminService.getPendingRegistrations();
+      const data = activeTab === 'pending' 
+        ? await adminService.getPendingRegistrations()
+        : await adminService.getApprovedRegistrations();
       setApplications(data);
     } catch (error) {
-      toast.error('Failed to load pending registrations');
+      toast.error(`Failed to load ${activeTab} registrations`);
     } finally {
       setLoading(false);
     }
@@ -183,19 +186,47 @@ const Registrations = () => {
               Onboarding <span className="text-[#0D9488]">Queue</span>
             </h1>
             <p className="text-[10px] font-black text-navy/40 uppercase tracking-[0.25em] flex items-center gap-2">
-              <ShieldAlert size={14} className="text-orange-500" /> Pending identity verifications
+              <ShieldAlert size={14} className="text-orange-500" /> Identity verification management
             </p>
           </div>
-          <div className="relative w-full md:w-64">
-             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/40" />
-             <input 
-               type="text" 
-               placeholder="Search registry..." 
-               value={searchQuery}
-               onChange={(e) => setSearchQuery(e.target.value)}
-               className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3 pl-10 pr-4 text-sm font-bold text-navy outline-none focus:border-[#0D9488] transition-all"
-             />
+          
+          <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
+            {/* Toggle Switch */}
+            <div className="flex bg-gray-100 p-1 rounded-2xl w-full md:w-auto">
+              <button
+                onClick={() => setActiveTab('pending')}
+                className={`flex-1 md:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'pending' ? 'bg-white text-navy shadow-sm' : 'text-navy/40 hover:text-navy'}`}
+              >
+                Pending
+              </button>
+              <button
+                onClick={() => setActiveTab('approved')}
+                className={`flex-1 md:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'approved' ? 'bg-white text-navy shadow-sm' : 'text-navy/40 hover:text-navy'}`}
+              >
+                Approved
+              </button>
+            </div>
+
+            <div className="relative w-full md:w-64">
+               <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/40" />
+               <input 
+                 type="text" 
+                 placeholder="Search registry..." 
+                 value={searchQuery}
+                 onChange={(e) => setSearchQuery(e.target.value)}
+                 className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3 pl-10 pr-4 text-sm font-bold text-navy outline-none focus:border-[#0D9488] transition-all"
+               />
+            </div>
           </div>
+        </div>
+
+        {/* Disclaimer */}
+        <div className="mb-8 p-4 bg-orange-50 border border-orange-100 rounded-2xl flex items-start gap-3">
+          <ShieldAlert size={18} className="text-orange-500 shrink-0 mt-0.5" />
+          <p className="text-xs font-bold text-navy/60 leading-relaxed">
+            <span className="text-orange-600 font-black uppercase mr-2 text-[10px]">Registry Policy:</span>
+            Rejected applications are permanently removed from our active database to ensure data integrity. Users can re-apply after addressing the specified rejection reason provided in their notification.
+          </p>
         </div>
 
         {/* Applications Grid */}
@@ -203,14 +234,18 @@ const Registrations = () => {
            {loading ? (
              <div className="col-span-full py-20 text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-[#0D9488] mx-auto mb-4"></div>
-                <p className="text-navy/60 font-bold">Loading registrations...</p>
+                <p className="text-navy/60 font-bold">Loading {activeTab} registrations...</p>
              </div>
            ) : filteredApplications.length === 0 ? (
              <div className="col-span-full py-20 text-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-[32px]">
                 <ShieldAlert size={48} className="mx-auto text-gray-300 mb-4" />
-                <h3 className="text-xl font-black text-navy">{searchQuery ? 'No Matches' : 'Queue Clear!'}</h3>
+                <h3 className="text-xl font-black text-navy">{searchQuery ? 'No Matches' : activeTab === 'pending' ? 'Queue Clear!' : 'No Approvals Yet'}</h3>
                 <p className="text-sm font-bold text-navy/40 mt-2">
-                  {searchQuery ? `We couldn't find any results for "${searchQuery}"` : 'There are no pending registrations awaiting review.'}
+                  {searchQuery 
+                    ? `We couldn't find any results for "${searchQuery}"` 
+                    : activeTab === 'pending' 
+                      ? 'There are no pending registrations awaiting review.'
+                      : 'No applications have been approved recently.'}
                 </p>
              </div>
            ) : filteredApplications.map((app) => (
@@ -219,8 +254,12 @@ const Registrations = () => {
                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${app.type === 'hospital' ? 'bg-blue-50 text-blue-500' : 'bg-purple-50 text-purple-500'}`}>
                    {app.type === 'hospital' ? <Building2 size={24} /> : <Stethoscope size={24} />}
                  </div>
-                 <Badge bg="bg-amber-50" text="text-amber-600" className="text-[10px] font-black uppercase text-amber-600 border-none shadow-none">
-                    Pending
+                 <Badge 
+                    bg={activeTab === 'pending' ? 'bg-amber-50' : 'bg-green-50'} 
+                    text={activeTab === 'pending' ? 'text-amber-600' : 'text-green-600'} 
+                    className="text-[10px] font-black uppercase border-none shadow-none"
+                  >
+                    {activeTab === 'pending' ? 'Pending' : 'Approved'}
                  </Badge>
                </div>
                
@@ -228,8 +267,12 @@ const Registrations = () => {
                  <h3 className="text-lg font-black text-navy mb-1 line-clamp-1">{app.name}</h3>
                  <p className="text-xs font-bold text-navy/40 line-clamp-1">{app.email}</p>
                  <div className="mt-4 inline-block bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-                    <p className="text-[10px] font-black uppercase text-navy/40 tracking-widest leading-none">Submitted</p>
-                    <p className="text-xs font-bold text-navy mt-1">{new Date(app.submittedAt).toLocaleString()}</p>
+                    <p className="text-[10px] font-black uppercase text-navy/40 tracking-widest leading-none">
+                      {activeTab === 'pending' ? 'Submitted' : 'Approved On'}
+                    </p>
+                    <p className="text-xs font-bold text-navy mt-1">
+                      {new Date(activeTab === 'pending' ? app.submittedAt : app.approvedAt).toLocaleString()}
+                    </p>
                  </div>
                </div>
 
@@ -242,21 +285,24 @@ const Registrations = () => {
                  >
                     <FileText size={14} className="mr-2" /> View Certificate
                  </Button>
-                 <div className="grid grid-cols-2 gap-3">
-                   <Button 
-                      onClick={() => handleApprove(app.id)}
-                      className="bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-500/20 text-xs font-black rounded-xl"
-                   >
-                      <Check size={14} className="mr-2" /> Approve
-                   </Button>
-                   <Button 
-                      variant="danger"
-                      onClick={() => openRejectModal(app.id)}
-                      className="text-xs font-black rounded-xl shadow-lg shadow-red-500/20"
-                   >
-                      <X size={14} className="mr-2" /> Reject
-                   </Button>
-                 </div>
+                 
+                 {activeTab === 'pending' && (
+                   <div className="grid grid-cols-2 gap-3">
+                     <Button 
+                        onClick={() => handleApprove(app.id)}
+                        className="bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-500/20 text-xs font-black rounded-xl"
+                     >
+                        <Check size={14} className="mr-2" /> Approve
+                     </Button>
+                     <Button 
+                        variant="danger"
+                        onClick={() => openRejectModal(app.id)}
+                        className="text-xs font-black rounded-xl shadow-lg shadow-red-500/20"
+                     >
+                        <X size={14} className="mr-2" /> Reject
+                     </Button>
+                   </div>
+                 )}
                </div>
              </Card>
            ))}

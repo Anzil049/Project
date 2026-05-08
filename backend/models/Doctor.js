@@ -28,7 +28,7 @@ const doctorSchema = mongoose.Schema({
     },
     onlineConsultation: {
         type: Boolean,
-        default: true,
+        default: false,
     },
     availableDays: [{
         type: String,
@@ -41,8 +41,34 @@ const doctorSchema = mongoose.Schema({
         type: Boolean,
         default: false,
     },
+    isAcceptingAppointments: {
+        type: Boolean,
+        default: true,
+    },
+    about: {
+        type: String,
+    },
+    phone: {
+        type: String,
+    },
+    fee: {
+        type: Number,
+        default: 500,
+    },
 }, {
     timestamps: true,
+});
+
+// Enforce consultation rules: Hospital doctors are physical only, Independent doctors default to online
+doctorSchema.pre('save', async function() {
+    if (this.hospitalId) {
+        this.onlineConsultation = false;
+    } else {
+        // If they are independent and it hasn't been set, default to true
+        if (this.onlineConsultation === undefined || this.onlineConsultation === null) {
+            this.onlineConsultation = true;
+        }
+    }
 });
 
 const Doctor = mongoose.model('Doctor', doctorSchema);

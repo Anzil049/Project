@@ -6,7 +6,8 @@ import {
   Mail, Phone, Clock, Stethoscope, 
   ChevronRight, MoreVertical, Calendar,
   AlertCircle, Hash, X, Check, Camera, Image as ImageIcon,
-  Video, VideoOff, ShieldOff, Lock, Unlock, ShieldCheck, Loader2
+  Video, VideoOff, ShieldOff, Lock, Unlock, ShieldCheck, Loader2,
+  CalendarCheck
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -21,14 +22,9 @@ const doctorSchema = z.object({
   phone: z.string().min(10, 'Invalid phone number'),
   specialization: z.string().min(1, 'Please select a specialization'),
   customSpecialization: z.string().optional(),
-  onlineConsultation: z.boolean().default(true),
+
   licenseNumber: z.string().min(3, 'License number is required'),
   experience: z.string().min(1, 'Experience is required'),
-  slots: z.array(z.object({
-    start: z.string(),
-    end: z.string()
-  })).min(1, 'At least one session is required'),
-  availableDays: z.array(z.string()).min(1, 'Select at least one day'),
   image: z.any().optional()
 }).refine(data => {
   if (data.specialization === 'Other' && !data.customSpecialization) {
@@ -67,11 +63,12 @@ const HospitalDoctors = () => {
         specialization: doc.specialization,
         licenseNumber: doc.licenseNumber,
         experience: doc.experience,
-        image: doc.user?.certificate || '', // Assuming image is handled here or mock it
+        image: doc.user?.image || '',
         slots: doc.slots || [],
         availableDays: doc.availableDays || [],
         maxTokens: doc.maxTokens,
-        onlineConsultation: doc.onlineConsultation,
+
+        isAcceptingAppointments: doc.isAcceptingAppointments ?? true,
         appointmentsToday: 0, // Mock for now
         status: doc.user?.status || 'active'
       }));
@@ -88,6 +85,11 @@ const HospitalDoctors = () => {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [editingDoctor, setEditingDoctor] = useState(null);
   const [viewingDoctor, setViewingDoctor] = useState(null);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [scheduleDoctor, setScheduleDoctor] = useState(null);
+  const [tempSlots, setTempSlots] = useState([]);
+  const [tempDays, setTempDays] = useState([]);
+  const [isAccepting, setIsAccepting] = useState(true);
 
   const {
     register,
@@ -105,9 +107,7 @@ const HospitalDoctors = () => {
       email: '',
       phone: '',
       maxTokens: 20,
-      slots: [{ start: '09:00', end: '17:00' }],
-      availableDays: allDays,
-      onlineConsultation: true,
+
       image: null
     }
   });
@@ -115,7 +115,6 @@ const HospitalDoctors = () => {
   const specialization = watch('specialization');
   const availableDays = watch('availableDays');
   const slots = watch('slots');
-  const onlineConsultation = watch('onlineConsultation');
   const image = watch('image');
 
   const specializations = [
@@ -140,9 +139,7 @@ const HospitalDoctors = () => {
         licenseNumber: doctor.licenseNumber || '',
         experience: doctor.experience || '',
         maxTokens: doctor.maxTokens || 20,
-        slots: [...doctor.slots],
-        availableDays: [...doctor.availableDays],
-        onlineConsultation: doctor.onlineConsultation ?? true,
+
         image: doctor.image || null
       });
     } else {
@@ -156,9 +153,7 @@ const HospitalDoctors = () => {
         licenseNumber: '',
         experience: '',
         maxTokens: 20,
-        slots: [{ start: '09:00', end: '17:00' }],
-        availableDays: allDays,
-        onlineConsultation: true,
+
         image: null
       });
     }
@@ -200,6 +195,54 @@ const HospitalDoctors = () => {
     const newSlots = [...slots];
     newSlots[index][field] = value;
     setValue('slots', newSlots);
+  };
+
+  const handleOpenScheduleModal = (doctor) => {
+    setScheduleDoctor(doctor);
+    setTempSlots(doctor.slots.length > 0 ? [...doctor.slots] : [{ start: '09:00', end: '17:00' }]);
+    setTempDays(doctor.availableDays.length > 0 ? [...doctor.availableDays] : allDays);
+    setIsAccepting(doctor.isAcceptingAppointments ?? true);
+    setIsScheduleModalOpen(true);
+  };
+
+  const submitSchedule = async () => {
+    try {
+      setSubmitting(true);
+      const response = await hospitalService.updateDoctor(scheduleDoctor.id, {
+        slots: tempSlots,
+        availableDays: tempDays,
+        isAcceptingAppointments: isAccepting
+      });
+      toast.success(response.message);
+      setIsScheduleModalOpen(false);
+      fetchDoctors();
+    } catch (err) {
+      toast.error('Failed to update schedule');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleTempDayToggle = (day) => {
+    setTempDays(prev => 
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    );
+  };
+
+  const handleAddTempSlot = () => {
+    setTempSlots([...tempSlots, { start: '09:00', end: '17:00' }]);
+  };
+
+  const handleRemoveTempSlot = (index) => {
+    if (tempSlots.length > 1) {
+      setTempSlots(tempSlots.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleTempSlotChange = (index, field, value) => {
+    const newSlots = [...tempSlots];
+    newSlots[index][field] = value;
+    setTempSlots(newSlots);
   };
 
   const handleToggleStatus = async (id) => {
@@ -279,8 +322,13 @@ const HospitalDoctors = () => {
     try {
       setSubmitting(true);
       if (editingDoctor) {
-        // Handle edit (not implemented yet)
-        toast.error('Editing doctor is not implemented yet.');
+        const response = await hospitalService.updateDoctor(editingDoctor.id, {
+          ...data,
+          specialization: finalSpecialization
+        });
+        toast.success(response.message || 'Doctor record updated!');
+        fetchDoctors();
+        setIsModalOpen(false);
       } else {
         const response = await hospitalService.addDoctor({
           ...data,
@@ -391,24 +439,23 @@ const HospitalDoctors = () => {
                               <p className="text-[10px] font-black text-[#0D9488] uppercase tracking-wider flex items-center gap-1">
                                  <Calendar size={10} /> {formatDays(doctor.availableDays)}
                               </p>
-                              {doctor.onlineConsultation ? (
-                                <div className="flex items-center gap-1 text-[9px] font-black text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">
-                                   <Video size={10} /> ONLINE
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1 text-[9px] font-black text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
-                                   <VideoOff size={10} /> OFFLINE
-                                </div>
-                              )}
+
                            </div>
                         </td>
                         <td className="px-8 py-6">
                            <div className="flex flex-col gap-1.5">
-                              {doctor.slots.map((slot, i) => (
+                              {!doctor.isAcceptingAppointments && (
+                                <div className="inline-flex items-center self-start gap-1.5 px-2 py-0.5 bg-red-50 text-red-600 rounded text-[8px] font-black uppercase tracking-tighter border border-red-100 mb-1">
+                                   <X size={10} /> Booking Paused
+                                </div>
+                              )}
+                              {doctor.slots.length > 0 ? doctor.slots.map((slot, i) => (
                                 <div key={i} className="inline-flex items-center self-start gap-2 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-wider border border-blue-100/50">
                                    <Clock size={10} /> {slot.start} - {slot.end}
                                 </div>
-                              ))}
+                              )) : (
+                                <p className="text-[10px] font-bold text-navy/20 italic">No slots defined</p>
+                              )}
                            </div>
                         </td>
                         <td className="px-8 py-6 text-center">
@@ -421,6 +468,9 @@ const HospitalDoctors = () => {
                         </td>
                         <td className="px-8 py-6">
                           <div className="flex items-center justify-end gap-2">
+                             <button onClick={() => handleOpenScheduleModal(doctor)} className="p-2 text-navy/30 hover:text-[#0D9488] hover:bg-[#0D9488]/10 rounded-xl transition-all" title="Manage Schedule">
+                                <CalendarCheck size={18} />
+                             </button>
                              <button onClick={() => handleOpenModal(doctor)} className="p-2 text-navy/30 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all" title="Edit Profile">
                                 <Edit2 size={18} />
                              </button>
@@ -457,19 +507,12 @@ const HospitalDoctors = () => {
                            <p className="font-bold text-navy">{doctor.name}</p>
                            <div className="flex items-center gap-2 mt-1">
                               <p className="text-[10px] font-bold text-navy/40 uppercase tracking-wider text-[#0D9488]">{formatDays(doctor.availableDays)}</p>
-                              {doctor.onlineConsultation ? (
-                                <span className="text-[8px] font-black text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
-                                   <Video size={10} /> Online
-                                </span>
-                              ) : (
-                                <span className="text-[8px] font-black text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
-                                   <VideoOff size={10} /> Offline
-                                </span>
-                              )}
+
                            </div>
                         </div>
                     </div>
                     <div className="flex gap-1.5">
+                      <button onClick={() => handleOpenScheduleModal(doctor)} className="p-2 text-[#0D9488] bg-[#0D9488]/10 rounded-lg" title="Schedule"><CalendarCheck size={16} /></button>
                       <button onClick={() => handleOpenViewModal(doctor)} className="p-2 text-[#0D9488] bg-[#0D9488]/10 rounded-lg"><Eye size={16} /></button>
                       <button onClick={() => handleOpenModal(doctor)} className="p-2 text-blue-500 bg-blue-50 rounded-lg"><Edit2 size={16} /></button>
                       <button 
@@ -486,14 +529,21 @@ const HospitalDoctors = () => {
                       <div className="p-4 bg-gray-50 rounded-2xl">
                          <p className="text-[8px] font-black text-navy/30 uppercase tracking-widest mb-2 flex items-center justify-between">
                             Availability Sessions
-                            <span className="text-[#0D9488]">{doctor.specialization}</span>
+                            <div className="flex items-center gap-2">
+                               {!doctor.isAcceptingAppointments && (
+                                 <span className="text-[8px] font-black text-red-500 bg-red-50 px-1.5 py-0.5 rounded uppercase tracking-tighter">Paused</span>
+                               )}
+                               <span className="text-[#0D9488]">{doctor.specialization}</span>
+                            </div>
                          </p>
                          <div className="flex flex-wrap gap-2">
-                            {doctor.slots.map((slot, i) => (
+                            {doctor.slots.length > 0 ? doctor.slots.map((slot, i) => (
                               <p key={i} className="text-[9px] font-bold text-navy/70 flex items-center gap-1.5 uppercase bg-white px-2 py-1 rounded-md shadow-sm border border-gray-100">
                                  <Clock size={10} className="text-[#0D9488]" /> {slot.start} - {slot.end}
                               </p>
-                            ))}
+                            )) : (
+                              <p className="text-[10px] font-bold text-navy/20 italic">No slots defined</p>
+                            )}
                          </div>
                       </div>
                       <div className="p-4 bg-gray-50 rounded-2xl flex items-center justify-between">
@@ -564,31 +614,7 @@ const HospitalDoctors = () => {
                      </div>
                   </div>
                </Card>
-               <Card className="p-5 border-gray-100 shadow-none bg-white">
-                  <p className="text-[8px] font-black text-navy/30 uppercase tracking-widest mb-3">Consultation Status</p>
-                  <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                         <div className="flex items-center gap-2">
-                           {viewingDoctor.onlineConsultation ? (
-                             <>
-                                <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center"><Video size={16}/></div>
-                                <span className="text-sm font-black text-navy uppercase tracking-tight">Virtual Sessions Enabled</span>
-                             </>
-                           ) : (
-                             <>
-                                <div className="w-8 h-8 rounded-xl bg-gray-100 text-gray-400 flex items-center justify-center"><VideoOff size={16}/></div>
-                                <span className="text-sm font-black text-navy/40 uppercase tracking-tight">Offline Only</span>
-                             </>
-                           )}
-                         </div>
-                         <div className={`w-2 h-2 rounded-full ${viewingDoctor.onlineConsultation ? 'bg-[#0D9488] animate-pulse' : 'bg-gray-300'}`} />
-                      </div>
-                      <div className="flex items-center gap-2 p-2 bg-green-50 rounded-xl">
-                         <div className="w-6 h-6 rounded-lg bg-[#0D9488] text-white flex items-center justify-center"><Check size={12}/></div>
-                         <span className="text-[9px] font-black text-green-700 uppercase tracking-tight">Verified Practitioner</span>
-                      </div>
-                  </div>
-               </Card>
+
             </div>
 
             <div className="p-6 bg-gray-50 rounded-[32px] border border-gray-100 shadow-sm transition-all hover:bg-[#0D9488]/5 group">
@@ -705,51 +731,6 @@ const HospitalDoctors = () => {
                 />
              </div>
 
-             {/* Weekly Consultation Days */}
-             <div className="space-y-3">
-                <div className="flex items-center justify-between pr-1">
-                   <label className="text-xs font-bold text-navy/40 uppercase tracking-widest pl-1">Consultation Days</label>
-                   <div className="flex gap-3">
-                      <button 
-                         type="button" 
-                         onClick={() => setValue('availableDays', allDays, { shouldValidate: true })}
-                         className="text-[9px] font-black text-[#0D9488] uppercase tracking-tighter hover:underline"
-                      >
-                         All Days
-                      </button>
-                      <button 
-                         type="button" 
-                         onClick={() => setValue('availableDays', weekdays, { shouldValidate: true })}
-                         className="text-[9px] font-black text-[#0D9488] uppercase tracking-tighter hover:underline"
-                      >
-                         Weekdays
-                      </button>
-                   </div>
-                </div>
-                <div className="flex justify-between items-center bg-gray-50 rounded-2xl p-3 border border-gray-100 transition-colors">
-                   {allDays.map((day) => {
-                     const isSelected = availableDays.includes(day);
-                     return (
-                        <button
-                          key={day}
-                          type="button"
-                          onClick={() => handleDayToggle(day)}
-                          className={`
-                            w-9 h-9 rounded-full flex items-center justify-center text-[10px] font-black transition-all duration-200
-                            ${isSelected 
-                              ? 'bg-[#0D9488] text-white shadow-lg shadow-[#0D9488]/20 scale-110' 
-                              : 'bg-white text-navy/30 hover:bg-white hover:text-[#0D9488]'}
-                          `}
-                        >
-                          {day.charAt(0)}
-                        </button>
-                     );
-                   })}
-                </div>
-                {errors.availableDays && (
-                   <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest px-2">{errors.availableDays.message}</p>
-                )}
-             </div>
 
              <div className="space-y-1.5 text-left">
                 <label className="text-xs font-bold text-navy/40 uppercase tracking-widest pl-1">Primary Specialization</label>
@@ -805,76 +786,7 @@ const HospitalDoctors = () => {
                   error={errors.experience?.message}
                />
              </div>
-
-             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-gray-50 rounded-[32px] border border-gray-100 transition-colors text-left">
-                <div className="flex items-center gap-3 text-left">
-                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${onlineConsultation ? 'bg-[#0D9488]/10 text-[#0D9488]' : 'bg-gray-200 text-gray-400'}`}>
-                      {onlineConsultation ? <Video size={20} /> : <VideoOff size={20} />}
-                   </div>
-                   <div className="text-left">
-                      <p className="text-sm font-black text-navy uppercase tracking-tight">Online Consultation</p>
-                      <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest">Enable virtual sessions for this doctor</p>
-                   </div>
-                </div>
-                <button 
-                   type="button"
-                   onClick={() => setValue('onlineConsultation', !onlineConsultation)}
-                   className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors outline-none ring-2 ring-transparent focus:ring-[#0D9488]/20 ${onlineConsultation ? 'bg-[#0D9488]' : 'bg-gray-200'}`}
-                >
-                   <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${onlineConsultation ? 'translate-x-6' : 'translate-x-1'}`} />
-                </button>
-             </div>
-
-             <div className="p-6 bg-teal-50/50 rounded-[32px] border border-teal-100 space-y-5 text-left transition-colors">
-                <div className="flex items-center justify-between">
-                   <div className="flex items-center gap-2 text-left">
-                      <Clock size={16} className="text-[#0D9488]" />
-                      <p className="text-xs font-black text-[#0D9488] uppercase tracking-widest">Availability Sessions</p>
-                   </div>
-                   <button 
-                      type="button"
-                      onClick={handleAddSlot}
-                      className="text-[10px] font-black text-[#0D9488] uppercase tracking-wider flex items-center gap-1 hover:text-[#115E59] transition-colors"
-                   >
-                      <Plus size={14} /> Add Session
-                   </button>
-                </div>
-                
-                <div className="space-y-4">
-                   {slots.map((slot, index) => (
-                     <div key={index} className="grid grid-cols-[1fr,1fr,auto] gap-4 items-end animate-in fade-in slide-in-from-top-1 text-left">
-                        <div className="space-y-1.5 text-left">
-                           <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest pl-1">Starts</p>
-                           <input 
-                              type="time" 
-                              value={slot.start}
-                              onChange={(e) => handleSlotChange(index, 'start', e.target.value)}
-                              className="w-full bg-white border border-teal-100 rounded-xl px-4 py-2 text-xs font-bold text-navy outline-none" 
-                           />
-                        </div>
-                        <div className="space-y-1.5 text-left">
-                           <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest pl-1">Ends</p>
-                           <input 
-                              type="time" 
-                              value={slot.end}
-                              onChange={(e) => handleSlotChange(index, 'end', e.target.value)}
-                              className="w-full bg-white border border-teal-100 rounded-xl px-4 py-2 text-xs font-bold text-navy outline-none" 
-                           />
-                        </div>
-                        {slots.length > 1 && (
-                          <button 
-                             type="button" 
-                             onClick={() => handleRemoveSlot(index)}
-                             className="p-2 text-red-400 hover:bg-red-50 rounded-lg mb-0.5 transition-colors"
-                          >
-                             <Trash2 size={16} />
-                          </button>
-                        )}
-                     </div>
-                   ))}
-                </div>
-                {errors.slots && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest px-2">{errors.slots.message}</p>}
-             </div>
+           </div>
 
              <div className="flex gap-3 pt-4">
                 <Button 
@@ -900,8 +812,127 @@ const HospitalDoctors = () => {
                    )}
                 </Button>
              </div>
-          </div>
+
         </form>
+      </Modal>
+
+      {/* Schedule Management Modal */}
+      <Modal
+        isOpen={isScheduleModalOpen}
+        onClose={() => setIsScheduleModalOpen(false)}
+        title="Manage Doctor Schedule"
+        size="md"
+      >
+        {scheduleDoctor && (
+          <div className="space-y-8">
+            <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+               <Avatar src={scheduleDoctor.image} name={scheduleDoctor.name} size="md" />
+               <div>
+                  <p className="font-black text-navy">{scheduleDoctor.name}</p>
+                  <p className="text-[10px] font-bold text-[#0D9488] uppercase tracking-widest">{scheduleDoctor.specialization}</p>
+               </div>
+            </div>
+
+            {/* Availability Toggle */}
+            <div className="flex items-center justify-between p-6 bg-amber-50/50 rounded-[32px] border border-amber-100">
+               <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isAccepting ? 'bg-amber-100 text-amber-600' : 'bg-gray-200 text-gray-400'}`}>
+                     <Calendar size={20} />
+                  </div>
+                  <div className="text-left">
+                     <p className="text-sm font-black text-navy uppercase tracking-tight">Accepting Appointments</p>
+                     <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest">Enable or disable booking for this doctor</p>
+                  </div>
+               </div>
+               <button 
+                  type="button"
+                  onClick={() => setIsAccepting(!isAccepting)}
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors outline-none ${isAccepting ? 'bg-amber-500' : 'bg-gray-300'}`}
+               >
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${isAccepting ? 'translate-x-6' : 'translate-x-1'}`} />
+               </button>
+            </div>
+
+            <div className="space-y-6">
+              <div className="space-y-3">
+                 <label className="text-[10px] font-black text-navy/30 uppercase tracking-widest pl-1">Working Days</label>
+                 <div className="flex justify-between items-center bg-gray-50 rounded-2xl p-3 border border-gray-100">
+                    {allDays.map((day) => {
+                      const isSelected = tempDays.includes(day);
+                      return (
+                         <button
+                           key={day}
+                           type="button"
+                           onClick={() => handleTempDayToggle(day)}
+                           className={`w-9 h-9 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${isSelected ? 'bg-[#0D9488] text-white shadow-lg' : 'bg-white text-navy/20'}`}
+                         >
+                           {day.charAt(0)}
+                         </button>
+                      );
+                    })}
+                  </div>
+               </div>
+              <div className="p-6 bg-teal-50/50 rounded-[32px] border border-teal-100 space-y-5">
+                 <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                       <Clock size={16} className="text-[#0D9488]" />
+                       <p className="text-xs font-black text-[#0D9488] uppercase tracking-widest">Active Sessions</p>
+                    </div>
+                    <button 
+                       type="button"
+                       onClick={handleAddTempSlot}
+                       className="text-[10px] font-black text-[#0D9488] uppercase tracking-wider flex items-center gap-1"
+                    >
+                       <Plus size={14} /> Add Session
+                    </button>
+                 </div>
+                 
+                 <div className="space-y-4">
+                    {tempSlots.map((slot, index) => (
+                      <div key={index} className="grid grid-cols-[1fr,1fr,auto] gap-4 items-end">
+                         <div className="space-y-1.5 text-left">
+                            <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest pl-1">Starts</p>
+                            <input 
+                               type="time" 
+                               value={slot.start}
+                               onChange={(e) => handleTempSlotChange(index, 'start', e.target.value)}
+                               className="w-full bg-white border border-teal-100 rounded-xl px-4 py-2 text-xs font-bold text-navy" 
+                            />
+                         </div>
+                         <div className="space-y-1.5 text-left">
+                            <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest pl-1">Ends</p>
+                            <input 
+                               type="time" 
+                               value={slot.end}
+                               onChange={(e) => handleTempSlotChange(index, 'end', e.target.value)}
+                               className="w-full bg-white border border-teal-100 rounded-xl px-4 py-2 text-xs font-bold text-navy" 
+                            />
+                         </div>
+                         {tempSlots.length > 1 && (
+                           <button 
+                              type="button" 
+                              onClick={() => handleRemoveTempSlot(index)}
+                              className="p-2 text-red-400 hover:bg-red-50 rounded-lg"
+                           >
+                              <Trash2 size={16} />
+                           </button>
+                         )}
+                      </div>
+                    ))}
+                 </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => setIsScheduleModalOpen(false)} className="flex-1 h-14 rounded-2xl font-black text-[11px] uppercase tracking-widest">
+                Cancel
+              </Button>
+              <Button onClick={submitSchedule} disabled={submitting} loading={submitting} className="flex-[2] bg-[#0D9488] h-14 rounded-2xl font-black text-[11px] uppercase tracking-widest">
+                Save Schedule
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </DashboardLayout>
   );

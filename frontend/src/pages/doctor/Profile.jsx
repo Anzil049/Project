@@ -1,34 +1,42 @@
 import React, { useState, useRef } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
-import { Card, Button, Input, Avatar, Badge } from '../../components/common';
+import useAuthStore from '../../store/authStore';
+import { Card, Button, Input, Avatar, Badge, LocationPicker } from '../../components/common';
 import { 
   User, Mail, Phone, MapPin, CheckCircle2,
   Lock, Camera, Activity, FileText, UploadCloud,
   Stethoscope, CreditCard, Shield, Save, Video
 } from 'lucide-react';
 
+import authService from '../../services/authService';
+import { toast } from 'react-hot-toast';
+import { compressImage } from '../../utils/imageUtils';
+
 const DoctorProfile = () => {
+  const { user, updateUser } = useAuthStore();
+  const isIndependent = !user?.doctorProfile?.hospitalId;
   const [activeTab, setActiveTab] = useState('personal'); // 'personal', 'professional', 'security'
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [avatarFile, setAvatarFile] = useState(null);
   const fileInputRef = useRef(null);
 
-  // Profile Form State
+  // Profile Form State initialized from real data
   const [profileData, setProfileData] = useState({
-    firstName: 'Arjun',
-    lastName: 'Wilson',
-    email: 'dr.wilson@medcare.com',
-    phone: '+1 (555) 987-6543',
-    gender: 'Male',
-    clinicAddress: 'City General Hospital, Cardiac Wing, Block 4',
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: user?.doctorProfile?.phone || user?.phone || '',
+    about: user?.doctorProfile?.about || '',
     
-    specialization: 'Cardiology',
-    qualifications: 'MBBS, MD',
-    experience: '12 Years',
-    licenseNumber: 'MD-84729-CARDIO',
-    consultationFee: '150',
+    specialization: user?.doctorProfile?.specialization || '',
+    experience: user?.doctorProfile?.experience || '',
+    licenseNumber: user?.doctorProfile?.licenseNumber || '',
+    fee: user?.doctorProfile?.fee || 500,
     
-    isOnlineActive: true,
-    avatarUrl: null
+    onlineConsultation: user?.doctorProfile?.onlineConsultation,
+    image: user?.image || null,
+    latitude: user?.location?.coordinates?.[1] || null,
+    longitude: user?.location?.coordinates?.[0] || null
   });
 
   const [passwordForm, setPasswordForm] = useState({
@@ -50,10 +58,9 @@ const DoctorProfile = () => {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // In a real app, you would upload to server here.
-      // We will create a local object URL to display immediately.
       const imageUrl = URL.createObjectURL(file);
-      handleInputChange('avatarUrl', imageUrl);
+      handleInputChange('image', imageUrl);
+      setAvatarFile(file);
     }
   };
 
@@ -62,10 +69,43 @@ const DoctorProfile = () => {
     handleInputChange('isOnlineActive', !profileData.isOnlineActive);
   };
 
-  const handleSaveProfile = () => {
-    setIsEditing(false);
-    // Submit API call...
-    console.log("Saving Profile:", profileData);
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      let finalImageUrl = profileData.image;
+
+      if (avatarFile) {
+        toast.loading('Compressing & Uploading profile picture...', { id: 'upload-avatar' });
+        const compressed = await compressImage(avatarFile);
+        finalImageUrl = await authService.uploadImage(compressed);
+        toast.success('Profile picture uploaded', { id: 'upload-avatar' });
+      }
+
+      const updateData = {
+        name: profileData.name,
+        phone: profileData.phone,
+        specialization: profileData.specialization,
+        experience: profileData.experience,
+        about: profileData.about,
+        fee: profileData.fee,
+        onlineConsultation: profileData.onlineConsultation,
+        image: finalImageUrl,
+        location: (profileData.latitude && profileData.longitude) ? {
+          type: 'Point',
+          coordinates: [parseFloat(profileData.longitude), parseFloat(profileData.latitude)]
+        } : undefined
+      };
+
+      const result = await authService.updateProfile(updateData);
+      updateUser(result);
+      toast.success('Profile updated successfully');
+      setAvatarFile(null);
+      setIsEditing(false);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update profile');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -93,7 +133,8 @@ const DoctorProfile = () => {
                    Discard
                  </Button>
                  <Button 
-                   onClick={handleSaveProfile}
+                   onClick={handleSave}
+                   loading={isSaving}
                    className="bg-[#0D9488] text-white rounded-[20px] font-black text-xs px-8 shadow-xl shadow-[#0D9488]/20 border-none flex items-center gap-2"
                  >
                    <Save size={14} /> Save Changes
@@ -121,10 +162,10 @@ const DoctorProfile = () => {
                       onClick={handleAvatarClick}
                       className={`relative w-28 h-28 rounded-full border-4 border-white shadow-xl shadow-navy/5 overflow-hidden flex items-center justify-center bg-gray-50 mx-auto ${isEditing ? 'cursor-pointer' : ''}`}
                     >
-                      {profileData.avatarUrl ? (
-                         <img src={profileData.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                      {profileData.image ? (
+                         <img src={profileData.image} alt="Avatar" className="w-full h-full object-cover" />
                       ) : (
-                         <Avatar name={`${profileData.firstName} ${profileData.lastName}`} size="xl" className="w-full h-full text-3xl" />
+                         <Avatar name={profileData.name} size="xl" className="w-full h-full text-3xl" />
                       )}
                       
                       {/* Edit Overlay */}
@@ -143,10 +184,10 @@ const DoctorProfile = () => {
                    </div>
 
                    {/* Online Status Dot */}
-                   <div className={`absolute bottom-2 right-2 w-5 h-5 border-4 border-white rounded-full ${profileData.isOnlineActive ? 'bg-green-500' : 'bg-gray-400'}`} />
+                   <div className={`absolute bottom-2 right-2 w-5 h-5 border-4 border-white rounded-full ${profileData.onlineConsultation ? 'bg-green-500' : 'bg-gray-400'}`} />
                  </div>
 
-                 <h3 className="text-xl font-black text-navy leading-tight">Dr. {profileData.firstName} {profileData.lastName}</h3>
+                 <h3 className="text-xl font-black text-navy leading-tight">Dr. {profileData.name}</h3>
                  <p className="text-[10px] font-black text-[#0D9488] uppercase tracking-[0.2em] mt-1 mb-4">{profileData.specialization}</p>
                  
                  <Badge variant="success" className="mx-auto bg-green-50 text-green-600 border-none text-[9px] uppercase font-black px-3">
@@ -201,18 +242,14 @@ const DoctorProfile = () => {
                        </div>
 
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <Input 
-                            label="First Name" 
-                            value={profileData.firstName} 
-                            disabled={!isEditing}
-                            onChange={(e) => handleInputChange('firstName', e.target.value)}
-                          />
-                          <Input 
-                            label="Last Name" 
-                            value={profileData.lastName} 
-                            disabled={!isEditing}
-                            onChange={(e) => handleInputChange('lastName', e.target.value)}
-                          />
+                          <div className="md:col-span-2">
+                            <Input 
+                                label="Full Name" 
+                                value={profileData.name} 
+                                disabled={!isEditing}
+                                onChange={(e) => handleInputChange('name', e.target.value)}
+                            />
+                          </div>
                           <Input 
                             label="Email Address" 
                             type="email"
@@ -292,30 +329,40 @@ const DoctorProfile = () => {
                           
                           {/* Column 2: Configurations */}
                           <div className="space-y-6">
-                             {/* Session Toggle Component */}
-                             <div className={`p-6 rounded-3xl border transition-all ${isEditing ? 'border-[#0D9488]/30 bg-[#0D9488]/5' : 'border-gray-100 bg-gray-50/50'}`}>
-                                <div className="flex items-center justify-between mb-4">
+                             {/* Session Toggle Component - Only for Independent Doctors */}
+                             {isIndependent ? (
+                                <div className={`p-6 rounded-3xl border transition-all ${isEditing ? 'border-[#0D9488]/30 bg-[#0D9488]/5' : 'border-gray-100 bg-gray-50/50'}`}>
+                                   <div className="flex items-center justify-between mb-4">
+                                      <div className="flex flex-col gap-1">
+                                         <h4 className="text-sm font-black text-navy flex items-center gap-2">
+                                            <Video size={16} className={`${profileData.onlineConsultation ? 'text-[#0D9488]' : 'text-gray-400'}`} /> Online Sessions
+                                         </h4>
+                                         <p className="text-[10px] font-bold text-navy/40">Allow patients to book digital video consults.</p>
+                                      </div>
+                                      <button 
+                                         type="button"
+                                         onClick={() => handleInputChange('onlineConsultation', !profileData.onlineConsultation)}
+                                         disabled={!isEditing}
+                                         className={`w-12 h-6 rounded-full transition-all relative ${profileData.onlineConsultation ? 'bg-[#0D9488]' : 'bg-gray-300'}`}
+                                      >
+                                         <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-md transition-all ${profileData.onlineConsultation ? 'left-7' : 'left-1'}`} />
+                                      </button>
+                                   </div>
+                                   <Badge variant={profileData.onlineConsultation ? 'success' : 'default'} className="text-[9px] uppercase font-black px-2 py-1">
+                                      {profileData.onlineConsultation ? 'ACTIVE FOR BOOKING' : 'CURRENTLY DISABLED'}
+                                   </Badge>
+                                </div>
+                             ) : (
+                                <div className="p-6 rounded-3xl border border-gray-100 bg-gray-50/50 opacity-60">
                                    <div className="flex flex-col gap-1">
                                       <h4 className="text-sm font-black text-navy flex items-center gap-2">
-                                         <Video size={16} className={`${profileData.isOnlineActive ? 'text-[#0D9488]' : 'text-gray-400'}`} /> Online Sessions
+                                         <Video size={16} className="text-gray-400" /> Online Sessions
                                       </h4>
-                                      <p className="text-[10px] font-bold text-navy/40">Allow patients to book digital video consults.</p>
+                                      <p className="text-[10px] font-bold text-navy/40 italic">Disabled for hospital-affiliated doctors.</p>
                                    </div>
-                                   <button 
-                                      type="button"
-                                      onClick={toggleOnlineStatus}
-                                      disabled={!isEditing}
-                                      className={`w-12 h-6 rounded-full transition-all relative ${profileData.isOnlineActive ? 'bg-[#0D9488]' : 'bg-gray-300'}`}
-                                   >
-                                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-md transition-all ${profileData.isOnlineActive ? 'left-7' : 'left-1'}`} />
-                                   </button>
                                 </div>
-                                <Badge variant={profileData.isOnlineActive ? 'success' : 'default'} className="text-[9px] uppercase font-black px-2 py-1">
-                                   {profileData.isOnlineActive ? 'ACTIVE FOR BOOKING' : 'CURRENTLY DISABLED'}
-                                </Badge>
-                             </div>
-
-                             {/* Consultation Fees */}
+                             )}
+                            {/* Consultation Fees */}
                              <div className="space-y-2">
                                 <label className="text-[11px] font-black uppercase tracking-widest text-navy/60 pl-2">Base Consultation Fee (USD)</label>
                                 <div className={`flex items-center border rounded-2xl overflow-hidden transition-all focus-within:ring-2 focus-within:ring-[#0D9488]/20 focus-within:border-[#0D9488] ${!isEditing ? 'bg-gray-50 border-gray-100 opacity-70' : 'bg-white border-gray-200'}`}>
@@ -325,12 +372,54 @@ const DoctorProfile = () => {
                                    <span className="font-black text-navy text-lg">$</span>
                                    <input 
                                      type="number"
-                                     value={profileData.consultationFee}
-                                     onChange={(e) => handleInputChange('consultationFee', e.target.value)}
+                                     value={profileData.fee}
+                                     onChange={(e) => handleInputChange('fee', e.target.value)}
                                      disabled={!isEditing}
                                      className="flex-1 bg-transparent py-4 px-2 outline-none font-bold text-navy"
                                    />
                                 </div>
+                             </div>
+
+                             {/* Location Configuration */}
+                             <div className="space-y-4 pt-4">
+                                <div className="flex items-center justify-between">
+                                   <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Clinic Location (Map)</p>
+                                   <Badge variant="outline" className="text-[9px] font-black px-2 py-0.5">
+                                      {profileData.latitude ? `${parseFloat(profileData.latitude).toFixed(4)}, ${parseFloat(profileData.longitude).toFixed(4)}` : 'NOT SET'}
+                                   </Badge>
+                                </div>
+                                
+                                <LocationPicker 
+                                   lat={profileData.latitude}
+                                   lng={profileData.longitude}
+                                   isEditing={isEditing}
+                                   onLocationSelect={(lat, lng) => setProfileData({
+                                      ...profileData,
+                                      latitude: lat.toFixed(6),
+                                      longitude: lng.toFixed(6)
+                                   })}
+                                />
+
+                                {isEditing && (
+                                   <Button 
+                                      type="button"
+                                      variant="outline"
+                                      onClick={() => {
+                                         if ("geolocation" in navigator) {
+                                            navigator.geolocation.getCurrentPosition((pos) => {
+                                               setProfileData({
+                                                  ...profileData,
+                                                  latitude: pos.coords.latitude.toFixed(6),
+                                                  longitude: pos.coords.longitude.toFixed(6)
+                                               });
+                                            });
+                                         }
+                                      }}
+                                      className="w-full py-3 rounded-xl border-dashed border-2 text-[9px] font-black uppercase"
+                                   >
+                                      <MapPin size={12} className="mr-2" /> Detect Current Location
+                                   </Button>
+                                )}
                              </div>
                              
                              <div className="bg-blue-50 p-4 rounded-2xl flex items-start gap-3 mt-4">

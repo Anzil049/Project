@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { DOCTORS, HOSPITALS, SPECIALIZATIONS } from '../../data/mockData';
 import { ROUTES } from '../../constants/routes';
+import doctorService from '../../services/doctorService';
+import { toast } from 'react-hot-toast';
 
 const FindDoctors = () => {
   const navigate = useNavigate();
@@ -29,7 +31,67 @@ const FindDoctors = () => {
     }
   }, [location.state]);
 
-  const filtered = DOCTORS.filter(d => {
+  const [nearbyMode, setNearbyMode] = useState(false);
+  const [coords, setCoords] = useState(null);
+  const [realDoctors, setRealDoctors] = useState([]);
+  const [loadingReal, setLoadingReal] = useState(false);
+
+  // Fetch nearby doctors when mode or coords change
+  useEffect(() => {
+    if (nearbyMode && coords) {
+      fetchNearby();
+    }
+  }, [nearbyMode, coords, activeSpec]);
+
+  const fetchNearby = async () => {
+    setLoadingReal(true);
+    try {
+      const data = await doctorService.getNearbyDoctors(coords.longitude, coords.latitude, 50, activeSpec);
+      setRealDoctors(data);
+    } catch (error) {
+      toast.error("Failed to fetch nearby doctors");
+    } finally {
+      setLoadingReal(false);
+    }
+  };
+
+  const toggleNearby = () => {
+    if (!nearbyMode) {
+      if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            setCoords({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude
+            });
+            setNearbyMode(true);
+          },
+          (error) => {
+            toast.error("Please enable location access to find nearby doctors");
+          }
+        );
+      } else {
+        toast.error("Geolocation is not supported by your browser");
+      }
+    } else {
+      setNearbyMode(false);
+    }
+  };
+
+  const filtered = nearbyMode ? realDoctors.map(d => ({
+    id: d._id,
+    name: d.user.name,
+    specialization: d.specialization,
+    experience: d.experience,
+    rating: 4.8, // Fallback if not in schema
+    fee: d.fee || 500,
+    hospitalName: d.hospitalId?.name || 'Independent Clinic',
+    initials: d.user.name.split(' ').map(n => n[0]).join(''),
+    gradient: 'from-primary to-navy',
+    isOnline: d.onlineConsultation,
+    isOffline: true,
+    slots: d.slots || []
+  })) : DOCTORS.filter(d => {
     const matchesSearch = d.name.toLowerCase().includes(search.toLowerCase()) || 
                           d.specialization.toLowerCase().includes(search.toLowerCase());
     const matchesSpec = activeSpec === 'All' || d.specialization === activeSpec;
@@ -92,6 +154,25 @@ const FindDoctors = () => {
                     <div className="flex items-center gap-2 mb-8">
                        <Filter size={18} className="text-primary" />
                        <h3 className="text-xs font-black uppercase tracking-widest text-navy">Filters</h3>
+                    </div>
+
+                    {/* Geolocation Filter */}
+                    <div className="space-y-4 mb-10">
+                       <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Location Search</p>
+                       <button 
+                          onClick={toggleNearby}
+                          className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
+                             nearbyMode ? 'bg-primary/10 border-primary text-primary shadow-lg shadow-primary/10' : 'bg-white border-gray-100 text-navy/60 hover:border-primary/30'
+                          }`}
+                       >
+                          <MapPin size={18} className={nearbyMode ? 'animate-bounce' : ''} />
+                          {nearbyMode ? 'Using My Location' : 'Doctors Near Me'}
+                       </button>
+                       {nearbyMode && coords && (
+                          <p className="text-[9px] font-bold text-center text-navy/40 italic">
+                            Showing doctors within 50km
+                          </p>
+                       )}
                     </div>
 
                     {/* Hospital Selection */}

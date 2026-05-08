@@ -67,7 +67,7 @@ export const DOCTORS = [
     hospitalName: 'Apollo Indraprastha',
     initials: 'SJ',
     gradient: 'from-[#0D9488] to-[#115E59]',
-    isOnline: true,
+    isOnline: false,
     isOffline: true,
     languages: ['English', 'Hindi'],
     slots: [
@@ -87,7 +87,7 @@ export const DOCTORS = [
     hospitalName: 'Medanta Medicity',
     initials: 'AM',
     gradient: 'from-[#7C3AED] to-[#5B21B6]',
-    isOnline: true,
+    isOnline: false,
     isOffline: true,
     languages: ['English', 'Hindi', 'Gujarati'],
     slots: [
@@ -106,8 +106,8 @@ export const DOCTORS = [
     hospitalName: 'Fortis Escorts',
     initials: 'PS',
     gradient: 'from-[#EC4899] to-[#9D174D]',
-    isOnline: true,
-    isOffline: false,
+    isOnline: false,
+    isOffline: true,
     languages: ['English', 'Hindi'],
     slots: [
       { date: '2026-04-20', times: ['10:00 AM', '3:30 PM'] }
@@ -163,7 +163,7 @@ export const DOCTORS = [
     hospitalName: 'Little Hearts Clinic',
     initials: 'AR',
     gradient: 'from-[#F43F5E] to-[#BE123D]',
-    isOnline: false,
+    isOnline: true,
     isOffline: true,
     languages: ['English', 'Bengali', 'Hindi'],
     slots: [

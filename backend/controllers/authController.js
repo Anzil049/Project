@@ -36,6 +36,13 @@ const loginUserGeneric = asyncHandler(async (req, res) => {
         // Automatically generate tokens for the user's specific role
         const { accessToken } = generateTokens(res, user._id, user.role);
 
+        let profile = null;
+        if (user.role === 'doctor') {
+            profile = await Doctor.findOne({ user: user._id });
+        } else if (user.role === 'hospital') {
+            profile = await Hospital.findOne({ user: user._id });
+        }
+
         res.json({
             _id: user._id,
             name: user.name,
@@ -44,6 +51,8 @@ const loginUserGeneric = asyncHandler(async (req, res) => {
             isVerified: user.isVerified,
             isFirstLogin: user.isFirstLogin,
             token: accessToken,
+            doctorProfile: user.role === 'doctor' ? profile : null,
+            hospitalProfile: user.role === 'hospital' ? profile : null
         });
     } else {
         res.status(401);
@@ -78,6 +87,13 @@ const loginUser = asyncHandler(async (req, res) => {
 
         const { accessToken } = generateTokens(res, user._id, user.role);
 
+        let profile = null;
+        if (user.role === 'doctor') {
+            profile = await Doctor.findOne({ user: user._id });
+        } else if (user.role === 'hospital') {
+            profile = await Hospital.findOne({ user: user._id });
+        }
+
         res.json({
             _id: user._id,
             name: user.name,
@@ -85,6 +101,8 @@ const loginUser = asyncHandler(async (req, res) => {
             role: user.role,
             isFirstLogin: user.isFirstLogin,
             token: accessToken,
+            doctorProfile: user.role === 'doctor' ? profile : null,
+            hospitalProfile: user.role === 'hospital' ? profile : null
         });
     } else {
         res.status(401);
@@ -96,7 +114,12 @@ const loginUser = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/:role/register
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
-    const { name, email, password, bloodGroup, registrationNumber, facilityType, beds, licenseNumber, specialization, experience } = req.body;
+    const { 
+        name, email, password, bloodGroup, 
+        registrationNumber, facilityType, beds, 
+        licenseNumber, specialization, experience,
+        latitude, longitude 
+    } = req.body;
     const { role } = req.params;
 
     let user = await User.findOne({ email });
@@ -114,12 +137,25 @@ const registerUser = asyncHandler(async (req, res) => {
             user.bloodGroup = role === 'patient' ? bloodGroup : null;
             user.certificate = req.file ? req.file.path : null;
             user.isApproved = role === 'patient'; // Patients are auto-approved
+            
+            if (latitude && longitude) {
+                user.location = {
+                    type: 'Point',
+                    coordinates: [parseFloat(longitude), parseFloat(latitude)]
+                };
+            }
+            
             await user.save();
 
             // We should also update or create the profile, but for simplicity we will handle it below by checking if profile exists
         }
     } else {
         // Create new user if they don't exist
+        const locationData = (latitude && longitude) ? {
+            type: 'Point',
+            coordinates: [parseFloat(longitude), parseFloat(latitude)]
+        } : undefined;
+
         user = await User.create({
             name,
             email,
@@ -128,6 +164,7 @@ const registerUser = asyncHandler(async (req, res) => {
             bloodGroup: role === 'patient' ? bloodGroup : null,
             certificate: req.file ? req.file.path : null,
             isApproved: role === 'patient', // Patients are auto-approved
+            location: locationData
         });
     }
 
@@ -141,7 +178,7 @@ const registerUser = asyncHandler(async (req, res) => {
         } else if (role === 'doctor') {
             await Doctor.findOneAndUpdate(
                 { user: user._id },
-                { licenseNumber, specialization, experience },
+                { licenseNumber, specialization, experience, onlineConsultation: true },
                 { upsert: true, new: true }
             );
         }
@@ -301,7 +338,18 @@ const getUserProfile = asyncHandler(async (req, res) => {
     const user = await User.findById(req.user.userId).select('-password');
 
     if (user) {
-        res.json(user);
+        let profile = null;
+        if (user.role === 'doctor') {
+            profile = await Doctor.findOne({ user: user._id });
+        } else if (user.role === 'hospital') {
+            profile = await Hospital.findOne({ user: user._id });
+        }
+        
+        res.json({
+            ...user.toObject(),
+            doctorProfile: user.role === 'doctor' ? profile : null,
+            hospitalProfile: user.role === 'hospital' ? profile : null
+        });
     } else {
         res.status(404);
         throw new Error('User not found');

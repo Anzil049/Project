@@ -8,3 +8,4 @@ export { default as Spinner } from './Spinner';
 export { default as EmptyState } from './EmptyState';
 export { default as Skeleton } from './Skeleton';
 export { default as ResponsiveTable } from './ResponsiveTable';
+export { default as LocationPicker } from './LocationPicker';

@@ -22,8 +22,13 @@ const Input = forwardRef(({
   const currentType = isPasswordType && showPassword ? 'text' : type;
 
   return (
-    <div className="flex flex-col gap-1 w-full">
-      {/* Label Container */}
+    <div className="flex flex-col gap-2 w-full">
+      {label && (
+        <label className="text-[10px] font-black uppercase tracking-widest text-navy/40 pl-1">
+          {label} {required && <span className="text-red-500">*</span>}
+        </label>
+      )}
+      {/* Input Container */}
       <div className={`relative group ${className}`}>
         {/* Icon Prepend */}
         {Icon && (
@@ -40,7 +45,7 @@ const Input = forwardRef(({
           onChange={onChange}
           onBlur={onBlur}
           ref={ref}
-          placeholder={label || placeholder} // Use label as placeholder if provided
+          placeholder={placeholder} // Use specific placeholder if provided
           onFocus={() => setIsFocused(true)}
           onBlurCapture={() => setIsFocused(false)}
           required={required}

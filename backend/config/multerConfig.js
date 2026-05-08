@@ -12,8 +12,8 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
-        folder: 'medcare_certificates',
-        allowed_formats: ['jpg', 'png', 'pdf'],
+        folder: 'medcare_profiles',
+        allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
         public_id: (req, file) => `${Date.now()}-${file.originalname.split('.')[0]}`,
     },
 });
@@ -21,6 +21,13 @@ const storage = new CloudinaryStorage({
 const upload = multer({ 
     storage: storage,
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+            cb(null, true);
+        } else {
+            cb(new Error('Invalid file type. Only images and PDFs are allowed.'), false);
+        }
+    }
 });
 
 module.exports = upload;

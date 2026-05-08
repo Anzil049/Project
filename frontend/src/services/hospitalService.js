@@ -32,6 +32,11 @@ const hospitalService = {
     const response = await api.delete(`/hospital/doctors/${doctorId}`);
     return response.data;
   },
+
+  updateDoctor: async (id, doctorData) => {
+    const response = await api.put(`/hospital/doctors/${id}`, doctorData);
+    return response.data;
+  },
 };
 
 export default hospitalService;

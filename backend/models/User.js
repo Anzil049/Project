@@ -30,6 +30,9 @@ const userSchema = mongoose.Schema({
     certificate: {
         type: String, // URL to Cloudinary
     },
+    image: {
+        type: String, // Profile Image URL
+    },
     resetPasswordToken: String,
     resetPasswordExpires: Date,
     isVerified: {
@@ -49,9 +52,23 @@ const userSchema = mongoose.Schema({
         enum: ['active', 'blocked'],
         default: 'active',
     },
+    location: {
+        type: {
+            type: String,
+            enum: ['Point'],
+            default: 'Point',
+        },
+        coordinates: {
+            type: [Number], // [longitude, latitude]
+            default: [0, 0],
+        },
+    },
 }, {
     timestamps: true,
 });
+
+// Add 2dsphere index for geolocation queries
+userSchema.index({ location: '2dsphere' });
 
 // Method to compare password
 userSchema.methods.matchPassword = async function (enteredPassword) {

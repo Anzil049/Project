@@ -13,7 +13,7 @@ const {
     refreshAccessToken,
     getUserProfile,
 } = require('../controllers/authController');
-const { getCurrentUser, getFeaturedData } = require('../controllers/userController');
+const { getCurrentUser, getFeaturedData, updateUserProfile } = require('../controllers/userController');
 const { protect } = require('../middleware/authMiddleware');
 const validate = require('../middleware/validatorMiddleware');
 const { registerValidator, loginValidator } = require('../validators/authValidator');
@@ -30,23 +30,39 @@ router.post('/forgot-password', authLimiter, forgotPassword);
 router.post('/reset-password', authLimiter, resetPassword);
 router.post('/change-password', changeFirstPassword);
 
-// Registration with optional certificate upload
+// Role-specific Registration
 router.post('/:role/register', 
     authLimiter,
-    upload.single('certificate'), // Handles file upload if present
+    upload.single('certificate'),
     registerValidator, 
     validate, 
     registerUser
 );
 
 router.post('/:role/login', loginValidator, validate, loginUser);
-
 router.post('/:role/logout', logoutUser);
 router.post('/:role/refresh', refreshAccessToken);
 
-// Profile route is protected by a dynamic role-check middleware
-router.get('/:role/profile', (req, res, next) => {
-    return protect(req.params.role)(req, res, next);
-}, getUserProfile);
+// Role-specific profile fetching
+router.get('/patient/profile', protect('patient'), getUserProfile);
+router.get('/doctor/profile', protect('doctor'), getUserProfile);
+router.get('/hospital/profile', protect('hospital'), getUserProfile);
+router.get('/admin/profile', protect('admin'), getUserProfile);
+
+// Unified profile update route
+router.put('/profile', protect('any'), updateUserProfile);
+
+// Upload route
+router.post('/upload', protect('any'), (req, res, next) => {
+    upload.single('image')(req, res, (err) => {
+        if (err) {
+            return res.status(500).json({ message: 'Upload failed', error: err.message });
+        }
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded' });
+        }
+        res.json({ url: req.file.path });
+    });
+});
 
 module.exports = router;

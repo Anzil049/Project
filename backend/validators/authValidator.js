@@ -72,6 +72,7 @@ const loginValidator = [
         .notEmpty().withMessage('Password is required'),
 ];
 
+
 module.exports = {
     registerValidator,
     loginValidator,

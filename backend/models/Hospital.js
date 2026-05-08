@@ -18,6 +18,33 @@ const hospitalSchema = mongoose.Schema({
         type: String,
         required: true,
     },
+    about: {
+        type: String,
+    },
+    phone: {
+        type: String,
+    },
+    website: {
+        type: String,
+    },
+    address: {
+        type: String,
+    },
+    city: {
+        type: String,
+    },
+    state: {
+        type: String,
+    },
+    zip: {
+        type: String,
+    },
+    establishYear: {
+        type: String,
+    },
+    coverImage: {
+        type: String, // URL
+    },
     isFeatured: {
         type: Boolean,
         default: false,

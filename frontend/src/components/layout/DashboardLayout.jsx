@@ -61,7 +61,7 @@ const TopBar = ({ title = "Dashboard", setMobileMenuOpen }) => {
             <p className="text-sm font-bold text-navy">{user?.name || "User Account"}</p>
             <p className="text-[10px] font-bold text-primary uppercase tracking-widest leading-none mt-1">Personal ID: #MC9421</p>
           </div>
-          <Avatar src={user?.avatar} name={user?.name} size="lg" className="ring-4 ring-primary/5 ring-offset-2 border-primary/20" />
+          <Avatar src={user?.image} name={user?.name} size="lg" className="ring-4 ring-primary/5 ring-offset-2 border-primary/20" />
         </div>
       </div>
 
@@ -116,6 +116,7 @@ const TopBar = ({ title = "Dashboard", setMobileMenuOpen }) => {
 };
 
 const DashboardLayout = ({ children, title, role }) => {
+  const { user } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -134,6 +135,13 @@ const DashboardLayout = ({ children, title, role }) => {
                <button className="p-2 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors" onClick={() => setMobileMenuOpen(false)}>
                  <X size={20} className="text-navy" />
                </button>
+             </div>
+             <div className="p-6">
+                <Avatar 
+                  src={user?.image} 
+                  name={user?.name || "Guest User"} 
+                  size="md" 
+                />
              </div>
              <DashboardSidebar role={role} />
           </div>
