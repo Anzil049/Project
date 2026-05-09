@@ -123,6 +123,21 @@ const updateUserProfile = async (req, res, next) => {
 
             if (req.body.bloodGroup) user.bloodGroup = req.body.bloodGroup;
             if (req.body.location) user.location = req.body.location;
+            
+            // New fields for patients/common profile
+            if (req.body.address) user.address = req.body.address;
+            if (req.body.city) user.city = req.body.city;
+            if (req.body.state) user.state = req.body.state;
+            if (req.body.zip) user.zip = req.body.zip;
+            if (req.body.dob) user.dob = req.body.dob;
+            if (req.body.gender) user.gender = req.body.gender;
+            if (req.body.height) user.height = req.body.height;
+            if (req.body.weight) user.weight = req.body.weight;
+            if (req.body.allergies) user.allergies = req.body.allergies;
+            if (req.body.chronicConditions) user.chronicConditions = req.body.chronicConditions;
+            if (req.body.emgName) user.emgName = req.body.emgName;
+            if (req.body.emgRelation) user.emgRelation = req.body.emgRelation;
+            if (req.body.emgPhone) user.emgPhone = req.body.emgPhone;
 
             const updatedUser = await user.save();
 

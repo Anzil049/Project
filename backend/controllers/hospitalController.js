@@ -184,94 +184,86 @@ const updateDoctor = asyncHandler(async (req, res) => {
 // @route   GET /api/public/hospitals/nearby
 // @access  Public
 const getNearbyHospitals = asyncHandler(async (req, res) => {
-    try {
-        const { longitude, latitude, radius = 50, facility } = req.query;
+    const { longitude, latitude, radius = 50, facility } = req.query;
 
-        if (!longitude || !latitude) {
-            res.status(400);
-            throw new Error('Please provide longitude and latitude');
-        }
-
-        // radius is in km, convert to meters for MongoDB
-        const radiusInMeters = radius * 1000;
-
-        const nearbyUsers = await User.find({
-            role: 'hospital',
-            location: {
-                $near: {
-                    $geometry: {
-                        type: 'Point',
-                        coordinates: [parseFloat(longitude), parseFloat(latitude)]
-                    },
-                    $maxDistance: radiusInMeters
-                }
-            }
-        }).select('_id name email image location');
-
-        const userIds = nearbyUsers.map(u => u._id);
-
-        // Build filter for Hospital profile
-        let query = { user: { $in: userIds } };
-        if (facility && facility !== 'All') {
-            query.$or = [
-                { facilityType: { $regex: facility, $options: 'i' } },
-                { about: { $regex: facility, $options: 'i' } }
-            ];
-        }
-
-        const hospitals = await Hospital.find(query)
-            .populate({
-                path: 'user',
-                select: 'name email image location phone'
-            });
-
-        const results = hospitals
-            .filter(hosp => hosp.user) // Filter out any hospitals where the user record is missing
-            .map(hosp => {
-                return {
-                    ...hosp.toObject(),
-                    distance: 'Calculated' // Sorting is already handled by the $near operator on nearbyUsers
-                };
-            });
-
-        res.json(results);
-    } catch (error) {
-        console.error('ERROR in getNearbyHospitals:', error);
-        res.status(500).json({ error: error.message });
+    if (!longitude || !latitude) {
+        res.status(400);
+        throw new Error('Please provide longitude and latitude');
     }
+
+    // Convert radius from km to meters for MongoDB $near query
+    const radiusInMeters = radius * 1000;
+
+    const nearbyUsers = await User.find({
+        role: 'hospital',
+        location: {
+            $near: {
+                $geometry: {
+                    type: 'Point',
+                    coordinates: [parseFloat(longitude), parseFloat(latitude)]
+                },
+                $maxDistance: radiusInMeters
+            }
+        }
+    }).select('_id name email image location');
+
+    const userIds = nearbyUsers.map(u => u._id);
+
+    // Build filter for Hospital profile
+    let query = { user: { $in: userIds } };
+    if (facility && facility !== 'All') {
+        query.$or = [
+            { facilityType: { $regex: facility, $options: 'i' } },
+            { about: { $regex: facility, $options: 'i' } }
+        ];
+    }
+
+    const hospitals = await Hospital.find(query)
+        .populate('user', 'name email image location phone');
+
+    const results = hospitals
+        .filter(hosp => hosp.user) // Safety check for orphaned records
+        .map(hosp => ({
+            ...hosp.toObject(),
+            distance: 'Calculated' // Native MongoDB sorting is already applied
+        }));
+
+    res.json(results);
 });
 
 // @desc    Get all public hospitals (with search/filter)
 // @route   GET /api/public/hospitals
 // @access  Public
 const getPublicHospitals = asyncHandler(async (req, res) => {
-    try {
-        const { search, facility } = req.query;
-        
-        // 1. Simple search filter for hospital profiles
-        let hospQuery = {};
-        if (facility && facility !== 'All') {
-            hospQuery.$or = [
-                { facilityType: { $regex: facility, $options: 'i' } },
-                { about: { $regex: facility, $options: 'i' } }
-            ];
-        }
+    const { search, facility } = req.query;
+    
+    let hospQuery = {};
+    if (facility && facility !== 'All') {
+        hospQuery.$or = [
+            { facilityType: { $regex: facility, $options: 'i' } },
+            { about: { $regex: facility, $options: 'i' } }
+        ];
+    }
 
-        // 2. Simple population
-        const hospitals = await Hospital.find(hospQuery).populate('user', 'name image location status role');
-
-        // 3. Manual filtering
-        const results = hospitals.filter(h => {
-            if (!h.user || h.user.role !== 'hospital' || h.user.status !== 'active') return false;
-            if (search && !h.user.name.toLowerCase().includes(search.toLowerCase())) return false;
-            return true;
+    // Fetch hospitals and populate active hospital users
+    const hospitals = await Hospital.find(hospQuery)
+        .populate({
+            path: 'user',
+            match: {
+                role: 'hospital',
+                status: 'active'
+            },
+            select: 'name image location status role'
         });
 
-        res.json(results);
-    } catch (error) {
-        console.error('CRITICAL ERROR in getPublicHospitals:', error);
-        res.status(500).json({ error: error.message });
-    }
+    // Apply name search and filter out unmatched users
+    const results = hospitals.filter(h => {
+        if (!h.user) return false;
+        if (search && !h.user.name.toLowerCase().includes(search.toLowerCase())) return false;
+        return true;
+    });
+
+    res.json(results);
 });
 
 module.exports = {

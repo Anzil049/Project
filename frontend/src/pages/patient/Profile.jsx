@@ -19,6 +19,7 @@ const PatientProfile = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [avatarFile, setAvatarFile] = useState(null);
   const fileInputRef = useRef(null);
+  const locationPickerRef = useRef(null);
 
   // Core structured data initialized from real user data
   const [profile, setProfile] = useState({
@@ -27,8 +28,7 @@ const PatientProfile = () => {
     phone: user?.phone || '',
     avatarImage: user?.image || null,
     bloodGroup: user?.bloodGroup || '',
-    
-    dob: user?.dob || '',
+    dob: user?.dob ? new Date(user.dob).toISOString().split('T')[0] : '',
     gender: user?.gender || '',
     address: user?.address || '',
     city: user?.city || '',
@@ -84,8 +84,21 @@ const PatientProfile = () => {
         name: profile.name,
         phone: profile.phone,
         bloodGroup: profile.bloodGroup,
+        dob: profile.dob,
+        gender: profile.gender,
+        height: profile.height,
+        weight: profile.weight,
+        allergies: profile.allergies,
+        chronicConditions: profile.chronicConditions,
+        address: profile.address,
+        city: profile.city,
+        state: profile.state,
+        zip: profile.zip,
+        emgName: profile.emgName,
+        emgRelation: profile.emgRelation,
+        emgPhone: profile.emgPhone,
         image: finalImageUrl,
-        location: (profile.latitude && profile.longitude) ? {
+        location: (profile.latitude && profile.longitude && !isNaN(parseFloat(profile.latitude)) && !isNaN(parseFloat(profile.longitude))) ? {
           type: 'Point',
           coordinates: [parseFloat(profile.longitude), parseFloat(profile.latitude)]
         } : undefined
@@ -193,7 +206,7 @@ const PatientProfile = () => {
         {/* Tabs */}
         <div className="bg-white border-b border-gray-200 mb-8 sticky top-[72px] z-20">
            <div className="flex overflow-x-auto hide-scrollbar">
-              {['personal', 'medical', 'location', 'emergency', 'security'].map((tab) => (
+              {['personal', 'medical', 'emergency', 'security'].map((tab) => (
                  <button
                     key={tab}
                     type="button"
@@ -225,25 +238,67 @@ const PatientProfile = () => {
                    <Input 
                       label="Address" 
                       value={profile.address} 
-                      readOnly 
-                      className="bg-gray-100/50 cursor-not-allowed" 
-                      placeholder="Auto-filled from location search"
+                      onChange={(e) => setProfile({...profile, address: e.target.value})}
+                      disabled={!isEditing}
+                      placeholder="Enter your street address"
                    />
                 </div>
                 <Input 
                    label="City" 
                    value={profile.city} 
-                   readOnly 
-                   className="bg-gray-100/50 cursor-not-allowed" 
-                   placeholder="Auto-filled from map"
+                   onChange={(e) => setProfile({...profile, city: e.target.value})}
+                   disabled={!isEditing}
+                   placeholder="City"
                 />
                 <Input 
                    label="State" 
                    value={profile.state} 
-                   readOnly 
-                   className="bg-gray-100/50 cursor-not-allowed" 
-                   placeholder="Auto-filled from map"
+                   onChange={(e) => setProfile({...profile, state: e.target.value})}
+                   disabled={!isEditing}
+                   placeholder="State"
                 />
+
+                {/* Location Picker Integrated */}
+                <div className="md:col-span-2 pt-6 border-t border-gray-50 space-y-4">
+                   <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Residential Location (Map)</p>
+                      <Badge variant="outline" className="text-[9px] font-black px-2 py-0.5">
+                         {profile.latitude ? `${Number(profile.latitude).toFixed(4)}, ${Number(profile.longitude).toFixed(4)}` : 'NOT SET'}
+                      </Badge>
+                   </div>
+                   
+                   <LocationPicker 
+                        ref={locationPickerRef}
+                        lat={profile.latitude}
+                        lng={profile.longitude}
+                        onLocationSelect={(lat, lng, addressData) => {
+                           const updates = { 
+                              latitude: lat.toFixed(6), 
+                              longitude: lng.toFixed(6) 
+                           };
+                           if (addressData) {
+                              if (addressData.city) updates.city = addressData.city;
+                              if (addressData.state) updates.state = addressData.state;
+                              if (addressData.zip) updates.zip = addressData.zip;
+                              if (addressData.fullAddress) updates.address = addressData.fullAddress;
+                           }
+                           setProfile(prev => ({ ...prev, ...updates }));
+                        }}
+                        isEditing={isEditing}
+                        hideLocateButton={true}
+                     />
+
+                    {isEditing && (
+                      <Button 
+                        type="button"
+                        variant="outline"
+                        onClick={() => locationPickerRef.current?.handleLocateMe()}
+                        className="w-full py-4 rounded-2xl border-dashed border-2 text-[10px] font-black uppercase tracking-widest"
+                      >
+                        <MapPin size={14} className="mr-2" /> Detect My Current Location
+                      </Button>
+                    )}
+                </div>
              </div>
            )}
 
@@ -263,58 +318,6 @@ const PatientProfile = () => {
                      className="w-full h-24 bg-gray-50 border border-gray-100 rounded-2xl p-4 outline-none resize-none disabled:opacity-60 disabled:cursor-not-allowed" 
                    ></textarea>
                 </div>
-             </div>
-           )}
-
-           {activeTab === 'location' && (
-             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center justify-between mb-2">
-                   <div>
-                      <h3 className="text-xl font-black text-navy">Set Your Location</h3>
-                      <p className="text-xs font-bold text-navy/40">This helps us find the nearest doctors and hospitals for you.</p>
-                   </div>
-                   {profile.latitude && (
-                      <Badge variant="success" className="font-black text-[9px] px-3 uppercase tracking-widest">
-                         Location Set
-                      </Badge>
-                   )}
-                </div>
-                
-                <LocationPicker 
-                    lat={profile.latitude}
-                    lng={profile.longitude}
-                    onLocationSelect={(lat, lng, addressData) => {
-                       const updates = { latitude: lat, longitude: lng };
-                       if (addressData) {
-                          if (addressData.city) updates.city = addressData.city;
-                          if (addressData.state) updates.state = addressData.state;
-                          if (addressData.zip) updates.zip = addressData.zip;
-                          if (addressData.address) updates.address = addressData.address;
-                       }
-                       setProfile(prev => ({ ...prev, ...updates }));
-                    }}
-                    isEditing={isEditing}
-                 />
-
-                {isEditing && (
-                  <Button 
-                    variant="outline"
-                    onClick={() => {
-                        if ("geolocation" in navigator) {
-                          navigator.geolocation.getCurrentPosition((pos) => {
-                              setProfile({
-                                ...profile,
-                                latitude: pos.coords.latitude,
-                                longitude: pos.coords.longitude
-                              });
-                          });
-                        }
-                    }}
-                    className="w-full py-4 rounded-2xl border-dashed border-2 text-[10px] font-black uppercase tracking-widest"
-                  >
-                    <MapPin size={14} className="mr-2" /> Detect My Current Location
-                  </Button>
-                )}
              </div>
            )}
 

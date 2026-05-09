@@ -63,6 +63,22 @@ const userSchema = mongoose.Schema({
             default: [0, 0],
         },
     },
+    address: String,
+    city: String,
+    state: String,
+    zip: String,
+    dob: Date,
+    gender: {
+        type: String,
+        enum: ['Male', 'Female', 'Other'],
+    },
+    height: Number,
+    weight: Number,
+    allergies: String,
+    chronicConditions: String,
+    emgName: String,
+    emgRelation: String,
+    emgPhone: String,
 }, {
     timestamps: true,
 });
