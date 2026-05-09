@@ -30,6 +30,12 @@ const hospitalSchema = mongoose.Schema({
     address: {
         type: String,
     },
+    locality: {
+        type: String,
+    },
+    landmark: {
+        type: String,
+    },
     city: {
         type: String,
     },
@@ -53,6 +59,6 @@ const hospitalSchema = mongoose.Schema({
     timestamps: true,
 });
 
-const Hospital = mongoose.model('Hospital', hospitalSchema);
+const Hospital = mongoose.models.Hospital || mongoose.model('Hospital', hospitalSchema);
 
 module.exports = Hospital;

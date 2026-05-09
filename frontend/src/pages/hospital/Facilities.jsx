@@ -126,7 +126,7 @@ const HospitalFacilities = () => {
                          value={newFacility.description}
                          onChange={(e) => setNewFacility({...newFacility, description: e.target.value})}
                          className="w-full text-sm font-bold text-navy placeholder:text-navy/30 bg-gray-50 border border-gray-100 rounded-[20px] px-5 py-4 focus:bg-white focus:border-[#0D9488] focus:ring-4 focus:ring-[#0D9488]/10 transition-all outline-none resize-none h-32"
-                      />
+                      ></textarea>
                    </div>
                 </div>
 

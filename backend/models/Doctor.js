@@ -55,6 +55,9 @@ const doctorSchema = mongoose.Schema({
         type: Number,
         default: 500,
     },
+    address: {
+        type: String,
+    },
 }, {
     timestamps: true,
 });
@@ -71,6 +74,6 @@ doctorSchema.pre('save', async function() {
     }
 });
 
-const Doctor = mongoose.model('Doctor', doctorSchema);
+const Doctor = mongoose.models.Doctor || mongoose.model('Doctor', doctorSchema);
 
 module.exports = Doctor;

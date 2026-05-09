@@ -134,6 +134,7 @@ const updateUserProfile = async (req, res, next) => {
                     doctor.experience = req.body.experience || doctor.experience;
                     doctor.about = req.body.about || doctor.about;
                     doctor.fee = req.body.fee || doctor.fee;
+                    doctor.address = req.body.address || doctor.address;
                     doctor.onlineConsultation = req.body.onlineConsultation !== undefined ? req.body.onlineConsultation : doctor.onlineConsultation;
                     if (doctor.hospitalId) doctor.onlineConsultation = false;
                     updatedProfile = await doctor.save();
@@ -146,6 +147,8 @@ const updateUserProfile = async (req, res, next) => {
                     hospital.about = req.body.about || hospital.about;
                     hospital.website = req.body.website || hospital.website;
                     hospital.address = req.body.address || hospital.address;
+                    hospital.locality = req.body.locality || hospital.locality;
+                    hospital.landmark = req.body.landmark || hospital.landmark;
                     hospital.city = req.body.city || hospital.city;
                     hospital.state = req.body.state || hospital.state;
                     hospital.zip = req.body.zip || hospital.zip;

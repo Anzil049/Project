@@ -20,6 +20,7 @@ const DoctorProfile = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [avatarFile, setAvatarFile] = useState(null);
   const fileInputRef = useRef(null);
+  const locationPickerRef = useRef(null);
 
   // Profile Form State initialized from real data
   const [profileData, setProfileData] = useState({
@@ -36,7 +37,8 @@ const DoctorProfile = () => {
     onlineConsultation: user?.doctorProfile?.onlineConsultation,
     image: user?.image || null,
     latitude: user?.location?.coordinates?.[1] || null,
-    longitude: user?.location?.coordinates?.[0] || null
+    longitude: user?.location?.coordinates?.[0] || null,
+    clinicAddress: user?.doctorProfile?.address || ''
   });
 
   const [passwordForm, setPasswordForm] = useState({
@@ -89,8 +91,9 @@ const DoctorProfile = () => {
         about: profileData.about,
         fee: profileData.fee,
         onlineConsultation: profileData.onlineConsultation,
+        address: profileData.clinicAddress,
         image: finalImageUrl,
-        location: (profileData.latitude && profileData.longitude) ? {
+        location: (profileData.latitude && profileData.longitude && !isNaN(parseFloat(profileData.latitude)) && !isNaN(parseFloat(profileData.longitude))) ? {
           type: 'Point',
           coordinates: [parseFloat(profileData.longitude), parseFloat(profileData.latitude)]
         } : undefined
@@ -266,17 +269,65 @@ const DoctorProfile = () => {
                             disabled={!isEditing}
                             onChange={(e) => handleInputChange('phone', e.target.value)}
                           />
-                          <div className="md:col-span-2">
-                             <Input 
-                               label="Clinic/Hospital Address" 
-                               icon={MapPin}
-                               value={profileData.clinicAddress} 
-                               disabled={!isEditing}
-                               onChange={(e) => handleInputChange('clinicAddress', e.target.value)}
-                             />
-                          </div>
-                       </div>
-                    </div>
+                           <div className="md:col-span-2">
+                              <Input 
+                                label="Clinic/Hospital Address" 
+                                icon={MapPin}
+                                value={profileData.clinicAddress} 
+                                disabled={!isEditing || !isIndependent}
+                                onChange={(e) => handleInputChange('clinicAddress', e.target.value)}
+                              />
+                           </div>
+                        </div>
+
+                        {/* Clinic Location Configuration */}
+                        <div className="space-y-4 pt-6 border-t border-gray-50">
+                           <div className="flex items-center justify-between">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Clinic Location (Map)</p>
+                              <Badge variant="outline" className="text-[9px] font-black px-2 py-0.5">
+                                 {profileData.latitude ? `${Number(profileData.latitude).toFixed(4)}, ${Number(profileData.longitude).toFixed(4)}` : 'NOT SET'}
+                              </Badge>
+                           </div>
+                           
+                           {!isIndependent && (
+                              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-start gap-3">
+                                 <Shield size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                                 <p className="text-[10px] font-bold text-amber-900/60 leading-relaxed">
+                                    Location management is locked because you are affiliated with a hospital. Contact your hospital administrator to update facility coordinates.
+                                 </p>
+                              </div>
+                           )}
+
+                           <LocationPicker 
+                              ref={locationPickerRef}
+                              lat={profileData.latitude}
+                              lng={profileData.longitude}
+                              isEditing={isEditing && isIndependent}
+                              onLocationSelect={(lat, lng, addressData) => {
+                                 const updates = { 
+                                    latitude: lat.toFixed(6), 
+                                    longitude: lng.toFixed(6) 
+                                 };
+                                 if (addressData?.fullAddress) {
+                                    updates.clinicAddress = addressData.fullAddress;
+                                 }
+                                 setProfileData(prev => ({ ...prev, ...updates }));
+                              }}
+                              hideLocateButton={true}
+                           />
+
+                           {isEditing && isIndependent && (
+                              <Button 
+                                 type="button"
+                                 variant="outline"
+                                 onClick={() => locationPickerRef.current?.handleLocateMe()}
+                                 className="w-full py-3 rounded-xl border-dashed border-2 text-[9px] font-black uppercase"
+                              >
+                                 <MapPin size={12} className="mr-2" /> Detect Current Location
+                              </Button>
+                           )}
+                        </div>
+                     </div>
                  )}
 
                  {/* Professional Settings Tab */}
@@ -380,47 +431,7 @@ const DoctorProfile = () => {
                                 </div>
                              </div>
 
-                             {/* Location Configuration */}
-                             <div className="space-y-4 pt-4">
-                                <div className="flex items-center justify-between">
-                                   <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Clinic Location (Map)</p>
-                                   <Badge variant="outline" className="text-[9px] font-black px-2 py-0.5">
-                                      {profileData.latitude ? `${parseFloat(profileData.latitude).toFixed(4)}, ${parseFloat(profileData.longitude).toFixed(4)}` : 'NOT SET'}
-                                   </Badge>
-                                </div>
-                                
-                                <LocationPicker 
-                                   lat={profileData.latitude}
-                                   lng={profileData.longitude}
-                                   isEditing={isEditing}
-                                   onLocationSelect={(lat, lng) => setProfileData({
-                                      ...profileData,
-                                      latitude: lat.toFixed(6),
-                                      longitude: lng.toFixed(6)
-                                   })}
-                                />
 
-                                {isEditing && (
-                                   <Button 
-                                      type="button"
-                                      variant="outline"
-                                      onClick={() => {
-                                         if ("geolocation" in navigator) {
-                                            navigator.geolocation.getCurrentPosition((pos) => {
-                                               setProfileData({
-                                                  ...profileData,
-                                                  latitude: pos.coords.latitude.toFixed(6),
-                                                  longitude: pos.coords.longitude.toFixed(6)
-                                               });
-                                            });
-                                         }
-                                      }}
-                                      className="w-full py-3 rounded-xl border-dashed border-2 text-[9px] font-black uppercase"
-                                   >
-                                      <MapPin size={12} className="mr-2" /> Detect Current Location
-                                   </Button>
-                                )}
-                             </div>
                              
                              <div className="bg-blue-50 p-4 rounded-2xl flex items-start gap-3 mt-4">
                                 <Activity size={16} className="text-blue-500 shrink-0 mt-0.5" />

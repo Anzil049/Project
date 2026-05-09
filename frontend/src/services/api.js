@@ -37,6 +37,15 @@ api.interceptors.response.use(
     const isBlocked = error.response?.data?.isBlocked;
 
     if (status === 401 || (status === 403 && isBlocked)) {
+      // Don't trigger session expired redirect if the error came from a login or verify attempt
+      const isAuthPath = error.config.url.includes('/auth/login') || 
+                         error.config.url.includes('/auth/register') ||
+                         error.config.url.includes('/auth/verify');
+
+      if (isAuthPath) {
+        return Promise.reject(error);
+      }
+
       // Token expired, invalid, or user is blocked
       const activeRole = sessionStorage.getItem('medcare_active_role');
       

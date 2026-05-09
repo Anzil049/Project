@@ -331,7 +331,7 @@ const Registrations = () => {
                 placeholder="Enter rejection reason here..."
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
-             />
+             ></textarea>
              
              <div className="flex justify-end gap-3">
                 <Button variant="ghost" onClick={() => setRejectModalOpen(false)} className="text-navy/60 hover:bg-gray-100 rounded-xl px-6 font-black text-xs">

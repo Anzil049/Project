@@ -5,13 +5,19 @@ const {
     getDoctors, 
     toggleDoctorStatus, 
     deleteDoctor,
-    updateDoctor 
+    updateDoctor,
+    getNearbyHospitals,
+    getPublicHospitals
 } = require('../controllers/hospitalController');
 const { protect } = require('../middleware/authMiddleware');
 
 const { doctorAddLimiter } = require('../middleware/rateLimitMiddleware');
 
-// Protect all routes in this file. The user must have 'hospital' role.
+// Public Routes
+router.get('/public', getPublicHospitals);
+router.get('/public/nearby', getNearbyHospitals);
+
+// Protected Routes (Hospital only)
 router.use(protect('hospital'));
 
 // @desc    Add a new doctor

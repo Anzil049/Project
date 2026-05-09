@@ -300,7 +300,7 @@ const ConsultationRoom = () => {
                       onChange={(e) => setRx(p => ({ ...p, diagnosis: e.target.value }))}
                       rows={2}
                       className="w-full bg-white border border-gray-100 rounded-2xl px-4 py-3 text-navy text-xs font-bold placeholder:text-navy/40 outline-none focus:border-[#0D9488]/30 transition-all resize-none shadow-sm"
-                    />
+                    ></textarea>
                   </div>
 
                   {/* Medicines List */}
@@ -376,7 +376,7 @@ const ConsultationRoom = () => {
                       onChange={(e) => setRx(p => ({ ...p, notes: e.target.value }))}
                       rows={2}
                       className="w-full bg-white border border-gray-100 rounded-2xl px-4 py-3 text-navy text-xs font-bold placeholder:text-navy/40 outline-none focus:border-[#0D9488]/30 transition-all resize-none shadow-sm"
-                    />
+                    ></textarea>
                   </div>
 
                   <button

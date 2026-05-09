@@ -159,7 +159,7 @@ const PatientReviews = () => {
                       value={reviewText}
                       onChange={(e) => setReviewText(e.target.value)}
                       className="w-full bg-gray-50 border-2 border-transparent focus:border-[#0D9488]/20 focus:bg-white p-6 rounded-[28px] outline-none transition-all text-navy font-medium placeholder:text-navy/20 resize-none"
-                    />
+                    ></textarea>
                  </div>
 
                  {/* Quick Tags */}

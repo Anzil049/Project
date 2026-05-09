@@ -37,6 +37,24 @@ const hospitalService = {
     const response = await api.put(`/hospital/doctors/${id}`, doctorData);
     return response.data;
   },
+
+  /**
+   * Get all public hospitals
+   */
+  getHospitals: async (params) => {
+    const response = await api.get('/hospital/public', { params });
+    return response.data;
+  },
+
+  /**
+   * Get nearby hospitals
+   */
+  getNearbyHospitals: async (longitude, latitude, radius = 50, facility = 'All') => {
+    const response = await api.get('/hospital/public/nearby', {
+      params: { longitude, latitude, radius, facility }
+    });
+    return response.data;
+  },
 };
 
 export default hospitalService;

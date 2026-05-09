@@ -222,10 +222,28 @@ const PatientProfile = () => {
                    <Input label="Gender" value={profile.gender} onChange={(e) => setProfile({...profile, gender: e.target.value})} disabled={!isEditing} />
                 </div>
                 <div className="md:col-span-2">
-                   <Input label="Address" value={profile.address} onChange={(e) => setProfile({...profile, address: e.target.value})} disabled={!isEditing} />
+                   <Input 
+                      label="Address" 
+                      value={profile.address} 
+                      readOnly 
+                      className="bg-gray-100/50 cursor-not-allowed" 
+                      placeholder="Auto-filled from location search"
+                   />
                 </div>
-                <Input label="City" value={profile.city} onChange={(e) => setProfile({...profile, city: e.target.value})} disabled={!isEditing} />
-                <Input label="State" value={profile.state} onChange={(e) => setProfile({...profile, state: e.target.value})} disabled={!isEditing} />
+                <Input 
+                   label="City" 
+                   value={profile.city} 
+                   readOnly 
+                   className="bg-gray-100/50 cursor-not-allowed" 
+                   placeholder="Auto-filled from map"
+                />
+                <Input 
+                   label="State" 
+                   value={profile.state} 
+                   readOnly 
+                   className="bg-gray-100/50 cursor-not-allowed" 
+                   placeholder="Auto-filled from map"
+                />
              </div>
            )}
 
@@ -243,7 +261,7 @@ const PatientProfile = () => {
                      onChange={(e) => setProfile({...profile, allergies: e.target.value})} 
                      disabled={!isEditing}
                      className="w-full h-24 bg-gray-50 border border-gray-100 rounded-2xl p-4 outline-none resize-none disabled:opacity-60 disabled:cursor-not-allowed" 
-                   />
+                   ></textarea>
                 </div>
              </div>
            )}
@@ -263,11 +281,20 @@ const PatientProfile = () => {
                 </div>
                 
                 <LocationPicker 
-                   lat={profile.latitude}
-                   lng={profile.longitude}
-                   onLocationSelect={(lat, lng) => setProfile({...profile, latitude: lat, longitude: lng})}
-                   disabled={!isEditing}
-                />
+                    lat={profile.latitude}
+                    lng={profile.longitude}
+                    onLocationSelect={(lat, lng, addressData) => {
+                       const updates = { latitude: lat, longitude: lng };
+                       if (addressData) {
+                          if (addressData.city) updates.city = addressData.city;
+                          if (addressData.state) updates.state = addressData.state;
+                          if (addressData.zip) updates.zip = addressData.zip;
+                          if (addressData.address) updates.address = addressData.address;
+                       }
+                       setProfile(prev => ({ ...prev, ...updates }));
+                    }}
+                    isEditing={isEditing}
+                 />
 
                 {isEditing && (
                   <Button 

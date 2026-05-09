@@ -12,6 +12,16 @@ import authService from '../../services/authService';
 import { toast } from 'react-hot-toast';
 import { compressImage } from '../../utils/imageUtils';
 
+const INDIAN_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 
+  'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 
+  'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 
+  'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 
+  'Uttarakhand', 'West Bengal', 'Andaman and Nicobar Islands', 'Chandigarh', 
+  'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Jammu and Kashmir', 
+  'Ladakh', 'Lakshadweep', 'Puducherry'
+];
+
 const HospitalProfile = () => {
   const { user, updateUser } = useAuthStore();
   const [activeTab, setActiveTab] = useState('general');
@@ -35,10 +45,19 @@ const HospitalProfile = () => {
     city: user?.hospitalProfile?.city || '',
     state: user?.hospitalProfile?.state || '',
     zip: user?.hospitalProfile?.zip || '',
-    establishYear: user?.hospitalProfile?.establishYear || '',
     latitude: user?.location?.coordinates?.[1] || null,
     longitude: user?.location?.coordinates?.[0] || null
   });
+
+  const [showMap, setShowMap] = useState(false);
+  const locationPickerRef = useRef(null);
+
+  const [securityData, setSecurityData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0];
@@ -93,10 +112,9 @@ const HospitalProfile = () => {
         city: profile.city,
         state: profile.state,
         zip: profile.zip,
-        establishYear: profile.establishYear,
         coverImage: finalCoverImage,
         image: finalLogoImage,
-        location: (profile.latitude && profile.longitude) ? {
+        location: (profile.latitude && profile.longitude && !isNaN(parseFloat(profile.latitude)) && !isNaN(parseFloat(profile.longitude))) ? {
           type: 'Point',
           coordinates: [parseFloat(profile.longitude), parseFloat(profile.latitude)]
         } : undefined
@@ -111,6 +129,31 @@ const HospitalProfile = () => {
       toast.error(error.response?.data?.message || 'Update failed');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    if (securityData.newPassword !== securityData.confirmPassword) {
+      return toast.error('Passwords do not match');
+    }
+    if (securityData.newPassword.length < 6) {
+      return toast.error('Password must be at least 6 characters');
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await authService.changeFirstPassword(
+        profile.email,
+        securityData.currentPassword,
+        securityData.newPassword
+      );
+      toast.success('Password updated successfully');
+      setSecurityData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Password change failed');
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -239,26 +282,117 @@ const HospitalProfile = () => {
                       onChange={(e) => setProfile({...profile, about: e.target.value})}
                       disabled={!isEditing}
                       className="w-full text-sm font-bold text-navy bg-gray-50 border border-gray-100 rounded-[20px] px-5 py-4 focus:bg-white focus:border-[#0D9488] outline-none resize-none min-h-[140px] disabled:opacity-60"
-                   />
+                   ></textarea>
                 </div>
              </div>
            )}
 
             {activeTab === 'location' && (
-               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                     <div className="md:col-span-2">
-                        <Input label="Address" value={profile.address} onChange={(e) => setProfile({...profile, address: e.target.value})} disabled={!isEditing} />
-                     </div>
-                     <Input label="City" value={profile.city} onChange={(e) => setProfile({...profile, city: e.target.value})} disabled={!isEditing} />
-                     <Input label="State" value={profile.state} onChange={(e) => setProfile({...profile, state: e.target.value})} disabled={!isEditing} />
+               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                     <button
+                        onClick={() => {
+                          if (!isEditing) {
+                            toast.error('Please click "Edit Profile" first');
+                            return;
+                          }
+                          if (!showMap) setShowMap(true);
+                          setTimeout(() => {
+                            locationPickerRef.current?.handleLocateMe();
+                          }, 500);
+                        }}
+                        className="flex items-center gap-2 bg-[#2874F0] text-white px-6 py-3 rounded-lg text-xs font-black uppercase tracking-widest shadow-lg hover:bg-blue-600 transition-all disabled:opacity-50"
+                        disabled={!isEditing}
+                     >
+                        <MapPin size={16} /> Use my current location
+                     </button>
+
+                     <button
+                        onClick={() => {
+                          if (!isEditing) {
+                            toast.error('Please click "Edit Profile" first');
+                            return;
+                          }
+                          setShowMap(!showMap);
+                        }}
+                        className={`flex items-center gap-2 text-[#0D9488] font-black text-xs uppercase tracking-widest transition-all ${
+                           isEditing ? 'hover:underline opacity-100' : 'opacity-40 cursor-not-allowed'
+                        }`}
+                        disabled={!isEditing}
+                     >
+                        <Globe size={16} /> {showMap ? 'Hide Map' : 'Choose from Map'}
+                     </button>
                   </div>
-                  <LocationPicker 
-                    lat={profile.latitude}
-                    lng={profile.longitude}
-                    onLocationSelect={(lat, lng) => setProfile({...profile, latitude: lat, longitude: lng})}
-                    disabled={!isEditing}
-                  />
+
+                  {showMap && isEditing && (
+                    <div className="animate-in zoom-in-95 duration-300">
+                      <LocationPicker 
+                        ref={locationPickerRef}
+                        lat={profile.latitude}
+                        lng={profile.longitude}
+                        onLocationSelect={(lat, lng, addressData) => {
+                           const updates = { latitude: lat, longitude: lng };
+                           if (addressData) {
+                              // Preference: use the specific address components if available, 
+                              // else fallback to a cleaner version of the full address
+                              if (addressData.city) updates.city = addressData.city;
+                              if (addressData.state) updates.state = addressData.state;
+                              if (addressData.zip) updates.zip = addressData.zip;
+                              
+                              // For the "Address (Area and Street)" field:
+                              // We use the fullAddress but try to strip the City and State from the end if they match
+                              let cleanAddress = addressData.fullAddress || '';
+                              if (addressData.city && cleanAddress.includes(addressData.city)) {
+                                 cleanAddress = cleanAddress.split(addressData.city)[0].trim().replace(/,$/, '');
+                              }
+                              updates.address = cleanAddress || addressData.address;
+                           }
+                           setProfile(prev => ({ ...prev, ...updates }));
+                        }}
+                        isEditing={isEditing}
+                        hideLocateButton={true}
+                      />
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                     <Input 
+                        label="Pincode" 
+                        value={profile.zip} 
+                        onChange={(e) => setProfile({...profile, zip: e.target.value})}
+                        disabled={!isEditing}
+                        placeholder="6-digit Pincode"
+                     />
+                     <Input 
+                        label="City/District/Town" 
+                        value={profile.city} 
+                        onChange={(e) => setProfile({...profile, city: e.target.value})}
+                        disabled={!isEditing}
+                        placeholder="City/District/Town"
+                     />
+                     <div className="md:col-span-2">
+                        <label className="text-[10px] font-black uppercase text-navy/60 pl-2 mb-2 block">Address (Area and Street)</label>
+                        <textarea
+                           value={profile.address}
+                           onChange={(e) => setProfile({...profile, address: e.target.value})}
+                           disabled={!isEditing}
+                           placeholder="Area and Street"
+                           className="w-full text-sm font-bold text-navy bg-gray-50 border border-gray-100 rounded-[20px] px-5 py-4 focus:bg-white focus:border-[#0D9488] outline-none resize-none min-h-[100px] disabled:opacity-60"
+                        ></textarea>
+                     </div>
+                     <div className="flex flex-col gap-2 w-full">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-navy/40 pl-1">State</label>
+                        <select
+                           value={profile.state}
+                           onChange={(e) => setProfile({...profile, state: e.target.value})}
+                           disabled={!isEditing}
+                           className="w-full h-full bg-white border-2 border-gray-100 rounded-2xl px-4 py-4 outline-none font-body text-navy text-sm font-bold focus:border-[#0D9488] disabled:opacity-60 transition-all"
+                        >
+                           <option value="">Select State</option>
+                           {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                     </div>
+                  </div>
                </div>
             )}
 
@@ -267,10 +401,75 @@ const HospitalProfile = () => {
                  <Input label="Email" value={profile.email} disabled />
                  <Input label="Phone" value={profile.phone} onChange={(e) => setProfile({...profile, phone: e.target.value})} disabled={!isEditing} />
                  <Input label="Website" value={profile.website} onChange={(e) => setProfile({...profile, website: e.target.value})} disabled={!isEditing} />
-                 <Input label="Zip Code" value={profile.zip} onChange={(e) => setProfile({...profile, zip: e.target.value})} disabled={!isEditing} />
+                 <Input 
+                    label="Zip Code" 
+                    value={profile.zip} 
+                    readOnly 
+                    className="bg-gray-100/50 cursor-not-allowed" 
+                    placeholder="Auto-filled from map"
+                 />
               </div>
             )}
-        </div>
+
+            {activeTab === 'security' && (
+                <div className="max-w-md mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                   <div className="text-center space-y-2">
+                      <div className="w-16 h-16 bg-navy/5 rounded-3xl flex items-center justify-center mx-auto text-navy">
+                         <Shield size={32} />
+                      </div>
+                      <h3 className="text-xl font-black text-navy">Security Settings</h3>
+                      <p className="text-xs font-bold text-navy/40">Keep your account safe by updating your password regularly.</p>
+                   </div>
+
+                   <form onSubmit={handlePasswordChange} className="space-y-6">
+                      <Input 
+                         label="Current Password" 
+                         type="password"
+                         value={securityData.currentPassword}
+                         onChange={(e) => setSecurityData({...securityData, currentPassword: e.target.value})}
+                         placeholder="Enter current password"
+                         required
+                      />
+                      <Input 
+                         label="New Password" 
+                         type="password"
+                         value={securityData.newPassword}
+                         onChange={(e) => setSecurityData({...securityData, newPassword: e.target.value})}
+                         placeholder="Enter new password"
+                         required
+                      />
+                      <Input 
+                         label="Confirm New Password" 
+                         type="password"
+                         value={securityData.confirmPassword}
+                         onChange={(e) => setSecurityData({...securityData, confirmPassword: e.target.value})}
+                         placeholder="Confirm new password"
+                         required
+                      />
+
+                      <Button 
+                         type="submit" 
+                         loading={isChangingPassword}
+                         className="w-full bg-navy text-white rounded-2xl py-4 shadow-xl shadow-navy/10 border-none"
+                      >
+                         Update Password
+                      </Button>
+                   </form>
+
+                   <div className="p-6 bg-red-50 rounded-[32px] border border-red-100 flex items-start gap-4">
+                      <div className="p-3 bg-white rounded-2xl text-red-500 shadow-sm">
+                         <Lock size={20} />
+                      </div>
+                      <div className="space-y-1">
+                         <p className="text-xs font-black text-red-600 uppercase tracking-widest">Privacy Note</p>
+                         <p className="text-[11px] font-bold text-red-900/60 leading-relaxed">
+                            Changing your password will not log you out from other devices. Ensure your new password is unique and strong.
+                         </p>
+                      </div>
+                   </div>
+                </div>
+             )}
+         </div>
       </div>
     </DashboardLayout>
   );
