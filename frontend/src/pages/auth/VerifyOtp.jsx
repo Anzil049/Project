@@ -7,6 +7,7 @@ import authService from '../../services/authService';
 import { ROUTES } from '../../constants/routes';
 import toast from 'react-hot-toast';
 import medicalImage from '../../assets/login.png';
+import { otpFormSchema, zodErrorsToObject } from '../../utils/validationSchemas';
 
 const VerifyOtp = () => {
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -52,8 +53,10 @@ const VerifyOtp = () => {
   const handleVerify = async (e) => {
     e.preventDefault();
     const otpValue = otp.join('');
-    if (otpValue.length < 6) {
-      setError('Please enter the full 6-digit OTP.');
+    const validation = otpFormSchema.safeParse({ otp: otpValue });
+    if (!validation.success) {
+      const validationErrors = zodErrorsToObject(validation);
+      setError(validationErrors.otp || 'Please enter the full 6-digit OTP.');
       return;
     }
 

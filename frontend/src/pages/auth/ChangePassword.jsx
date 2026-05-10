@@ -8,6 +8,8 @@ import useAuthStore from '../../store/authStore';
 import { ROUTES } from '../../constants/routes';
 import medicalImage from '../../assets/login.png';
 import toast from 'react-hot-toast';
+import { changePasswordSchema, zodErrorsToObject } from '../../utils/validationSchemas';
+import { getErrorMessage } from '../../utils/errorUtils';
 
 const ChangePassword = () => {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -43,21 +45,22 @@ const ChangePassword = () => {
       return;
     }
 
-    if (newPassword !== confirmPassword) {
-      setError('New passwords do not match');
-      setLoading(false);
-      return;
-    }
+    const validation = changePasswordSchema.safeParse({
+      currentPassword,
+      newPassword,
+      confirmPassword,
+    });
 
-    if (newPassword.length < 8) {
-      setError('Password must be at least 8 characters');
+    if (!validation.success) {
+      const validationErrors = zodErrorsToObject(validation);
+      setError(Object.values(validationErrors)[0] || 'Please check the password fields.');
       setLoading(false);
       return;
     }
 
     try {
       // Create a specific endpoint for changing first login password
-      await authService.changeFirstPassword(user.email, currentPassword, newPassword);
+      await authService.changeFirstPassword(user.email, validation.data.currentPassword, validation.data.newPassword);
       
       toast.success('Password updated successfully!');
       
@@ -73,8 +76,7 @@ const ChangePassword = () => {
         default: navigate(ROUTES.PATIENT.DASHBOARD); break;
       }
     } catch (err) {
-      const message = err.response?.data?.message || 'Failed to change password. Please check your current password.';
-      setError(message);
+      setError(getErrorMessage(err, 'Failed to change password. Please check your current password.'));
     } finally {
       setLoading(false);
     }

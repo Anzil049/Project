@@ -10,9 +10,11 @@ import {
 import useAuthStore from '../../store/authStore';
 import authService from '../../services/authService';
 import { toast } from 'react-hot-toast';
+import { getErrorMessage } from '../../utils/errorUtils';
 import { compressImage } from '../../utils/imageUtils';
 import { isProfileComplete } from '../../utils/profileUtils';
 import { AlertCircle } from 'lucide-react';
+import { hospitalProfileSchema, zodErrorsToObject } from '../../utils/validationSchemas';
 
 const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 
@@ -109,27 +111,22 @@ const HospitalProfile = () => {
   };
 
   const validateForm = () => {
-    const newErrors = {};
-    if (!profile.name.trim()) newErrors.name = 'Hospital name is required';
-    if (!profile.type) newErrors.type = 'Facility type is required';
-    if (!profile.registrationNumber.trim()) newErrors.registrationNumber = 'Registration number is required';
-    if (!profile.phone.trim()) newErrors.phone = 'Contact number is required';
-    if (!profile.address.trim()) newErrors.address = 'Street address is required';
-    if (!profile.city.trim()) newErrors.city = 'City is required';
-    if (!profile.state.trim()) newErrors.state = 'State is required';
-    if (!profile.about.trim()) newErrors.about = 'Hospital description is required';
-    
-    if (!profile.latitude || !profile.longitude) {
-       newErrors.location = 'Please select the hospital location on the map';
+    const result = hospitalProfileSchema.safeParse(profile);
+    const newErrors = zodErrorsToObject(result);
+    if (newErrors.latitude || newErrors.longitude) {
+      newErrors.location = newErrors.latitude || newErrors.longitude || 'Please select the hospital location on the map';
+      delete newErrors.latitude;
+      delete newErrors.longitude;
     }
-
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return newErrors;
   };
 
   const handleSave = async () => {
-    if (!validateForm()) {
-       toast.error('Please fix the errors before saving');
+    const validationErrors = validateForm();
+    if (Object.keys(validationErrors).length > 0) {
+       const errorList = Object.values(validationErrors).join(', ');
+       toast.error(`Please fix: ${errorList}`);
        return;
     }
     setIsSaving(true);
@@ -175,7 +172,7 @@ const HospitalProfile = () => {
       setFiles({ cover: null, logo: null });
       toast.success('Profile updated');
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Update failed');
+      toast.error(getErrorMessage(error, 'Update failed'));
     } finally {
       setIsSaving(false);
     }
@@ -200,7 +197,7 @@ const HospitalProfile = () => {
       toast.success('Password updated successfully');
       setSecurityData({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Password change failed');
+      toast.error(getErrorMessage(error, 'Password change failed'));
     } finally {
       setIsChangingPassword(false);
     }
@@ -473,7 +470,7 @@ const HospitalProfile = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                  <Input label="Email" value={profile.email} disabled />
                  <Input label="Phone" value={profile.phone} onChange={(e) => setProfile({...profile, phone: e.target.value})} disabled={!isEditing} error={errors.phone} />
-                 <Input label="Website" value={profile.website} onChange={(e) => setProfile({...profile, website: e.target.value})} disabled={!isEditing} />
+
                  <Input 
                     label="Zip Code" 
                     value={profile.zip} 

@@ -7,21 +7,32 @@ import { ROUTES } from '../../constants/routes';
 import authService from '../../services/authService';
 import toast from 'react-hot-toast';
 import medicalImage from '../../assets/login.png';
+import { forgotPasswordSchema, zodErrorsToObject } from '../../utils/validationSchemas';
 const ForgotPassword = () => {
   const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+
+    const validation = forgotPasswordSchema.safeParse({ email });
+    if (!validation.success) {
+      const validationErrors = zodErrorsToObject(validation);
+      setError(validationErrors.email || 'Enter a valid email address.');
+      return;
+    }
+
     setLoading(true);
     
     try {
-      await authService.forgotPassword(email);
+      await authService.forgotPassword(validation.data.email);
       setSubmitted(true);
       setTimeout(() => {
-        navigate('/verify-otp', { state: { email, type: 'recovery' } });
+        navigate('/verify-otp', { state: { email: validation.data.email, type: 'recovery' } });
       }, 2000);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to send reset code.');
@@ -96,6 +107,7 @@ const ForgotPassword = () => {
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
+                      error={error}
                       icon={Mail}
                       placeholder="name@example.com"
                       required

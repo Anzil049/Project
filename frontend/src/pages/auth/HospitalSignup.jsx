@@ -7,34 +7,18 @@ import {
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import { Button, Input, Select } from '../../components/common';
 import authService from '../../services/authService';
-import useAuthStore from '../../store/authStore';
 import { ROUTES } from '../../constants/routes';
 import toast from 'react-hot-toast';
 import medicalImage from '../../assets/login.png';
-
-const hospitalSignupSchema = z.object({
-  hospitalName: z.string().min(3, 'Hospital name must be at least 3 characters'),
-  adminEmail: z.string().email('Invalid email address'),
-  regNumber: z.string().min(5, 'Registration number is required'),
-  facilityType: z.enum(['Hospital', 'Clinic'], { errorMap: () => ({ message: 'Please select a facility type' }) }),
-  bedCapacity: z.string().regex(/^[1-9]\d*$/, 'Bed capacity must be a valid number greater than 0').min(1, 'Approximate bed capacity is required'),
-  password: z.string().min(8, 'Minimum 8 characters required'),
-  confirmPassword: z.string(),
-  certificate: z.any().refine((files) => files?.length > 0, "Registration certificate is required"),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
+import { FACILITY_TYPES, hospitalSignupSchema } from '../../utils/validationSchemas';
 
 const HospitalSignup = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const login = useAuthStore((state) => state.login);
 
-  const { register, handleSubmit, watch, formState: { errors } } = useForm({
+  const { register, handleSubmit, formState: { errors } } = useForm({
     resolver: zodResolver(hospitalSignupSchema),
     defaultValues: {
       hospitalName: '',
@@ -161,7 +145,7 @@ const HospitalSignup = () => {
 
                 <Select
                   label="Facility Type"
-                  options={['Hospital', 'Clinic']}
+                  options={FACILITY_TYPES}
                   {...register('facilityType')}
                   error={errors.facilityType?.message}
                   icon={Hospital}

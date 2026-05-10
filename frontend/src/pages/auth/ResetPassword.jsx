@@ -7,11 +7,13 @@ import authService from '../../services/authService';
 import { ROUTES } from '../../constants/routes';
 import toast from 'react-hot-toast';
 import medicalImage from '../../assets/login.png';
+import { resetPasswordFormSchema, zodErrorsToObject } from '../../utils/validationSchemas';
 
 const ResetPassword = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
   
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,14 +27,19 @@ const ResetPassword = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (password !== confirmPassword) {
-      toast.error("Passwords don't match");
+
+    const validation = resetPasswordFormSchema.safeParse({ password, confirmPassword });
+    if (!validation.success) {
+      const validationErrors = zodErrorsToObject(validation);
+      setErrors(validationErrors);
+      toast.error(Object.values(validationErrors)[0] || 'Please check the password fields.');
       return;
     }
 
+    setErrors({});
     setLoading(true);
     try {
-      await authService.resetPassword(email, otp, password);
+      await authService.resetPassword(email, otp, validation.data.password);
       toast.success('Password updated successfully!');
       setTimeout(() => navigate(ROUTES.LOGIN), 2000);
     } catch (err) {
@@ -70,6 +77,7 @@ const ResetPassword = () => {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                error={errors.password}
                 icon={Lock}
                 placeholder="••••••••"
                 required
@@ -80,6 +88,7 @@ const ResetPassword = () => {
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
+                error={errors.confirmPassword}
                 icon={ShieldCheck}
                 placeholder="••••••••"
                 required

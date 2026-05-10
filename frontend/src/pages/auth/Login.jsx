@@ -9,6 +9,7 @@ import { ROLES } from '../../constants/roles';
 import { ROUTES } from '../../constants/routes';
 import medicalImage from '../../assets/login.png';
 import toast from 'react-hot-toast';
+import { loginSchema, zodErrorsToObject } from '../../utils/validationSchemas';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -66,8 +67,16 @@ const Login = () => {
     setLoading(true);
     setError('');
 
+    const validation = loginSchema.safeParse({ email, password });
+    if (!validation.success) {
+      const validationErrors = zodErrorsToObject(validation);
+      setError(validationErrors.email || validationErrors.password || 'Please check your login details.');
+      setLoading(false);
+      return;
+    }
+
     try {
-      const data = await authService.login(email, password);
+      const data = await authService.login(validation.data.email, validation.data.password);
       
       // Check for 2FA requirement (simulated logic)
       if (data.requires2FA) {

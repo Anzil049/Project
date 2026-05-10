@@ -7,41 +7,16 @@ import {
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import { Button, Input } from '../../components/common';
 import authService from '../../services/authService';
-import useAuthStore from '../../store/authStore';
 import { ROUTES } from '../../constants/routes';
 import toast from 'react-hot-toast';
 import medicalImage from '../../assets/login.png';
-
-const doctorSignupSchema = z.object({
-  fullName: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  licenseNumber: z.string().min(5, 'Valid license number is required'),
-  specialization: z.string().min(1, 'Please select a specialization'),
-  customSpecialization: z.string().optional(),
-  experience: z.string().regex(/^\d+$/, 'Experience must be a valid positive number').min(1, 'Years of experience is required'),
-  password: z.string().min(8, 'Minimum 8 characters required'),
-  confirmPassword: z.string(),
-  certificate: z.any().refine((files) => files?.length > 0, "Professional certificate is required"),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-}).refine(data => {
-  if (data.specialization === 'Other' && !data.customSpecialization) {
-    return false;
-  }
-  return true;
-}, {
-  message: "Please specify your specialization",
-  path: ["customSpecialization"]
-});
+import { doctorSignupSchema } from '../../utils/validationSchemas';
 
 const DoctorSignup = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const login = useAuthStore((state) => state.login);
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm({
     resolver: zodResolver(doctorSignupSchema),

@@ -13,6 +13,7 @@ import { toast } from 'react-hot-toast';
 import { compressImage } from '../../utils/imageUtils';
 import { isProfileComplete } from '../../utils/profileUtils';
 import { AlertCircle } from 'lucide-react';
+import { patientProfileSchema, zodErrorsToObject } from '../../utils/validationSchemas';
 
 const PatientProfile = () => {
   const { user, updateUser } = useAuthStore();
@@ -95,32 +96,22 @@ const PatientProfile = () => {
   };
 
   const validateForm = () => {
-    const newErrors = {};
-    if (!profile.name.trim()) newErrors.name = 'Name is required';
-    if (!profile.phone.trim()) newErrors.phone = 'Phone number is required';
-    if (!profile.dob) newErrors.dob = 'Date of birth is required';
-    if (!profile.gender) newErrors.gender = 'Gender is required';
-    if (!profile.bloodGroup) newErrors.bloodGroup = 'Blood group is required';
-    if (!profile.address.trim()) newErrors.address = 'Address is required';
-    if (!profile.city.trim()) newErrors.city = 'City is required';
-    if (!profile.state.trim()) newErrors.state = 'State is required';
-    
-    // Emergency Contact
-    if (!profile.emgName.trim()) newErrors.emgName = 'Emergency contact name is required';
-    if (!profile.emgRelation.trim()) newErrors.emgRelation = 'Relationship is required';
-    if (!profile.emgPhone.trim()) newErrors.emgPhone = 'Emergency phone is required';
-
-    if (!profile.latitude || !profile.longitude) {
-       newErrors.location = 'Please select your location on the map';
+    const result = patientProfileSchema.safeParse(profile);
+    const newErrors = zodErrorsToObject(result);
+    if (newErrors.latitude || newErrors.longitude) {
+      newErrors.location = newErrors.latitude || newErrors.longitude || 'Please select your location on the map';
+      delete newErrors.latitude;
+      delete newErrors.longitude;
     }
-
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return newErrors;
   };
 
   const handleSave = async () => {
-    if (!validateForm()) {
-      toast.error('Please fix the errors before saving');
+    const validationErrors = validateForm();
+    if (Object.keys(validationErrors).length > 0) {
+      const errorList = Object.values(validationErrors).join(', ');
+      toast.error(`Please fix: ${errorList}`);
       return;
     }
     setIsSaving(true);

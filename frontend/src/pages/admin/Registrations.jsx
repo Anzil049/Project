@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button, Badge } from '../../components/common';
-import { 
+import {
   Building2, Stethoscope, Search, Check, X, FileText, Download, ShieldAlert
 } from 'lucide-react';
 import adminService from '../../services/adminService';
-import api from '../../services/api';
 import toast from 'react-hot-toast';
 
 const Registrations = () => {
@@ -19,6 +18,9 @@ const Registrations = () => {
   
   const [certModalOpen, setCertModalOpen] = useState(false);
   const [activeCertUrl, setActiveCertUrl] = useState(null);
+  const [activeCertSourceUrl, setActiveCertSourceUrl] = useState(null);
+  const [activeCertType, setActiveCertType] = useState(null); // 'image' | 'pdf'
+  const [activeCertFilename, setActiveCertFilename] = useState('certificate');
 
   const [processing, setProcessing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,6 +87,61 @@ const Registrations = () => {
 
   const [downloadingAction, setDownloadingAction] = useState(null); // 'view-ID' or 'download-ID'
 
+  const getCertificateFileMeta = (url, contentType = '') => {
+    const cleanUrl = (url || '').split('?')[0];
+    const filename = decodeURIComponent(cleanUrl.split('/').pop() || 'certificate');
+    const extension = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
+    const normalizedType = contentType.toLowerCase();
+
+    if (normalizedType.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(extension)) {
+      return { filename, type: 'image', extension: extension || 'jpg' };
+    }
+
+    return { filename, type: 'pdf', extension: extension || 'pdf' };
+  };
+
+  const getCertificateEndpoint = (url, shouldDownload = false) => {
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+    return `${baseUrl}/admin/download-certificate?url=${encodeURIComponent(url)}${shouldDownload ? '&download=1' : ''}`;
+  };
+
+  const getActiveAuthHeaders = () => {
+    const activeRole = sessionStorage.getItem('medcare_active_role');
+    const token = activeRole ? localStorage.getItem(`medcare_token_${activeRole}`) : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const fetchCertificateBlob = async (url, shouldDownload = false) => {
+    const response = await fetch(getCertificateEndpoint(url, shouldDownload), {
+      credentials: 'include',
+      headers: getActiveAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      let message = 'Failed to fetch certificate';
+      try {
+        const errorBody = await response.json();
+        message = errorBody.message || message;
+      } catch {
+        // Keep the generic message when the server sends a non-JSON error.
+      }
+      throw new Error(message);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    const meta = getCertificateFileMeta(url, contentType);
+    const responseBlob = await response.blob();
+    const blob = responseBlob.type
+      ? responseBlob
+      : new Blob([responseBlob], { type: meta.type === 'image' ? 'image/jpeg' : 'application/pdf' });
+
+    return {
+      ...meta,
+      blob,
+      blobUrl: window.URL.createObjectURL(blob),
+    };
+  };
+
   const handleDownload = async (url, id, shouldDownload = true) => {
     if (!url) return;
     
@@ -92,35 +149,28 @@ const Registrations = () => {
     
     try {
       setDownloadingAction(actionKey);
-      
-      let blobUrl = url;
-      
-      // If it's not already a local blob URL, fetch it via proxy
-      if (!url.startsWith('blob:')) {
-        console.log('Fetching via proxy:', url);
-        const response = await api.get(`/admin/download-certificate?url=${encodeURIComponent(url)}`, {
-          responseType: 'blob'
-        });
-        const contentType = response.headers['content-type'] || 'application/pdf';
-        const blob = new Blob([response.data], { type: contentType });
-        blobUrl = window.URL.createObjectURL(blob);
-      }
-      
+
+      const file = url.startsWith('blob:')
+        ? {
+            blobUrl: url,
+            filename: activeCertFilename,
+            extension: activeCertType === 'image' ? 'jpg' : 'pdf',
+          }
+        : await fetchCertificateBlob(url, shouldDownload);
+
       if (shouldDownload) {
         const link = document.createElement('a');
-        link.href = blobUrl;
-        // Try to guess extension from original url if possible, otherwise default to pdf
-        const ext = url.includes('.') ? url.split('.').pop().toLowerCase().split('?')[0] : 'pdf';
-        link.setAttribute('download', `certificate-${id.substring(0, 8)}.${ext === 'blob' ? 'pdf' : ext}`);
+        link.href = file.blobUrl;
+        link.setAttribute('download', file.filename || `certificate-${id.substring(0, 8)}.${file.extension}`);
         document.body.appendChild(link);
         link.click();
         link.remove();
-        // Only revoke if we created it here (i.e. if it wasn't passed as a blob)
+
         if (!url.startsWith('blob:')) {
-          setTimeout(() => window.URL.revokeObjectURL(blobUrl), 100);
+          setTimeout(() => window.URL.revokeObjectURL(file.blobUrl), 100);
         }
       } else {
-        window.open(blobUrl, '_blank');
+        window.open(file.blobUrl, '_blank', 'noopener,noreferrer');
       }
     } catch (error) {
       toast.error('Failed to access document. Please try again.');
@@ -134,6 +184,10 @@ const Registrations = () => {
   const openCertModal = async (url, id) => {
     if (!url) {
       setActiveCertUrl(null);
+      setActiveCertSourceUrl(null);
+      setActiveCertType(null);
+      setActiveCertFilename('certificate');
+      setActiveAppId(id);
       setCertModalOpen(true);
       return;
     }
@@ -141,18 +195,17 @@ const Registrations = () => {
     try {
       setPreviewLoading(true);
       setActiveCertUrl(null);
+      setActiveCertSourceUrl(url);
+      setActiveCertType(null);
+      setActiveCertFilename('certificate');
+      setActiveAppId(id);
       setCertModalOpen(true);
       
-      const response = await api.get(`/admin/download-certificate?url=${encodeURIComponent(url)}`, {
-        responseType: 'blob'
-      });
-      
-      const contentType = response.headers['content-type'] || 'application/pdf';
-      const blob = new Blob([response.data], { type: contentType });
-      const blobUrl = window.URL.createObjectURL(blob);
-      
-      setActiveCertUrl(blobUrl);
-      setActiveAppId(id);
+      const file = await fetchCertificateBlob(url, false);
+
+      setActiveCertType(file.type);
+      setActiveCertFilename(file.filename);
+      setActiveCertUrl(file.blobUrl);
     } catch (error) {
       toast.error('Failed to load certificate preview');
       setCertModalOpen(false);
@@ -166,6 +219,9 @@ const Registrations = () => {
       window.URL.revokeObjectURL(activeCertUrl);
     }
     setActiveCertUrl(null);
+    setActiveCertSourceUrl(null);
+    setActiveCertType(null);
+    setActiveCertFilename('certificate');
     setCertModalOpen(false);
   };
 
@@ -360,7 +416,7 @@ const Registrations = () => {
              <div className="w-full flex justify-end gap-4 mb-4">
                <button 
                  disabled={downloadingAction !== null || previewLoading}
-                 onClick={() => handleDownload(activeCertUrl, activeAppId, false)}
+                 onClick={() => handleDownload(activeCertSourceUrl || activeCertUrl, activeAppId, false)}
                  className="h-10 px-6 rounded-full bg-white/10 hover:bg-white/20 text-white font-black text-xs uppercase tracking-widest flex items-center gap-2 backdrop-blur-md transition-all disabled:opacity-50"
                >
                   {downloadingAction === `view-${activeAppId}` ? (
@@ -382,25 +438,34 @@ const Registrations = () => {
                     <p className="text-white font-bold">Securely fetching document...</p>
                  </div>
                ) : activeCertUrl ? (
-                 <div className="flex flex-col items-center gap-6 w-full">
-                   <img 
-                     src={activeCertUrl} 
-                     alt="Certificate Preview" 
-                     className="max-w-full max-h-[60vh] rounded-xl shadow-2xl border border-white/10"
-                     onError={(e) => {
-                       // If it's a PDF, the blob will fail as an img src
-                       e.target.style.display = 'none';
-                       document.getElementById('pdf-fallback').style.display = 'block';
-                     }}
-                   />
-                   <div id="pdf-fallback" className="hidden text-center py-12">
-                      <FileText size={64} className="text-white/20 mx-auto mb-4" />
-                      <p className="text-white font-bold">Document Preview Ready</p>
-                   </div>
+                 <div className="flex flex-col items-center gap-6 w-full h-full min-h-[60vh]">
+                    {activeCertType === 'image' ? (
+                      <img 
+                        src={activeCertUrl} 
+                        alt="Certificate Preview" 
+                        className="max-w-full max-h-[60vh] rounded-xl shadow-2xl border border-white/10 object-contain"
+                      />
+                    ) : (
+                      <div className="w-full h-[60vh] rounded-xl overflow-hidden bg-white">
+                        <object
+                          data={`${activeCertUrl}#toolbar=0&navpanes=0`}
+                          type="application/pdf"
+                          className="w-full h-full"
+                          aria-label="PDF certificate preview"
+                        >
+                          <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center">
+                            <FileText size={48} className="text-navy/30" />
+                            <p className="text-sm font-bold text-navy/60">
+                              Your browser could not render this PDF preview. Use Open Original File or Download Full Certificate.
+                            </p>
+                          </div>
+                        </object>
+                      </div>
+                    )}
                    
                    <button 
                      disabled={downloadingAction !== null}
-                     onClick={() => handleDownload(activeCertUrl, activeAppId, true)}
+                     onClick={() => handleDownload(activeCertSourceUrl || activeCertUrl, activeAppId, true)}
                      className={`bg-[#0D9488] hover:bg-[#0D9488]/80 text-white font-black rounded-2xl px-8 py-3 shadow-xl shadow-[#0D9488]/20 transition-all flex items-center justify-center gap-2 ${downloadingAction !== null ? 'opacity-50 cursor-not-allowed' : ''}`}
                    >
                      {downloadingAction === `download-${activeAppId}` ? (

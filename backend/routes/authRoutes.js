@@ -16,7 +16,16 @@ const {
 const { getCurrentUser, getFeaturedData, updateUserProfile } = require('../controllers/userController');
 const { protect } = require('../middleware/authMiddleware');
 const validate = require('../middleware/validatorMiddleware');
-const { registerValidator, loginValidator } = require('../validators/authValidator');
+const {
+    registerValidator,
+    loginValidator,
+    verifyOtpValidator,
+    resendOtpValidator,
+    forgotPasswordValidator,
+    resetPasswordValidator,
+    changePasswordValidator,
+    updateProfileValidator,
+} = require('../validators/authValidator');
 const upload = require('../config/multerConfig');
 const { authLimiter } = require('../middleware/rateLimitMiddleware');
 
@@ -24,11 +33,11 @@ const { authLimiter } = require('../middleware/rateLimitMiddleware');
 router.get('/me', getCurrentUser);
 router.get('/featured', getFeaturedData);
 router.post('/login', authLimiter, loginValidator, validate, loginUserGeneric);
-router.post('/verify-otp', verifyOTP);
-router.post('/resend-otp', resendOTP);
-router.post('/forgot-password', authLimiter, forgotPassword);
-router.post('/reset-password', authLimiter, resetPassword);
-router.post('/change-password', changeFirstPassword);
+router.post('/verify-otp', verifyOtpValidator, validate, verifyOTP);
+router.post('/resend-otp', resendOtpValidator, validate, resendOTP);
+router.post('/forgot-password', authLimiter, forgotPasswordValidator, validate, forgotPassword);
+router.post('/reset-password', authLimiter, resetPasswordValidator, validate, resetPassword);
+router.post('/change-password', changePasswordValidator, validate, changeFirstPassword);
 
 // Role-specific Registration
 router.post('/:role/register', 
@@ -50,7 +59,7 @@ router.get('/hospital/profile', protect('hospital'), getUserProfile);
 router.get('/admin/profile', protect('admin'), getUserProfile);
 
 // Unified profile update route
-router.put('/profile', protect('any'), updateUserProfile);
+router.put('/profile', protect('any'), updateProfileValidator, validate, updateUserProfile);
 
 // Upload route
 router.post('/upload', protect('any'), (req, res, next) => {

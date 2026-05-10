@@ -11,31 +11,9 @@ import {
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import toast from 'react-hot-toast';
 import hospitalService from '../../services/hospitalService';
-
-const doctorSchema = z.object({
-  name: z.string().min(3, 'Name must be at least 3 characters'),
-  maxTokens: z.coerce.number().min(1, 'Token limit must be at least 1').max(200, 'Limit exceeded'),
-  email: z.string().email('Invalid email address'),
-  phone: z.string().min(10, 'Invalid phone number'),
-  specialization: z.string().min(1, 'Please select a specialization'),
-  customSpecialization: z.string().optional(),
-
-  licenseNumber: z.string().min(3, 'License number is required'),
-  experience: z.string().min(1, 'Experience is required'),
-  qualifications: z.string().min(2, 'Qualifications are required'),
-  image: z.any().optional()
-}).refine(data => {
-  if (data.specialization === 'Other' && !data.customSpecialization) {
-    return false;
-  }
-  return true;
-}, {
-  message: "Please specify your specialization",
-  path: ["customSpecialization"]
-});
+import { hospitalDoctorSchema } from '../../utils/validationSchemas';
 
 const HospitalDoctors = () => {
   const allDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -92,6 +70,7 @@ const HospitalDoctors = () => {
   const [tempSlots, setTempSlots] = useState([]);
   const [tempDays, setTempDays] = useState([]);
   const [isAccepting, setIsAccepting] = useState(true);
+  const [selectedFile, setSelectedFile] = useState(null);
 
   const {
     register,
@@ -101,7 +80,7 @@ const HospitalDoctors = () => {
     watch,
     formState: { errors }
   } = useForm({
-    resolver: zodResolver(doctorSchema),
+    resolver: zodResolver(hospitalDoctorSchema),
     defaultValues: {
       name: '',
       specialization: '',
@@ -163,6 +142,7 @@ const HospitalDoctors = () => {
         image: null
       });
     }
+    setSelectedFile(null);
     setIsModalOpen(true);
   };
 
@@ -174,6 +154,7 @@ const HospitalDoctors = () => {
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      setSelectedFile(file);
       const imageUrl = URL.createObjectURL(file);
       setValue('image', imageUrl);
     }
@@ -196,8 +177,7 @@ const HospitalDoctors = () => {
       setValue('slots', newSlots);
     }
   };
-
-  const handleSlotChange = (index, field, value) => {
+  const handleSlotChange = (index, field, value) => {
     const newSlots = [...slots];
     newSlots[index][field] = value;
     setValue('slots', newSlots);
@@ -211,7 +191,35 @@ const HospitalDoctors = () => {
     setIsScheduleModalOpen(true);
   };
 
+  const validateSlots = (slotsToValidate) => {
+    for (const slot of slotsToValidate) {
+      if (!slot.start || !slot.end) return 'All slots must have a start and end time';
+      if (slot.start >= slot.end) {
+        return `Invalid slot: End time (${slot.end}) must be after start time (${slot.start})`;
+      }
+    }
+
+    const sortedSlots = [...slotsToValidate].sort((a, b) => a.start.localeCompare(b.start));
+
+    for (let i = 0; i < sortedSlots.length - 1; i++) {
+      const currentSlot = sortedSlots[i];
+      const nextSlot = sortedSlots[i + 1];
+
+      if (nextSlot.start < currentSlot.end) {
+        return `Slots overlap detected: ${currentSlot.start}-${currentSlot.end} and ${nextSlot.start}-${nextSlot.end}`;
+      }
+    }
+
+    return null;
+  };
+
   const submitSchedule = async () => {
+    const error = validateSlots(tempSlots);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
     try {
       setSubmitting(true);
       const response = await hospitalService.updateDoctor(scheduleDoctor.id, {
@@ -238,7 +246,6 @@ const HospitalDoctors = () => {
   const handleAddTempSlot = () => {
     setTempSlots([...tempSlots, { start: '09:00', end: '17:00' }]);
   };
-
   const handleRemoveTempSlot = (index) => {
     if (tempSlots.length > 1) {
       setTempSlots(tempSlots.filter((_, i) => i !== index));
@@ -327,9 +334,16 @@ const HospitalDoctors = () => {
 
     try {
       setSubmitting(true);
+      
+      let imageUrl = data.image;
+      if (selectedFile) {
+        imageUrl = await hospitalService.uploadImage(selectedFile);
+      }
+
       if (editingDoctor) {
         const response = await hospitalService.updateDoctor(editingDoctor.id, {
           ...data,
+          image: imageUrl,
           specialization: finalSpecialization
         });
         toast.success(response.message || 'Doctor record updated!');
@@ -338,6 +352,7 @@ const HospitalDoctors = () => {
       } else {
         const response = await hospitalService.addDoctor({
           ...data,
+          image: imageUrl,
           specialization: finalSpecialization
         });
         toast.success(response.message || 'New doctor registered successfully!');
@@ -702,7 +717,7 @@ const HospitalDoctors = () => {
                       {image && (
                         <button 
                            type="button"
-                           onClick={() => setValue('image', null)}
+                           onClick={() => { setValue('image', null); setSelectedFile(null); }}
                            className="text-[9px] font-black text-red-500 uppercase tracking-widest hover:underline"
                         >
                            Remove
@@ -763,6 +778,7 @@ const HospitalDoctors = () => {
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                <Input 
                   label="Official Email"
+                  disabled={!!editingDoctor}
                   type="email"
                   placeholder="name@hospital.com"
                   {...register('email')}

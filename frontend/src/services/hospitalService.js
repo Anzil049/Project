@@ -55,6 +55,20 @@ const hospitalService = {
     });
     return response.data;
   },
+
+  /**
+   * Upload image to Cloudinary via backend
+   */
+  uploadImage: async (file) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    const response = await api.post('/auth/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data.url;
+  },
 };
 
 export default hospitalService;

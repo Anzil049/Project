@@ -41,7 +41,7 @@ const Input = forwardRef(({
           id={name}
           name={name}
           type={currentType}
-          value={value ?? ''}
+          {...(value !== undefined ? { value: value ?? '' } : {})}
           onChange={onChange}
           onBlur={onBlur}
           ref={ref}

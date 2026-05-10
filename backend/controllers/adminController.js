@@ -152,9 +152,7 @@ const rejectRegistration = asyncHandler(async (req, res) => {
 // @route   GET /api/admin/download-certificate
 // @access  Private/Admin
 const downloadCertificate = asyncHandler(async (req, res) => {
-    const { url } = req.query;
-
-    console.log('Proxying download for URL:', url);
+    const { url, download } = req.query;
 
     if (!url) {
         res.status(400);
@@ -167,72 +165,78 @@ const downloadCertificate = asyncHandler(async (req, res) => {
     }
 
     try {
-        const cloudinary = require('cloudinary').v2;
-        
-        // Configuration
-        cloudinary.config({
-            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-            api_key: process.env.CLOUDINARY_API_KEY,
-            api_secret: process.env.CLOUDINARY_API_SECRET,
-        });
-
-        // Decode the URL to handle special characters (like spaces) correctly
         const decodedUrl = decodeURIComponent(url);
-        const urlParts = decodedUrl.split('/');
-        const medcareIndex = urlParts.findIndex(part => part === 'medcare_certificates');
-        let publicId = null;
-        if (medcareIndex !== -1) {
-            const idWithExt = urlParts.slice(medcareIndex).join('/');
-            // Remove the extension properly (everything after the last dot)
-            publicId = idWithExt.substring(0, idWithExt.lastIndexOf('.'));
+        let fetchUrl = decodedUrl;
+
+        // Cloudinary Signature Logic
+        if (decodedUrl.includes('cloudinary.com')) {
+            const cloudinary = require('cloudinary').v2;
+            cloudinary.config({
+                cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+                api_key: process.env.CLOUDINARY_API_KEY,
+                api_secret: process.env.CLOUDINARY_API_SECRET,
+            });
+
+            const urlParts = decodedUrl.split('/');
+            const uploadIndex = urlParts.findIndex(p => p === 'upload');
+
+            if (uploadIndex !== -1) {
+                const resourceType = urlParts[uploadIndex - 1] || 'image';
+                const nextPart = urlParts[uploadIndex + 1];
+                const hasVersion = /^v\d+/.test(nextPart);
+                const startIndex = hasVersion ? uploadIndex + 2 : uploadIndex + 1;
+                
+                if (urlParts.length > startIndex) {
+                    const idWithExt = urlParts.slice(startIndex).join('/');
+                    const dotIndex = idWithExt.lastIndexOf('.');
+                    const publicId = dotIndex !== -1 ? idWithExt.substring(0, dotIndex) : idWithExt;
+                    const ext = dotIndex !== -1 ? idWithExt.substring(dotIndex + 1) : '';
+
+                    fetchUrl = cloudinary.utils.private_download_url(publicId, ext, {
+                        resource_type: resourceType,
+                        type: 'upload',
+                        attachment: true
+                    });
+                }
+            }
         }
 
-        let downloadUrl = url;
-        const ext = decodedUrl.split('.').pop().toLowerCase();
-        
-        if (publicId) {
-            // Use the official private download URL generator
-            downloadUrl = cloudinary.utils.private_download_url(publicId, ext, {
-                resource_type: 'image',
-                type: 'upload',
-                attachment: true
-            });
-        }
+        const parsedUrl = new URL(decodedUrl);
+        const pathname = parsedUrl.pathname;
+        const filename = pathname.split('/').pop() || 'certificate';
+        const extension = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
 
         const response = await axios({
             method: 'get',
-            url: downloadUrl,
-            responseType: 'arraybuffer'
+            url: fetchUrl,
+            responseType: 'arraybuffer',
+            validateStatus: (status) => status >= 200 && status < 300,
         });
 
-        // Determine content type based on extension
-        let contentType = 'application/pdf';
-        if (['jpg', 'jpeg'].includes(ext)) contentType = 'image/jpeg';
-        else if (ext === 'png') contentType = 'image/png';
+        const contentTypeFromStorage = response.headers['content-type'];
+        const fallbackContentTypes = {
+            pdf: 'application/pdf',
+            jpg: 'image/jpeg',
+            jpeg: 'image/jpeg',
+            png: 'image/png',
+            webp: 'image/webp',
+        };
+        const contentType = contentTypeFromStorage || fallbackContentTypes[extension] || 'application/octet-stream';
+        const disposition = download === '1' ? 'attachment' : 'inline';
 
         res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Disposition', `inline; filename=certificate.${ext}`);
-        
+        res.setHeader('Content-Length', response.data.length);
+        res.setHeader('Content-Disposition', `${disposition}; filename="${filename}"`);
+        res.setHeader('Cache-Control', 'private, max-age=300');
+
         res.send(response.data);
     } catch (error) {
-        const fs = require('fs');
-        const urlParts = url.split('/');
-        const medcareIndex = urlParts.findIndex(part => part === 'medcare_certificates');
-        const idWithExt = medcareIndex !== -1 ? urlParts.slice(medcareIndex).join('/') : 'NOT_FOUND';
-        
-        // Regenerate signed URL for logging
-        const cloudinary = require('cloudinary').v2;
-        cloudinary.config({
-            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-            api_key: process.env.CLOUDINARY_API_KEY,
-            api_secret: process.env.CLOUDINARY_API_SECRET,
+        console.error('Certificate proxy failed:', {
+            message: error.message,
+            status: error.response?.status,
+            url,
         });
-        const publicId = idWithExt.substring(0, idWithExt.lastIndexOf('.'));
-        const signedUrlLog = cloudinary.utils.private_download_url(publicId, 'pdf', { resource_type: 'image', type: 'upload' });
 
-        const errorLog = `Error: ${error.message}\nURL: ${url}\nSIGNED_URL: ${signedUrlLog}\nID_EXTRACTED: ${publicId}\nStatus: ${error.response?.status}\nData: ${error.response?.data?.toString()}`;
-        fs.writeFileSync('_proxy_error.log', errorLog);
-        
         res.status(500).json({ 
             message: 'Failed to fetch certificate from storage',
             error: error.message 

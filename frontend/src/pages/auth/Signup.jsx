@@ -7,32 +7,19 @@ import {
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import { Button, Input } from '../../components/common';
 import authService from '../../services/authService';
-import useAuthStore from '../../store/authStore';
 import { ROUTES } from '../../constants/routes';
 import toast from 'react-hot-toast';
 import medicalImage from '../../assets/login.png';
-
-const signupSchema = z.object({
-  fullName: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  bloodGroup: z.string().min(1, 'Please select a blood group'),
-  password: z.string().min(8, 'Minimum 8 characters required'),
-  confirmPassword: z.string()
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
+import { BLOOD_GROUPS, patientSignupSchema } from '../../utils/validationSchemas';
 
 const Signup = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const login = useAuthStore((state) => state.login);
 
-  const { register, handleSubmit, watch, formState: { errors } } = useForm({
-    resolver: zodResolver(signupSchema),
+  const { register, handleSubmit, formState: { errors } } = useForm({
+    resolver: zodResolver(patientSignupSchema),
     defaultValues: {
       fullName: '',
       email: '',
@@ -179,7 +166,7 @@ const Signup = () => {
                     className={`w-full h-14 rounded-3xl bg-white/10 border ${errors.bloodGroup ? 'border-red-400' : 'border-white/10'} text-white px-6 outline-none focus:border-white transition-all appearance-none cursor-pointer font-bold text-sm`}
                   >
                     <option value="" className="bg-[#0D9488]">Select Group</option>
-                    {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
+                    {BLOOD_GROUPS.map(bg => (
                       <option key={bg} value={bg} className="bg-[#0D9488]">{bg}</option>
                     ))}
                   </select>

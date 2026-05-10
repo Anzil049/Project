@@ -27,7 +27,7 @@ const Select = forwardRef(({
         <select
           id={name}
           name={name}
-          value={value ?? ''}
+          {...(value !== undefined ? { value: value ?? '' } : {})}
           onChange={onChange}
           ref={ref}
           onFocus={() => setIsFocused(true)}

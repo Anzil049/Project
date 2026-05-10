@@ -10,9 +10,11 @@ import {
 
 import authService from '../../services/authService';
 import { toast } from 'react-hot-toast';
+import { getErrorMessage } from '../../utils/errorUtils';
 import { compressImage } from '../../utils/imageUtils';
 import { isProfileComplete } from '../../utils/profileUtils';
 import { AlertCircle } from 'lucide-react';
+import { doctorProfileSchema, zodErrorsToObject } from '../../utils/validationSchemas';
 
 const DoctorProfile = () => {
   const { user, updateUser } = useAuthStore();
@@ -92,20 +94,17 @@ const DoctorProfile = () => {
   };
 
   const validateForm = () => {
-    const newErrors = {};
-    if (!profileData.name.trim()) newErrors.name = 'Name is required';
-    if (!profileData.specialization.trim()) newErrors.specialization = 'Specialization is required';
-    if (!profileData.experience.toString().trim()) newErrors.experience = 'Experience is required';
-    if (!profileData.licenseNumber.trim()) newErrors.licenseNumber = 'License number is required';
-    if (!profileData.phone.trim()) newErrors.phone = 'Phone number is required';
-    if (!profileData.qualifications.trim()) newErrors.qualifications = 'Qualifications are required';
-    
-    // Only validate address and location for independent doctors
-    if (isIndependent) {
-      if (!profileData.clinicAddress.trim()) newErrors.clinicAddress = 'Clinic address is required';
-      if (!profileData.latitude || !profileData.longitude) {
-        newErrors.location = 'Please select your clinic location on the map';
-      }
+    const result = doctorProfileSchema.safeParse(profileData);
+    const newErrors = zodErrorsToObject(result);
+
+    if (!isIndependent) {
+      delete newErrors.clinicAddress;
+      delete newErrors.latitude;
+      delete newErrors.longitude;
+    } else if (newErrors.latitude || newErrors.longitude) {
+      newErrors.location = newErrors.latitude || newErrors.longitude || 'Please select your clinic location on the map';
+      delete newErrors.latitude;
+      delete newErrors.longitude;
     }
 
     setErrors(newErrors);
@@ -153,7 +152,43 @@ const DoctorProfile = () => {
       setAvatarFile(null);
       setIsEditing(false);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update profile');
+      toast.error(getErrorMessage(error, 'Failed to update profile'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    // Validation
+    if (!passwordForm.currentPassword) {
+      return toast.error('Current password is required');
+    }
+    if (!passwordForm.newPassword) {
+      return toast.error('New password is required');
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      return toast.error('Passwords do not match');
+    }
+    if (passwordForm.newPassword.length < 8) {
+      return toast.error('New password must be at least 8 characters');
+    }
+
+    setIsSaving(true);
+    try {
+      await authService.changeFirstPassword(
+        user.email, 
+        passwordForm.currentPassword, 
+        passwordForm.newPassword
+      );
+      
+      toast.success('Password updated successfully');
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to update password'));
     } finally {
       setIsSaving(false);
     }
@@ -485,12 +520,12 @@ const DoctorProfile = () => {
                              )}
                             {/* Consultation Fees */}
                              <div className="space-y-2">
-                                <label className="text-[11px] font-black uppercase tracking-widest text-navy/60 pl-2">Base Consultation Fee (USD)</label>
+                                <label className="text-[11px] font-black uppercase tracking-widest text-navy/60 pl-2">Base Consultation Fee (INR)</label>
                                 <div className={`flex items-center border rounded-2xl overflow-hidden transition-all focus-within:ring-2 focus-within:ring-[#0D9488]/20 focus-within:border-[#0D9488] ${!isEditing ? 'bg-gray-50 border-gray-100 opacity-70' : 'bg-white border-gray-200'}`}>
                                    <div className="pl-4 pr-3 text-navy/40">
                                       <CreditCard size={18} />
                                    </div>
-                                   <span className="font-black text-navy text-lg">$</span>
+                                   <span className="font-black text-navy text-lg">₹</span>
                                    <input 
                                      type="number"
                                      value={profileData.fee}
@@ -550,7 +585,11 @@ const DoctorProfile = () => {
                             value={passwordForm.confirmPassword}
                             onChange={(e) => setPasswordForm({...passwordForm, confirmPassword: e.target.value})}
                           />
-                          <Button className="w-full bg-navy text-white font-black text-xs rounded-2xl py-4 mt-4">
+                          <Button 
+                            onClick={handleUpdatePassword}
+                            loading={isSaving}
+                            className="w-full bg-navy text-white font-black text-xs rounded-2xl py-4 mt-4 border-none"
+                          >
                              Update Password
                           </Button>
                        </div>

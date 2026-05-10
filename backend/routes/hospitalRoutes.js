@@ -10,6 +10,8 @@ const {
     getPublicHospitals
 } = require('../controllers/hospitalController');
 const { protect } = require('../middleware/authMiddleware');
+const validate = require('../middleware/validatorMiddleware');
+const { hospitalDoctorValidator, hospitalDoctorUpdateValidator } = require('../validators/authValidator');
 
 const { doctorAddLimiter } = require('../middleware/rateLimitMiddleware');
 
@@ -23,13 +25,13 @@ router.use(protect('hospital'));
 // @desc    Add a new doctor
 // @route   POST /api/hospital/doctors
 // @access  Private (Hospital)
-router.post('/doctors', doctorAddLimiter, addDoctor);
+router.post('/doctors', doctorAddLimiter, hospitalDoctorValidator, validate, addDoctor);
 
 // @desc    Get all doctors
 // @route   GET /api/hospital/doctors
 // @access  Private (Hospital)
 router.get('/doctors', getDoctors);
-router.put('/doctors/:id', updateDoctor);
+router.put('/doctors/:id', hospitalDoctorUpdateValidator, validate, updateDoctor);
 router.patch('/doctors/:id/status', toggleDoctorStatus);
 router.delete('/doctors/:id', deleteDoctor);
 

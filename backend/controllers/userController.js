@@ -175,7 +175,7 @@ const updateUserProfile = async (req, res, next) => {
                     hospital.facilityType = req.body.facilityType || hospital.facilityType;
                     hospital.beds = req.body.beds || hospital.beds;
                     hospital.about = req.body.about || hospital.about;
-                    hospital.website = req.body.website || hospital.website;
+
                     hospital.address = req.body.address || hospital.address;
                     hospital.locality = req.body.locality || hospital.locality;
                     hospital.landmark = req.body.landmark || hospital.landmark;

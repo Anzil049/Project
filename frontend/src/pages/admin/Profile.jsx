@@ -8,6 +8,7 @@ import {
 import useAuthStore from '../../store/authStore';
 import authService from '../../services/authService';
 import { toast } from 'react-hot-toast';
+import { getErrorMessage } from '../../utils/errorUtils';
 
 const AdminProfile = () => {
   const { user, updateUser } = useAuthStore();
@@ -62,7 +63,43 @@ const AdminProfile = () => {
       toast.success('Admin profile updated');
       setIsEditing(false);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update admin profile');
+      toast.error(getErrorMessage(error, 'Failed to update admin profile'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    // Validation
+    if (!passwordForm.currentPassword) {
+      return toast.error('Current password is required');
+    }
+    if (!passwordForm.newPassword) {
+      return toast.error('New password is required');
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      return toast.error('Passwords do not match');
+    }
+    if (passwordForm.newPassword.length < 8) {
+      return toast.error('New password must be at least 8 characters');
+    }
+
+    setIsSaving(true);
+    try {
+      await authService.changeFirstPassword(
+        user.email, 
+        passwordForm.currentPassword, 
+        passwordForm.newPassword
+      );
+      
+      toast.success('Password updated successfully');
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to update password'));
     } finally {
       setIsSaving(false);
     }
@@ -187,10 +224,10 @@ const AdminProfile = () => {
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="md:col-span-2">
                             <Input 
-                              label="Full Name" 
-                              value={profileData.name} 
-                              disabled={!isEditing}
-                              onChange={(e) => handleInputChange('name', e.target.value)}
+                               label="Full Name" 
+                               value={profileData.name} 
+                               disabled={!isEditing}
+                               onChange={(e) => handleInputChange('name', e.target.value)}
                             />
                           </div>
                           <Input 
@@ -198,8 +235,7 @@ const AdminProfile = () => {
                             type="email"
                             icon={Mail}
                             value={profileData.email} 
-                            disabled={!isEditing}
-                            onChange={(e) => handleInputChange('email', e.target.value)}
+                            disabled
                           />
                           <Input 
                             label="Administrative Role" 
@@ -245,7 +281,11 @@ const AdminProfile = () => {
                             value={passwordForm.confirmPassword}
                             onChange={(e) => setPasswordForm({...passwordForm, confirmPassword: e.target.value})}
                           />
-                          <Button className="w-full bg-navy text-white font-black text-xs rounded-2xl py-4 mt-4 text-center">
+                          <Button 
+                            onClick={handleUpdatePassword}
+                            loading={isSaving}
+                            className="w-full bg-navy text-white font-black text-xs rounded-2xl py-4 mt-4 text-center border-none"
+                          >
                              Update Secure Password
                           </Button>
                        </div>

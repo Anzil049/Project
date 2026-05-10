@@ -26,9 +26,7 @@ const hospitalSchema = mongoose.Schema({
     phone: {
         type: String,
     },
-    website: {
-        type: String,
-    },
+
     address: {
         type: String,
     },
