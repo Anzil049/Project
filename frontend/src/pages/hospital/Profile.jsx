@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
-import { Card, Button, Input, Badge, LocationPicker, Avatar } from '../../components/common';
+import { Card, Button, Input, Select, Badge, LocationPicker, Avatar } from '../../components/common';
 import { 
   Building2, UploadCloud, MapPin, Phone, 
   Globe, Mail, CheckCircle2,
@@ -11,6 +11,8 @@ import useAuthStore from '../../store/authStore';
 import authService from '../../services/authService';
 import { toast } from 'react-hot-toast';
 import { compressImage } from '../../utils/imageUtils';
+import { isProfileComplete } from '../../utils/profileUtils';
+import { AlertCircle } from 'lucide-react';
 
 const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 
@@ -27,6 +29,7 @@ const HospitalProfile = () => {
   const [activeTab, setActiveTab] = useState('general');
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [errors, setErrors] = useState({});
   const [files, setFiles] = useState({ cover: null, logo: null });
   const fileInputRef = useRef(null);
   const logoInputRef = useRef(null);
@@ -48,6 +51,29 @@ const HospitalProfile = () => {
     latitude: user?.location?.coordinates?.[1] || null,
     longitude: user?.location?.coordinates?.[0] || null
   });
+
+  useEffect(() => {
+    if (user) {
+      setProfile(prev => ({
+        ...prev,
+        name: user.name || '',
+        type: user.hospitalProfile?.facilityType || '',
+        registrationNumber: user.hospitalProfile?.registrationNumber || '',
+        about: user.hospitalProfile?.about || '',
+        coverImage: user.hospitalProfile?.coverImage || null,
+        image: user.image || null,
+        email: user.email || '',
+        phone: user.hospitalProfile?.phone || user.phone || '',
+        website: user.hospitalProfile?.website || '',
+        address: user.hospitalProfile?.address || '',
+        city: user.hospitalProfile?.city || '',
+        state: user.hospitalProfile?.state || '',
+        zip: user.hospitalProfile?.zip || '',
+        latitude: user.location?.coordinates?.[1] || null,
+        longitude: user.location?.coordinates?.[0] || null
+      }));
+    }
+  }, [user]);
 
   const [showMap, setShowMap] = useState(false);
   const locationPickerRef = useRef(null);
@@ -82,7 +108,30 @@ const HospitalProfile = () => {
     setFiles(prev => ({ ...prev, cover: null }));
   };
 
+  const validateForm = () => {
+    const newErrors = {};
+    if (!profile.name.trim()) newErrors.name = 'Hospital name is required';
+    if (!profile.type) newErrors.type = 'Facility type is required';
+    if (!profile.registrationNumber.trim()) newErrors.registrationNumber = 'Registration number is required';
+    if (!profile.phone.trim()) newErrors.phone = 'Contact number is required';
+    if (!profile.address.trim()) newErrors.address = 'Street address is required';
+    if (!profile.city.trim()) newErrors.city = 'City is required';
+    if (!profile.state.trim()) newErrors.state = 'State is required';
+    if (!profile.about.trim()) newErrors.about = 'Hospital description is required';
+    
+    if (!profile.latitude || !profile.longitude) {
+       newErrors.location = 'Please select the hospital location on the map';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSave = async () => {
+    if (!validateForm()) {
+       toast.error('Please fix the errors before saving');
+       return;
+    }
     setIsSaving(true);
     try {
       let finalCoverImage = profile.coverImage;
@@ -186,6 +235,20 @@ const HospitalProfile = () => {
           </div>
         </div>
 
+        {!isProfileComplete(user) && (
+          <div className="mb-8 p-6 bg-red-50 border border-red-100 rounded-[30px] flex items-start gap-4 animate-bounce-subtle">
+            <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 shrink-0">
+              <AlertCircle size={24} />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-red-900">Incomplete Profile</h3>
+              <p className="text-sm font-bold text-red-800/60 leading-relaxed">
+                Your facility profile is incomplete. Please provide all required details, including facility type, beds, and location coordinates, to enable public listings and appointment booking.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Cover Photo & Logo Section */}
         <Card className="p-0 border border-gray-100 bg-white rounded-[40px] overflow-hidden shadow-2xl shadow-navy/5 mb-8">
            <div className="relative w-full h-[250px] bg-gray-50 flex items-center justify-center">
@@ -271,24 +334,42 @@ const HospitalProfile = () => {
            {activeTab === 'general' && (
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="md:col-span-2">
-                   <Input label="Hospital Name" value={profile.name} onChange={(e) => setProfile({...profile, name: e.target.value})} disabled={!isEditing} />
+                   <Input label="Hospital Name" value={profile.name} onChange={(e) => setProfile({...profile, name: e.target.value})} disabled={!isEditing} error={errors.name} />
                 </div>
-                <Input label="Facility Type" value={profile.type} onChange={(e) => setProfile({...profile, type: e.target.value})} disabled={!isEditing} />
-                <Input label="License No." value={profile.registrationNumber} onChange={(e) => setProfile({...profile, registrationNumber: e.target.value})} disabled={!isEditing} />
+                <Select 
+                    label="Facility Type" 
+                    value={profile.type} 
+                    options={['Hospital', 'Clinic']}
+                    onChange={(e) => setProfile({...profile, type: e.target.value})} 
+                    disabled={!isEditing} 
+                    error={errors.type}
+                 />
+                <Input label="License No." value={profile.registrationNumber} onChange={(e) => setProfile({...profile, registrationNumber: e.target.value})} disabled={!isEditing} error={errors.registrationNumber} />
                 <div className="md:col-span-2 space-y-2">
                    <label className="text-[10px] font-black uppercase text-navy/60 pl-2">About</label>
                    <textarea
-                      value={profile.about}
+                      value={profile.about ?? ''}
                       onChange={(e) => setProfile({...profile, about: e.target.value})}
                       disabled={!isEditing}
-                      className="w-full text-sm font-bold text-navy bg-gray-50 border border-gray-100 rounded-[20px] px-5 py-4 focus:bg-white focus:border-[#0D9488] outline-none resize-none min-h-[140px] disabled:opacity-60"
+                      className={`w-full text-sm font-bold text-navy bg-gray-50 border border-gray-100 rounded-[20px] px-5 py-4 focus:bg-white focus:border-[#0D9488] outline-none resize-none min-h-[140px] disabled:opacity-60 ${errors.about ? 'border-red-500' : ''}`}
                    ></textarea>
+                   {errors.about && <p className="text-[11px] text-red-500 font-bold px-2">{errors.about}</p>}
                 </div>
              </div>
            )}
 
             {activeTab === 'location' && (
                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                       <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Facility Coordinates</p>
+                       <Badge variant={errors.location ? "destructive" : "outline"} className="mt-1 text-[10px] font-black">
+                          {profile.latitude ? `${Number(profile.latitude).toFixed(6)}, ${Number(profile.longitude).toFixed(6)}` : (errors.location ? 'REQUIRED' : 'NOT SET')}
+                       </Badge>
+                    </div>
+                    {errors.location && <p className="text-[10px] text-red-500 font-bold uppercase">{errors.location}</p>}
+                  </div>
+
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                      <button
                         onClick={() => {
@@ -324,23 +405,19 @@ const HospitalProfile = () => {
                      </button>
                   </div>
 
-                  {showMap && isEditing && (
-                    <div className="animate-in zoom-in-95 duration-300">
+                    <div className="animate-in zoom-in-95 duration-300 min-h-[400px]">
                       <LocationPicker 
                         ref={locationPickerRef}
                         lat={profile.latitude}
                         lng={profile.longitude}
+                        isEditing={isEditing}
                         onLocationSelect={(lat, lng, addressData) => {
                            const updates = { latitude: lat, longitude: lng };
                            if (addressData) {
-                              // Preference: use the specific address components if available, 
-                              // else fallback to a cleaner version of the full address
                               if (addressData.city) updates.city = addressData.city;
                               if (addressData.state) updates.state = addressData.state;
                               if (addressData.zip) updates.zip = addressData.zip;
                               
-                              // For the "Address (Area and Street)" field:
-                              // We use the fullAddress but try to strip the City and State from the end if they match
                               let cleanAddress = addressData.fullAddress || '';
                               if (addressData.city && cleanAddress.includes(addressData.city)) {
                                  cleanAddress = cleanAddress.split(addressData.city)[0].trim().replace(/,$/, '');
@@ -349,11 +426,9 @@ const HospitalProfile = () => {
                            }
                            setProfile(prev => ({ ...prev, ...updates }));
                         }}
-                        isEditing={isEditing}
                         hideLocateButton={true}
                       />
                     </div>
-                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                      <Input 
@@ -369,29 +444,27 @@ const HospitalProfile = () => {
                         onChange={(e) => setProfile({...profile, city: e.target.value})}
                         disabled={!isEditing}
                         placeholder="City/District/Town"
+                        error={errors.city}
                      />
                      <div className="md:col-span-2">
                         <label className="text-[10px] font-black uppercase text-navy/60 pl-2 mb-2 block">Address (Area and Street)</label>
                         <textarea
-                           value={profile.address}
+                           value={profile.address ?? ''}
                            onChange={(e) => setProfile({...profile, address: e.target.value})}
                            disabled={!isEditing}
                            placeholder="Area and Street"
-                           className="w-full text-sm font-bold text-navy bg-gray-50 border border-gray-100 rounded-[20px] px-5 py-4 focus:bg-white focus:border-[#0D9488] outline-none resize-none min-h-[100px] disabled:opacity-60"
+                           className={`w-full text-sm font-bold text-navy bg-gray-50 border border-gray-100 rounded-[20px] px-5 py-4 focus:bg-white focus:border-[#0D9488] outline-none resize-none min-h-[100px] disabled:opacity-60 ${errors.address ? 'border-red-500' : ''}`}
                         ></textarea>
+                        {errors.address && <p className="text-[11px] text-red-500 font-bold px-2">{errors.address}</p>}
                      </div>
-                     <div className="flex flex-col gap-2 w-full">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-navy/40 pl-1">State</label>
-                        <select
-                           value={profile.state}
-                           onChange={(e) => setProfile({...profile, state: e.target.value})}
-                           disabled={!isEditing}
-                           className="w-full h-full bg-white border-2 border-gray-100 rounded-2xl px-4 py-4 outline-none font-body text-navy text-sm font-bold focus:border-[#0D9488] disabled:opacity-60 transition-all"
-                        >
-                           <option value="">Select State</option>
-                           {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                     </div>
+                     <Select
+                        label="State"
+                        value={profile.state}
+                        options={INDIAN_STATES}
+                        onChange={(e) => setProfile({...profile, state: e.target.value})}
+                        disabled={!isEditing}
+                        error={errors.state}
+                     />
                   </div>
                </div>
             )}
@@ -399,7 +472,7 @@ const HospitalProfile = () => {
             {activeTab === 'contact' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                  <Input label="Email" value={profile.email} disabled />
-                 <Input label="Phone" value={profile.phone} onChange={(e) => setProfile({...profile, phone: e.target.value})} disabled={!isEditing} />
+                 <Input label="Phone" value={profile.phone} onChange={(e) => setProfile({...profile, phone: e.target.value})} disabled={!isEditing} error={errors.phone} />
                  <Input label="Website" value={profile.website} onChange={(e) => setProfile({...profile, website: e.target.value})} disabled={!isEditing} />
                  <Input 
                     label="Zip Code" 

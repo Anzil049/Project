@@ -13,6 +13,8 @@ const hospitalSchema = mongoose.Schema({
     facilityType: {
         type: String,
         required: true,
+        enum: ['Hospital', 'Clinic'],
+        set: v => v ? v.charAt(0).toUpperCase() + v.slice(1).toLowerCase() : v
     },
     beds: {
         type: String,

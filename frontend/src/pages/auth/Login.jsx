@@ -18,6 +18,7 @@ const Login = () => {
   
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
+  const setAuthLoading = useAuthStore((state) => state.setLoading);
   
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -67,20 +68,36 @@ const Login = () => {
 
     try {
       const data = await authService.login(email, password);
-      login(data); // Store the whole user object
       
       // Check for 2FA requirement (simulated logic)
       if (data.requires2FA) {
+        login(data); // Store the whole user object
         navigate('/verify-otp', { state: { email, type: '2fa' } });
         return;
       }
 
       if (data.isFirstLogin) {
+        login(data); // Store the whole user object
         navigate(ROUTES.CHANGE_PASSWORD);
         return;
       }
 
-      switch (data.role) {
+      login(data); // Save the token first so the profile refresh can authenticate.
+      setAuthLoading(true);
+
+      let hydratedUser;
+      try {
+        hydratedUser = await authService.getCurrentUser('me');
+      } catch (profileErr) {
+        console.error('Profile hydration after login failed:', profileErr);
+        setAuthLoading(false);
+        setError('Login succeeded, but your profile data could not load. Please try again.');
+        return;
+      }
+
+      login({ ...hydratedUser, token: data.token });
+
+      switch (hydratedUser.role) {
         case 'admin': navigate(ROUTES.ADMIN.DASHBOARD); break;
         case 'hospital': navigate(ROUTES.HOSPITAL.DASHBOARD); break;
         case 'doctor': navigate(ROUTES.DOCTOR.DASHBOARD); break;

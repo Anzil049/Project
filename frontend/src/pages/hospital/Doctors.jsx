@@ -25,6 +25,7 @@ const doctorSchema = z.object({
 
   licenseNumber: z.string().min(3, 'License number is required'),
   experience: z.string().min(1, 'Experience is required'),
+  qualifications: z.string().min(2, 'Qualifications are required'),
   image: z.any().optional()
 }).refine(data => {
   if (data.specialization === 'Other' && !data.customSpecialization) {
@@ -63,6 +64,7 @@ const HospitalDoctors = () => {
         specialization: doc.specialization,
         licenseNumber: doc.licenseNumber,
         experience: doc.experience,
+        qualifications: doc.qualifications || '',
         image: doc.user?.image || '',
         slots: doc.slots || [],
         availableDays: doc.availableDays || [],
@@ -108,6 +110,8 @@ const HospitalDoctors = () => {
       phone: '',
       maxTokens: 20,
 
+      experience: '',
+      qualifications: '',
       image: null
     }
   });
@@ -138,6 +142,7 @@ const HospitalDoctors = () => {
         phone: doctor.phone,
         licenseNumber: doctor.licenseNumber || '',
         experience: doctor.experience || '',
+        qualifications: doctor.qualifications || '',
         maxTokens: doctor.maxTokens || 20,
 
         image: doctor.image || null
@@ -152,6 +157,7 @@ const HospitalDoctors = () => {
         phone: '',
         licenseNumber: '',
         experience: '',
+        qualifications: '',
         maxTokens: 20,
 
         image: null
@@ -614,7 +620,6 @@ const HospitalDoctors = () => {
                      </div>
                   </div>
                </Card>
-
             </div>
 
             <div className="p-6 bg-gray-50 rounded-[32px] border border-gray-100 shadow-sm transition-all hover:bg-[#0D9488]/5 group">
@@ -731,7 +736,6 @@ const HospitalDoctors = () => {
                 />
              </div>
 
-
              <div className="space-y-1.5 text-left">
                 <label className="text-xs font-bold text-navy/40 uppercase tracking-widest pl-1">Primary Specialization</label>
                 <select 
@@ -786,6 +790,13 @@ const HospitalDoctors = () => {
                   error={errors.experience?.message}
                />
              </div>
+             
+             <Input 
+                label="Medical Qualifications"
+                placeholder="e.g. MBBS, MD, FRCS"
+                {...register('qualifications')}
+                error={errors.qualifications?.message}
+             />
            </div>
 
              <div className="flex gap-3 pt-4">

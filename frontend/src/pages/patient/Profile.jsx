@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
-import { Card, Button, Input, Badge, LocationPicker, Avatar } from '../../components/common';
+import { Card, Button, Input, Select, Badge, LocationPicker, Avatar } from '../../components/common';
 import { 
   User, Mail, Phone, MapPin, 
   Shield, Camera, UploadCloud, X, Save,
@@ -11,6 +11,8 @@ import useAuthStore from '../../store/authStore';
 import authService from '../../services/authService';
 import { toast } from 'react-hot-toast';
 import { compressImage } from '../../utils/imageUtils';
+import { isProfileComplete } from '../../utils/profileUtils';
+import { AlertCircle } from 'lucide-react';
 
 const PatientProfile = () => {
   const { user, updateUser } = useAuthStore();
@@ -20,6 +22,7 @@ const PatientProfile = () => {
   const [avatarFile, setAvatarFile] = useState(null);
   const fileInputRef = useRef(null);
   const locationPickerRef = useRef(null);
+  const [errors, setErrors] = useState({});
 
   // Core structured data initialized from real user data
   const [profile, setProfile] = useState({
@@ -35,9 +38,6 @@ const PatientProfile = () => {
     state: user?.state || '',
     zip: user?.zip || '',
     
-    height: user?.height || '',
-    weight: user?.weight || '',
-    allergies: user?.allergies || '',
     chronicConditions: user?.chronicConditions || '',
     
     emgName: user?.emgName || '',
@@ -47,6 +47,32 @@ const PatientProfile = () => {
     latitude: user?.location?.coordinates?.[1] || null,
     longitude: user?.location?.coordinates?.[0] || null,
   });
+
+  // Sync profile state if user data updates (e.g. from App.jsx session check)
+  useEffect(() => {
+    if (user) {
+      setProfile(prev => ({
+        ...prev,
+        name: user.name || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        avatarImage: user.image || null,
+        bloodGroup: user.bloodGroup || '',
+        dob: user.dob ? new Date(user.dob).toISOString().split('T')[0] : '',
+        gender: user.gender || '',
+        address: user.address || '',
+        city: user.city || '',
+        state: user.state || '',
+        zip: user.zip || '',
+        chronicConditions: user.chronicConditions || '',
+        emgName: user.emgName || '',
+        emgRelation: user.emgRelation || '',
+        emgPhone: user.emgPhone || '',
+        latitude: user.location?.coordinates?.[1] || null,
+        longitude: user.location?.coordinates?.[0] || null,
+      }));
+    }
+  }, [user]);
 
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
@@ -68,7 +94,35 @@ const PatientProfile = () => {
     setAvatarFile(null);
   };
 
+  const validateForm = () => {
+    const newErrors = {};
+    if (!profile.name.trim()) newErrors.name = 'Name is required';
+    if (!profile.phone.trim()) newErrors.phone = 'Phone number is required';
+    if (!profile.dob) newErrors.dob = 'Date of birth is required';
+    if (!profile.gender) newErrors.gender = 'Gender is required';
+    if (!profile.bloodGroup) newErrors.bloodGroup = 'Blood group is required';
+    if (!profile.address.trim()) newErrors.address = 'Address is required';
+    if (!profile.city.trim()) newErrors.city = 'City is required';
+    if (!profile.state.trim()) newErrors.state = 'State is required';
+    
+    // Emergency Contact
+    if (!profile.emgName.trim()) newErrors.emgName = 'Emergency contact name is required';
+    if (!profile.emgRelation.trim()) newErrors.emgRelation = 'Relationship is required';
+    if (!profile.emgPhone.trim()) newErrors.emgPhone = 'Emergency phone is required';
+
+    if (!profile.latitude || !profile.longitude) {
+       newErrors.location = 'Please select your location on the map';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSave = async () => {
+    if (!validateForm()) {
+      toast.error('Please fix the errors before saving');
+      return;
+    }
     setIsSaving(true);
     try {
       let finalImageUrl = profile.avatarImage;
@@ -86,10 +140,6 @@ const PatientProfile = () => {
         bloodGroup: profile.bloodGroup,
         dob: profile.dob,
         gender: profile.gender,
-        height: profile.height,
-        weight: profile.weight,
-        allergies: profile.allergies,
-        chronicConditions: profile.chronicConditions,
         address: profile.address,
         city: profile.city,
         state: profile.state,
@@ -160,6 +210,20 @@ const PatientProfile = () => {
           </div>
         </div>
 
+        {!isProfileComplete(user) && (
+          <div className="mb-8 p-6 bg-red-50 border border-red-100 rounded-[30px] flex items-start gap-4 animate-bounce-subtle">
+            <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 shrink-0">
+              <AlertCircle size={24} />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-red-900">Incomplete Profile</h3>
+              <p className="text-sm font-bold text-red-800/60 leading-relaxed">
+                Some required fields are missing. Please complete all personal and residential details (including your location on the map) to unlock all dashboard features.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Avatar Box */}
         <Card className="p-8 mb-8 bg-white border border-gray-100 rounded-[40px] shadow-2xl shadow-navy/5 flex flex-col sm:flex-row items-center gap-8">
            <div className="relative group shrink-0">
@@ -206,7 +270,7 @@ const PatientProfile = () => {
         {/* Tabs */}
         <div className="bg-white border-b border-gray-200 mb-8 sticky top-[72px] z-20">
            <div className="flex overflow-x-auto hide-scrollbar">
-              {['personal', 'medical', 'emergency', 'security'].map((tab) => (
+              {['personal', 'emergency', 'security'].map((tab) => (
                  <button
                     key={tab}
                     type="button"
@@ -227,13 +291,28 @@ const PatientProfile = () => {
         <div className="space-y-6">
            {activeTab === 'personal' && (
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Input label="Full Name" value={profile.name} onChange={(e) => setProfile({...profile, name: e.target.value})} disabled={!isEditing} />
+                <Input label="Full Name" value={profile.name} onChange={(e) => setProfile({...profile, name: e.target.value})} disabled={!isEditing} error={errors.name} />
                 <Input label="Email Address" value={profile.email} disabled />
-                <Input label="Phone Number" value={profile.phone} onChange={(e) => setProfile({...profile, phone: e.target.value})} disabled={!isEditing} />
+                <Input label="Phone Number" value={profile.phone} onChange={(e) => setProfile({...profile, phone: e.target.value})} disabled={!isEditing} error={errors.phone} />
                 <div className="grid grid-cols-2 gap-4">
-                   <Input label="DOB" type="date" value={profile.dob} onChange={(e) => setProfile({...profile, dob: e.target.value})} disabled={!isEditing} />
-                   <Input label="Gender" value={profile.gender} onChange={(e) => setProfile({...profile, gender: e.target.value})} disabled={!isEditing} />
+                   <Input label="DOB" type="date" value={profile.dob} onChange={(e) => setProfile({...profile, dob: e.target.value})} disabled={!isEditing} error={errors.dob} />
+                   <Select 
+                      label="Gender" 
+                      value={profile.gender} 
+                      options={['Male', 'Female', 'Other']}
+                      onChange={(e) => setProfile({...profile, gender: e.target.value})} 
+                      disabled={!isEditing} 
+                      error={errors.gender}
+                   />
                 </div>
+                <Select 
+                   label="Blood Group" 
+                   value={profile.bloodGroup} 
+                   options={['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']}
+                   onChange={(e) => setProfile({...profile, bloodGroup: e.target.value})} 
+                   disabled={!isEditing} 
+                   error={errors.bloodGroup}
+                />
                 <div className="md:col-span-2">
                    <Input 
                       label="Address" 
@@ -241,6 +320,7 @@ const PatientProfile = () => {
                       onChange={(e) => setProfile({...profile, address: e.target.value})}
                       disabled={!isEditing}
                       placeholder="Enter your street address"
+                      error={errors.address}
                    />
                 </div>
                 <Input 
@@ -249,6 +329,7 @@ const PatientProfile = () => {
                    onChange={(e) => setProfile({...profile, city: e.target.value})}
                    disabled={!isEditing}
                    placeholder="City"
+                   error={errors.city}
                 />
                 <Input 
                    label="State" 
@@ -256,16 +337,18 @@ const PatientProfile = () => {
                    onChange={(e) => setProfile({...profile, state: e.target.value})}
                    disabled={!isEditing}
                    placeholder="State"
+                   error={errors.state}
                 />
 
                 {/* Location Picker Integrated */}
                 <div className="md:col-span-2 pt-6 border-t border-gray-50 space-y-4">
                    <div className="flex items-center justify-between">
                       <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Residential Location (Map)</p>
-                      <Badge variant="outline" className="text-[9px] font-black px-2 py-0.5">
-                         {profile.latitude ? `${Number(profile.latitude).toFixed(4)}, ${Number(profile.longitude).toFixed(4)}` : 'NOT SET'}
+                      <Badge variant={errors.location ? "destructive" : "outline"} className="text-[9px] font-black px-2 py-0.5">
+                         {profile.latitude ? `${Number(profile.latitude).toFixed(4)}, ${Number(profile.longitude).toFixed(4)}` : (errors.location ? 'REQUIRED' : 'NOT SET')}
                       </Badge>
                    </div>
+                   {errors.location && <p className="text-[10px] text-red-500 font-bold uppercase">{errors.location}</p>}
                    
                    <LocationPicker 
                         ref={locationPickerRef}
@@ -273,8 +356,8 @@ const PatientProfile = () => {
                         lng={profile.longitude}
                         onLocationSelect={(lat, lng, addressData) => {
                            const updates = { 
-                              latitude: lat.toFixed(6), 
-                              longitude: lng.toFixed(6) 
+                               latitude: lat.toFixed(6), 
+                               longitude: lng.toFixed(6) 
                            };
                            if (addressData) {
                               if (addressData.city) updates.city = addressData.city;
@@ -302,30 +385,11 @@ const PatientProfile = () => {
              </div>
            )}
 
-           {activeTab === 'medical' && (
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Input label="Blood Group" value={profile.bloodGroup} onChange={(e) => setProfile({...profile, bloodGroup: e.target.value})} disabled={!isEditing} />
-                <div className="grid grid-cols-2 gap-4">
-                   <Input label="Height (cm)" type="number" value={profile.height} onChange={(e) => setProfile({...profile, height: e.target.value})} disabled={!isEditing} />
-                   <Input label="Weight (kg)" type="number" value={profile.weight} onChange={(e) => setProfile({...profile, weight: e.target.value})} disabled={!isEditing} />
-                </div>
-                <div className="md:col-span-2">
-                   <textarea 
-                     placeholder="Allergies" 
-                     value={profile.allergies} 
-                     onChange={(e) => setProfile({...profile, allergies: e.target.value})} 
-                     disabled={!isEditing}
-                     className="w-full h-24 bg-gray-50 border border-gray-100 rounded-2xl p-4 outline-none resize-none disabled:opacity-60 disabled:cursor-not-allowed" 
-                   ></textarea>
-                </div>
-             </div>
-           )}
-
            {activeTab === 'emergency' && (
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Input label="Contact Name" value={profile.emgName} onChange={(e) => setProfile({...profile, emgName: e.target.value})} disabled={!isEditing} />
-                <Input label="Relationship" value={profile.emgRelation} onChange={(e) => setProfile({...profile, emgRelation: e.target.value})} disabled={!isEditing} />
-                <Input label="Phone" value={profile.emgPhone} onChange={(e) => setProfile({...profile, emgPhone: e.target.value})} disabled={!isEditing} />
+                <Input label="Contact Name" value={profile.emgName} onChange={(e) => setProfile({...profile, emgName: e.target.value})} disabled={!isEditing} error={errors.emgName} />
+                <Input label="Relationship" value={profile.emgRelation} onChange={(e) => setProfile({...profile, emgRelation: e.target.value})} disabled={!isEditing} error={errors.emgRelation} />
+                <Input label="Phone" value={profile.emgPhone} onChange={(e) => setProfile({...profile, emgPhone: e.target.value})} disabled={!isEditing} error={errors.emgPhone} />
              </div>
            )}
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import useAuthStore from '../../store/authStore';
 import { Card, Button, Input, Avatar, Badge, LocationPicker } from '../../components/common';
@@ -11,6 +11,8 @@ import {
 import authService from '../../services/authService';
 import { toast } from 'react-hot-toast';
 import { compressImage } from '../../utils/imageUtils';
+import { isProfileComplete } from '../../utils/profileUtils';
+import { AlertCircle } from 'lucide-react';
 
 const DoctorProfile = () => {
   const { user, updateUser } = useAuthStore();
@@ -18,6 +20,7 @@ const DoctorProfile = () => {
   const [activeTab, setActiveTab] = useState('personal'); // 'personal', 'professional', 'security'
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [errors, setErrors] = useState({});
   const [avatarFile, setAvatarFile] = useState(null);
   const fileInputRef = useRef(null);
   const locationPickerRef = useRef(null);
@@ -27,7 +30,6 @@ const DoctorProfile = () => {
     name: user?.name || '',
     email: user?.email || '',
     phone: user?.doctorProfile?.phone || user?.phone || '',
-    about: user?.doctorProfile?.about || '',
     
     specialization: user?.doctorProfile?.specialization || '',
     experience: user?.doctorProfile?.experience || '',
@@ -38,8 +40,30 @@ const DoctorProfile = () => {
     image: user?.image || null,
     latitude: user?.location?.coordinates?.[1] || null,
     longitude: user?.location?.coordinates?.[0] || null,
-    clinicAddress: user?.doctorProfile?.address || ''
+    clinicAddress: user?.doctorProfile?.address || '',
+    qualifications: user?.doctorProfile?.qualifications || ''
   });
+
+  useEffect(() => {
+    if (user) {
+      setProfileData(prev => ({
+        ...prev,
+        name: user.name || '',
+        email: user.email || '',
+        phone: user.doctorProfile?.phone || user.phone || '',
+        specialization: user.doctorProfile?.specialization || '',
+        experience: user.doctorProfile?.experience || '',
+        licenseNumber: user.doctorProfile?.licenseNumber || '',
+        fee: user.doctorProfile?.fee || 500,
+        onlineConsultation: user.doctorProfile?.onlineConsultation,
+        image: user.image || null,
+        latitude: user.location?.coordinates?.[1] || null,
+        longitude: user.location?.coordinates?.[0] || null,
+        clinicAddress: user.doctorProfile?.address || '',
+        qualifications: user.doctorProfile?.qualifications || ''
+      }));
+    }
+  }, [user]);
 
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
@@ -49,6 +73,7 @@ const DoctorProfile = () => {
 
   const handleInputChange = (field, value) => {
     setProfileData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: null }));
   };
 
   const handleAvatarClick = () => {
@@ -66,12 +91,34 @@ const DoctorProfile = () => {
     }
   };
 
-  const toggleOnlineStatus = () => {
-    if (!isEditing) return;
-    handleInputChange('isOnlineActive', !profileData.isOnlineActive);
+  const validateForm = () => {
+    const newErrors = {};
+    if (!profileData.name.trim()) newErrors.name = 'Name is required';
+    if (!profileData.specialization.trim()) newErrors.specialization = 'Specialization is required';
+    if (!profileData.experience.toString().trim()) newErrors.experience = 'Experience is required';
+    if (!profileData.licenseNumber.trim()) newErrors.licenseNumber = 'License number is required';
+    if (!profileData.phone.trim()) newErrors.phone = 'Phone number is required';
+    if (!profileData.qualifications.trim()) newErrors.qualifications = 'Qualifications are required';
+    
+    // Only validate address and location for independent doctors
+    if (isIndependent) {
+      if (!profileData.clinicAddress.trim()) newErrors.clinicAddress = 'Clinic address is required';
+      if (!profileData.latitude || !profileData.longitude) {
+        newErrors.location = 'Please select your clinic location on the map';
+      }
+    }
+
+    setErrors(newErrors);
+    return newErrors;
   };
 
   const handleSave = async () => {
+    const validationErrors = validateForm();
+    if (Object.keys(validationErrors).length > 0) {
+      const errorList = Object.values(validationErrors).join(', ');
+      toast.error(`Please fix: ${errorList}`);
+      return;
+    }
     setIsSaving(true);
     try {
       let finalImageUrl = profileData.image;
@@ -88,7 +135,8 @@ const DoctorProfile = () => {
         phone: profileData.phone,
         specialization: profileData.specialization,
         experience: profileData.experience,
-        about: profileData.about,
+        licenseNumber: profileData.licenseNumber,
+        qualifications: profileData.qualifications,
         fee: profileData.fee,
         onlineConsultation: profileData.onlineConsultation,
         address: profileData.clinicAddress,
@@ -153,6 +201,20 @@ const DoctorProfile = () => {
              )}
           </div>
         </div>
+        
+        {!isProfileComplete(user) && (
+          <div className="p-6 bg-red-50 border border-red-100 rounded-[30px] flex items-start gap-4 animate-bounce-subtle">
+            <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 shrink-0">
+              <AlertCircle size={24} />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-red-900">Incomplete Profile</h3>
+              <p className="text-sm font-bold text-red-800/60 leading-relaxed">
+                Your profile is missing required professional or personal details. Complete all fields and set your clinic location to gain access to appointments and other tools.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
            
@@ -250,6 +312,7 @@ const DoctorProfile = () => {
                                 label="Full Name" 
                                 value={profileData.name} 
                                 disabled={!isEditing}
+                                error={errors.name}
                                 onChange={(e) => handleInputChange('name', e.target.value)}
                             />
                           </div>
@@ -258,8 +321,7 @@ const DoctorProfile = () => {
                             type="email"
                             icon={Mail}
                             value={profileData.email} 
-                            disabled={!isEditing}
-                            onChange={(e) => handleInputChange('email', e.target.value)}
+                            disabled={true}
                           />
                           <Input 
                             label="Mobile Number" 
@@ -267,6 +329,7 @@ const DoctorProfile = () => {
                             icon={Phone}
                             value={profileData.phone} 
                             disabled={!isEditing}
+                            error={errors.phone}
                             onChange={(e) => handleInputChange('phone', e.target.value)}
                           />
                            <div className="md:col-span-2">
@@ -275,6 +338,7 @@ const DoctorProfile = () => {
                                 icon={MapPin}
                                 value={profileData.clinicAddress} 
                                 disabled={!isEditing || !isIndependent}
+                                error={errors.clinicAddress}
                                 onChange={(e) => handleInputChange('clinicAddress', e.target.value)}
                               />
                            </div>
@@ -284,10 +348,11 @@ const DoctorProfile = () => {
                         <div className="space-y-4 pt-6 border-t border-gray-50">
                            <div className="flex items-center justify-between">
                               <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Clinic Location (Map)</p>
-                              <Badge variant="outline" className="text-[9px] font-black px-2 py-0.5">
-                                 {profileData.latitude ? `${Number(profileData.latitude).toFixed(4)}, ${Number(profileData.longitude).toFixed(4)}` : 'NOT SET'}
+                              <Badge variant={errors.location ? "destructive" : "outline"} className="text-[9px] font-black px-2 py-0.5">
+                                 {profileData.latitude ? `${Number(profileData.latitude).toFixed(4)}, ${Number(profileData.longitude).toFixed(4)}` : (errors.location ? 'REQUIRED' : 'NOT SET')}
                               </Badge>
                            </div>
+                           {errors.location && <p className="text-[10px] text-red-500 font-bold px-2 mt-2 uppercase">{errors.location}</p>}
                            
                            {!isIndependent && (
                               <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-start gap-3">
@@ -312,6 +377,7 @@ const DoctorProfile = () => {
                                     updates.clinicAddress = addressData.fullAddress;
                                  }
                                  setProfileData(prev => ({ ...prev, ...updates }));
+                                 if (errors.location) setErrors(prev => ({ ...prev, location: null }));
                               }}
                               hideLocateButton={true}
                            />
@@ -354,6 +420,7 @@ const DoctorProfile = () => {
                                icon={Activity}
                                value={profileData.specialization} 
                                disabled={!isEditing}
+                               error={errors.specialization}
                                onChange={(e) => handleInputChange('specialization', e.target.value)}
                              />
                              <Input 
@@ -361,12 +428,14 @@ const DoctorProfile = () => {
                                icon={FileText}
                                value={profileData.qualifications} 
                                disabled={!isEditing}
+                               error={errors.qualifications}
                                onChange={(e) => handleInputChange('qualifications', e.target.value)}
                              />
                              <Input 
                                label="Years of Experience" 
                                value={profileData.experience} 
                                disabled={!isEditing}
+                               error={errors.experience}
                                onChange={(e) => handleInputChange('experience', e.target.value)}
                              />
                              <Input 
@@ -374,6 +443,7 @@ const DoctorProfile = () => {
                                icon={Shield}
                                value={profileData.licenseNumber} 
                                disabled={!isEditing}
+                               error={errors.licenseNumber}
                                onChange={(e) => handleInputChange('licenseNumber', e.target.value)}
                              />
                           </div>

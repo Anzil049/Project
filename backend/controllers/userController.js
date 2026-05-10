@@ -53,6 +53,18 @@ const getCurrentUser = async (req, res, next) => {
             let profile = null;
             if (user.role === 'doctor') {
                 profile = await Doctor.findOne({ user: user._id });
+                
+                // If hospital doctor is missing location or address, inherit from hospital
+                if (profile && profile.hospitalId && (!profile.address || !user.location || user.location.coordinates[0] === 0)) {
+                    const hospitalUser = await User.findById(profile.hospitalId).select('location');
+                    const hospitalProfile = await Hospital.findOne({ user: profile.hospitalId }).select('address');
+                    
+                    if (hospitalUser && hospitalProfile) {
+                        if (!profile.address) profile.address = hospitalProfile.address;
+                        if (!user.location || user.location.coordinates[0] === 0) user.location = hospitalUser.location;
+                        if (!user.address) user.address = hospitalProfile.address;
+                    }
+                }
             } else if (user.role === 'hospital') {
                 profile = await Hospital.findOne({ user: user._id });
             }
@@ -147,8 +159,11 @@ const updateUserProfile = async (req, res, next) => {
                 if (doctor) {
                     doctor.specialization = req.body.specialization || doctor.specialization;
                     doctor.experience = req.body.experience || doctor.experience;
+                    doctor.licenseNumber = req.body.licenseNumber || doctor.licenseNumber;
+                    doctor.qualifications = req.body.qualifications || doctor.qualifications;
                     doctor.about = req.body.about || doctor.about;
                     doctor.fee = req.body.fee || doctor.fee;
+                    doctor.phone = req.body.phone || doctor.phone;
                     doctor.address = req.body.address || doctor.address;
                     doctor.onlineConsultation = req.body.onlineConsultation !== undefined ? req.body.onlineConsultation : doctor.onlineConsultation;
                     if (doctor.hospitalId) doctor.onlineConsultation = false;

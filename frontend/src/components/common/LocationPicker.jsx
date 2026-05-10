@@ -148,14 +148,15 @@ const LocationPicker = React.forwardRef(({ lat, lng, onLocationSelect, isEditing
     <div className="w-full relative">
       {!activeEditing && (
         <div 
-          className="absolute inset-0 z-50 cursor-not-allowed bg-white/10 backdrop-blur-[1px] rounded-2xl flex items-center justify-end pr-4 pointer-events-auto"
+          className="absolute inset-0 z-[100] cursor-not-allowed bg-black/5 backdrop-blur-[1px] rounded-[24px] flex items-center justify-center group pointer-events-auto"
           onClick={(e) => {
              e.stopPropagation();
              toast.error('Please click "Edit Profile" first to change location');
           }}
         >
-           <div className="p-2 bg-navy/5 rounded-full text-navy/20">
-              <Lock size={16} />
+           <div className="p-4 bg-white/90 shadow-xl rounded-2xl text-navy flex items-center gap-3 scale-95 group-hover:scale-100 transition-transform">
+              <Lock size={18} className="text-red-500" />
+              <span className="text-[11px] font-black uppercase tracking-widest">Editing Locked</span>
            </div>
         </div>
       )}

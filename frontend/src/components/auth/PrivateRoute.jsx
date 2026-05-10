@@ -2,6 +2,8 @@ import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import { ROUTES } from '../../constants/routes';
+import { isProfileComplete } from '../../utils/profileUtils';
+import { toast } from 'react-hot-toast';
 
 /**
  * Strict PrivateRoute component that enforces authentication and role-based access.
@@ -29,6 +31,19 @@ const PrivateRoute = ({ children, allowedRoles }) => {
   // Force password change if it's the first login
   if (user?.isFirstLogin) {
     return <Navigate to={ROUTES.CHANGE_PASSWORD} replace />;
+  }
+
+  // Enforce profile completion for Patients, Doctors, and Hospitals
+  const roleRoutes = ROUTES[role?.toUpperCase()];
+  if (roleRoutes && roleRoutes.PROFILE) {
+    const isAtProfile = location.pathname === roleRoutes.PROFILE;
+    if (!isProfileComplete(user) && !isAtProfile) {
+      // Use a timeout to avoid react warning about state updates during render
+      setTimeout(() => {
+        toast("Please complete your profile to access full features", { icon: 'ℹ️' });
+      }, 100);
+      return <Navigate to={roleRoutes.PROFILE} replace />;
+    }
   }
 
   return children;

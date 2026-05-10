@@ -8,7 +8,7 @@ import {
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Button, Input } from '../../components/common';
+import { Button, Input, Select } from '../../components/common';
 import authService from '../../services/authService';
 import useAuthStore from '../../store/authStore';
 import { ROUTES } from '../../constants/routes';
@@ -19,7 +19,7 @@ const hospitalSignupSchema = z.object({
   hospitalName: z.string().min(3, 'Hospital name must be at least 3 characters'),
   adminEmail: z.string().email('Invalid email address'),
   regNumber: z.string().min(5, 'Registration number is required'),
-  facilityType: z.string().min(2, 'Facility type is required (e.g. Multi-Specialty)'),
+  facilityType: z.enum(['Hospital', 'Clinic'], { errorMap: () => ({ message: 'Please select a facility type' }) }),
   bedCapacity: z.string().regex(/^[1-9]\d*$/, 'Bed capacity must be a valid number greater than 0').min(1, 'Approximate bed capacity is required'),
   password: z.string().min(8, 'Minimum 8 characters required'),
   confirmPassword: z.string(),
@@ -159,12 +159,12 @@ const HospitalSignup = () => {
                   className="h-14 rounded-3xl"
                 />
 
-                <Input
+                <Select
                   label="Facility Type"
+                  options={['Hospital', 'Clinic']}
                   {...register('facilityType')}
                   error={errors.facilityType?.message}
                   icon={Hospital}
-                  placeholder="Multi-Specialty"
                   className="h-14 rounded-3xl"
                 />
 

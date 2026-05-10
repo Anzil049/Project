@@ -58,6 +58,9 @@ const doctorSchema = mongoose.Schema({
     address: {
         type: String,
     },
+    qualifications: {
+        type: String,
+    },
 }, {
     timestamps: true,
 });

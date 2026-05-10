@@ -43,13 +43,11 @@ const loginUserGeneric = asyncHandler(async (req, res) => {
             profile = await Hospital.findOne({ user: user._id });
         }
 
+        const safeUser = user.toObject();
+        delete safeUser.password;
+
         res.json({
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            isVerified: user.isVerified,
-            isFirstLogin: user.isFirstLogin,
+            ...safeUser,
             token: accessToken,
             doctorProfile: user.role === 'doctor' ? profile : null,
             hospitalProfile: user.role === 'hospital' ? profile : null
@@ -94,12 +92,11 @@ const loginUser = asyncHandler(async (req, res) => {
             profile = await Hospital.findOne({ user: user._id });
         }
 
+        const safeUser = user.toObject();
+        delete safeUser.password;
+
         res.json({
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            isFirstLogin: user.isFirstLogin,
+            ...safeUser,
             token: accessToken,
             doctorProfile: user.role === 'doctor' ? profile : null,
             hospitalProfile: user.role === 'hospital' ? profile : null

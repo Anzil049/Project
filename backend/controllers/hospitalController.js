@@ -9,8 +9,16 @@ const crypto = require('crypto');
 // @route   POST /api/hospital/doctors
 // @access  Private (Hospital)
 const addDoctor = asyncHandler(async (req, res) => {
-    const { name, email, phone, specialization, maxTokens, slots, availableDays, onlineConsultation, licenseNumber, experience, image } = req.body;
+    const { name, email, phone, specialization, maxTokens, slots, availableDays, onlineConsultation, licenseNumber, experience, qualifications, image } = req.body;
     const hospitalId = req.user.userId;
+
+    const hospitalUser = await User.findById(hospitalId);
+    const hospitalProfile = await Hospital.findOne({ user: hospitalId });
+
+    if (!hospitalUser || !hospitalProfile) {
+        res.status(404);
+        throw new Error('Hospital profile not found');
+    }
 
     // Check if user already exists
     let user = await User.findOne({ email: email.toLowerCase() });
@@ -34,6 +42,8 @@ const addDoctor = asyncHandler(async (req, res) => {
         isApproved: true, // Hospital-added doctors are pre-approved
         isFirstLogin: true,
         image: image || null,
+        location: hospitalUser.location,
+        address: hospitalProfile.address
     });
 
     if (user) {
@@ -49,6 +59,8 @@ const addDoctor = asyncHandler(async (req, res) => {
             isAcceptingAppointments: req.body.isAcceptingAppointments ?? true,
             licenseNumber: licenseNumber || 'N/A', 
             experience: experience || 'N/A',
+            qualifications: qualifications || 'N/A',
+            address: hospitalProfile.address
         });
 
         // Send email with credentials
@@ -143,7 +155,7 @@ const updateDoctor = asyncHandler(async (req, res) => {
     const { 
         name, email, phone, specialization, maxTokens, 
         slots, availableDays, onlineConsultation, 
-        isAcceptingAppointments, licenseNumber, experience, image 
+        isAcceptingAppointments, licenseNumber, experience, qualifications, image 
     } = req.body;
 
     const doctor = await Doctor.findById(doctorId);
@@ -161,6 +173,7 @@ const updateDoctor = asyncHandler(async (req, res) => {
     doctor.isAcceptingAppointments = isAcceptingAppointments !== undefined ? isAcceptingAppointments : doctor.isAcceptingAppointments;
     doctor.licenseNumber = licenseNumber || doctor.licenseNumber;
     doctor.experience = experience || doctor.experience;
+    doctor.qualifications = qualifications || doctor.qualifications;
 
     await doctor.save();
 
