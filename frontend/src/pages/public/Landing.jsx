@@ -41,7 +41,7 @@ const Landing = () => {
         const styledHospitals = data.hospitals.map(hosp => ({
           ...hosp,
           rating: (4.5 + Math.random() * 0.5).toFixed(1),
-          loc: 'Near You',
+          loc: hosp.city ? `${hosp.city}, ${hosp.state}` : 'Verified Partner',
           type: hosp.facilityType,
           image: hosp.image || 'https://images.unsplash.com/photo-1587351021759-3e566b6af7cc?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80'
         }));
@@ -295,7 +295,7 @@ const Landing = () => {
               <div 
                 key={i} 
                 onClick={() => navigate(ROUTES.PUBLIC_HOSPITAL.replace(':id', hosp.id))}
-                className={`snap-center bg-white rounded-[24px] border border-gray-200 overflow-hidden cursor-pointer group hover:shadow-2xl hover:-translate-y-3 transition-all duration-500 ease-out flex flex-col ${i >= currentHospital && i < currentHospital + 3 ? '' : 'lg:hidden'}`}
+                className={`snap-center bg-white rounded-[24px] border border-gray-200 overflow-hidden cursor-pointer group hover:shadow-2xl hover:-translate-y-3 !transition-all !duration-1000 hover:!delay-[150ms] ease-out flex flex-col ${i >= currentHospital && i < currentHospital + 3 ? '' : 'lg:hidden'}`}
               >
                 <div className="h-48 overflow-hidden relative">
                    <img src={hosp.image} alt={hosp.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />

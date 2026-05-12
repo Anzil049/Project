@@ -113,7 +113,9 @@ const getFeaturedData = async (req, res, next) => {
                 name: hosp.user.name,
                 facilityType: hosp.facilityType,
                 beds: hosp.beds,
-                image: hosp.user.image || null
+                image: hosp.coverImage || hosp.user.image || null,
+                city: hosp.city || '',
+                state: hosp.state || ''
             }));
 
         res.json({ doctors: featuredDoctors, hospitals: featuredHospitals });
