@@ -31,6 +31,13 @@ const addDoctor = asyncHandler(async (req, res) => {
     // Generate a temporary 8-character password
     const tempPassword = crypto.randomBytes(4).toString('hex'); // e.g. "a1b2c3d4"
 
+    // Construct full address for doctor
+    const fullAddressParts = [];
+    if (hospitalProfile.address) fullAddressParts.push(hospitalProfile.address);
+    if (hospitalProfile.city) fullAddressParts.push(hospitalProfile.city);
+    if (hospitalProfile.state) fullAddressParts.push(hospitalProfile.state);
+    const doctorFullAddress = fullAddressParts.join(', ');
+
     // Create the User with role 'doctor' and isFirstLogin = true
     user = await User.create({
         name,
@@ -43,7 +50,7 @@ const addDoctor = asyncHandler(async (req, res) => {
         isFirstLogin: true,
         image: image || null,
         location: hospitalUser.location,
-        address: hospitalProfile.address
+        address: doctorFullAddress
     });
 
     if (user) {
@@ -60,7 +67,7 @@ const addDoctor = asyncHandler(async (req, res) => {
             licenseNumber: licenseNumber || 'N/A', 
             experience: experience || 'N/A',
             qualifications: qualifications || 'N/A',
-            address: hospitalProfile.address
+            address: doctorFullAddress
         });
 
         // Send email with credentials
@@ -279,6 +286,27 @@ const getPublicHospitals = asyncHandler(async (req, res) => {
     res.json(results);
 });
 
+// @desc    Get hospital details by ID
+// @route   GET /api/public/hospitals/:id
+// @access  Public
+const getHospitalById = asyncHandler(async (req, res) => {
+    const hospital = await Hospital.findOne({ user: req.params.id })
+        .populate('user', 'name image location status phone city state address');
+    
+    if (!hospital || (hospital.user && hospital.user.status === 'blocked')) {
+        res.status(404);
+        throw new Error('Hospital not found');
+    }
+
+    const doctors = await Doctor.find({ hospitalId: req.params.id })
+        .populate('user', 'name image status');
+
+    res.json({
+        ...hospital.toObject(),
+        doctors: doctors.filter(d => d.user && d.user.status === 'active')
+    });
+});
+
 module.exports = {
     addDoctor,
     getDoctors,
@@ -286,5 +314,6 @@ module.exports = {
     deleteDoctor,
     updateDoctor,
     getNearbyHospitals,
-    getPublicHospitals
+    getPublicHospitals,
+    getHospitalById
 };

@@ -99,7 +99,8 @@ const getFeaturedData = async (req, res, next) => {
                 specialization: doc.specialization,
                 experience: doc.experience,
                 hospitalName: doc.hospitalId?.name || 'Independent',
-                image: doc.user.image || null
+                image: doc.user.image || null,
+                address: doc.address || ''
             }));
 
         const featuredHospitalsProfiles = await Hospital.find({ isFeatured: true })
@@ -222,6 +223,36 @@ const updateUserProfile = async (req, res, next) => {
                     }
 
                     updatedProfile = await hospital.save();
+
+                    // Update all doctors associated with this hospital if location/address changed
+                    if (req.body.address || req.body.city || req.body.state || req.body.location) {
+                        const newAddress = req.body.address || hospital.address;
+                        const newCity = req.body.city || hospital.city;
+                        const newState = req.body.state || hospital.state;
+                        
+                        // Construct a clean full address for doctors
+                        const fullAddressParts = [];
+                        if (newAddress) fullAddressParts.push(newAddress);
+                        if (newCity) fullAddressParts.push(newCity);
+                        if (newState) fullAddressParts.push(newState);
+                        const fullAddress = fullAddressParts.join(', ');
+
+                        // 1. Update Doctor profile addresses
+                        await Doctor.updateMany(
+                            { hospitalId: user._id },
+                            { address: fullAddress }
+                        );
+
+                        // 2. Update associated User location coordinates if hospital location changed
+                        if (req.body.location) {
+                            const hospitalDoctors = await Doctor.find({ hospitalId: user._id });
+                            const doctorUserIds = hospitalDoctors.map(d => d.user);
+                            await User.updateMany(
+                                { _id: { $in: doctorUserIds } },
+                                { location: req.body.location }
+                            );
+                        }
+                    }
                 }
             }
 

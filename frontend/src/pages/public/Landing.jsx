@@ -34,7 +34,8 @@ const Landing = () => {
           color: ['from-[#0D9488] to-[#115E59]', 'from-[#FF7043] to-[#E64A19]', 'from-[#8B5CF6] to-[#6D28D9]', 'from-[#FBBF24] to-[#D97706]', 'from-[#EC4899] to-[#BE185D]'][i % 5],
           initials: doc.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase(),
           rating: (4.5 + Math.random() * 0.5).toFixed(1),
-          exp: doc.experience || '10 yrs'
+          exp: doc.experience || '10 yrs',
+          loc: doc.address || ''
         }));
         
         const styledHospitals = data.hospitals.map(hosp => ({
@@ -237,6 +238,12 @@ const Landing = () => {
                     <p className="text-[#0C1A2E]/40 text-sm">{doc.specialization}</p>
                   </div>
                 </div>
+                {doc.loc && (
+                  <div className="flex items-center gap-2 mb-4 text-[#0C1A2E]/30">
+                    <MapPin size={14} className="text-[#0D9488]" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest truncate">{doc.loc}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between mb-5">
                   <div className="flex items-center gap-1.5">
                     <Star size={14} className="text-[#FBBF24] fill-[#FBBF24]" />

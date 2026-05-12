@@ -46,6 +46,11 @@ const hospitalService = {
     return response.data;
   },
 
+  getHospitalById: async (id) => {
+    const response = await api.get(`/hospital/public/${id}`);
+    return response.data;
+  },
+
   /**
    * Get nearby hospitals
    */

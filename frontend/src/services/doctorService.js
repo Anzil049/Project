@@ -14,6 +14,11 @@ const doctorService = {
     });
     return response.data;
   },
+  
+  getDoctors: async (params = {}) => {
+    const response = await api.get('/doctors', { params });
+    return response.data;
+  },
 
   getProfile: async () => {
     const response = await api.get('/auth/me');

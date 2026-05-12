@@ -7,7 +7,8 @@ const {
     deleteDoctor,
     updateDoctor,
     getNearbyHospitals,
-    getPublicHospitals
+    getPublicHospitals,
+    getHospitalById
 } = require('../controllers/hospitalController');
 const { protect } = require('../middleware/authMiddleware');
 const validate = require('../middleware/validatorMiddleware');
@@ -18,6 +19,7 @@ const { doctorAddLimiter } = require('../middleware/rateLimitMiddleware');
 // Public Routes
 router.get('/public', getPublicHospitals);
 router.get('/public/nearby', getNearbyHospitals);
+router.get('/public/:id', getHospitalById);
 
 // Protected Routes (Hospital only)
 router.use(protect('hospital'));

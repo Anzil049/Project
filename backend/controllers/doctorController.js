@@ -59,6 +59,60 @@ const getNearbyDoctors = asyncHandler(async (req, res) => {
     res.json(results);
 });
 
+// @desc    Get all doctors with filters
+// @route   GET /api/public/doctors
+// @access  Public
+const getAllDoctors = asyncHandler(async (req, res) => {
+    const { search, specialization, mode, hospitalId } = req.query;
+
+    let query = {};
+
+    // Filter by specialization
+    if (specialization && specialization !== 'All') {
+        query.specialization = specialization;
+    }
+
+    // Filter by mode
+    if (mode === 'Online') {
+        query.onlineConsultation = true;
+    }
+
+    // Filter by hospital
+    if (hospitalId && hospitalId !== 'All') {
+        if (hospitalId === 'null') {
+            query.hospitalId = { $exists: false };
+        } else {
+            query.hospitalId = hospitalId;
+        }
+    }
+
+    let doctors = await Doctor.find(query)
+        .populate({
+            path: 'user',
+            select: 'name email image status location'
+        })
+        .populate({
+            path: 'hospitalId',
+            select: 'name'
+        })
+        .select('+address'); // Explicitly select address if it's not selected by default or just use the find() result
+
+    // Filter by user name if search is provided
+    if (search) {
+        const searchLower = search.toLowerCase();
+        doctors = doctors.filter(doc => 
+            (doc.user && doc.user.name.toLowerCase().includes(searchLower)) ||
+            (doc.specialization && doc.specialization.toLowerCase().includes(searchLower))
+        );
+    }
+
+    // Filter out blocked users
+    doctors = doctors.filter(doc => doc.user && doc.user.status !== 'blocked');
+
+    res.json(doctors);
+});
+
 module.exports = {
-    getNearbyDoctors
+    getNearbyDoctors,
+    getAllDoctors
 };

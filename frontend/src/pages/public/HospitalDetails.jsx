@@ -1,50 +1,82 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import PublicNavbar from '../../components/layout/PublicNavbar';
+import Footer from '../../components/layout/Footer';
 import { Card, Button, Badge } from '../../components/common';
 import { 
   Building2, MapPin, Star, Clock, Phone, 
   Globe, Shield, CheckCircle2, ChevronRight,
-  Image as ImageIcon, HelpCircle, Calendar, Plus
+  Image as ImageIcon, HelpCircle, Calendar, Plus,
+  Stethoscope
 } from 'lucide-react';
-import { HOSPITALS, DOCTORS } from '../../data/mockData';
+import { ROUTES } from '../../constants/routes';
+import hospitalService from '../../services/hospitalService';
+import { toast } from 'react-hot-toast';
 
 const HospitalDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
+  const [hospital, setHospital] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Find current hospital from mock data
-  const hospitalData = HOSPITALS.find(h => h.id === id);
+  useEffect(() => {
+    const fetchHospitalDetails = async () => {
+      setLoading(true);
+      try {
+        const data = await hospitalService.getHospitalById(id);
+        
+        // Transform data for UI
+        const transformedData = {
+          ...data,
+          name: data.user?.name || 'Unknown Hospital',
+          coverImage: data.coverImage || data.user?.image || 'https://images.unsplash.com/photo-1586773860418-d37222d8fce3?auto=format&fit=crop&q=80&w=800',
+          location: `${data.city || ''}${data.city && data.state ? ', ' : ''}${data.state || ''}` || 'Location N/A',
+          rating: 4.8, 
+          reviewCount: '1,200+', 
+          about: data.about || `${data.user?.name || 'This hospital'} is a leading ${data.facilityType || 'medical'} healthcare provider with international standards of technology, infrastructure, and clinical care.`,
+          facilityDetails: (data.facilities || []).map((fac, idx) => ({
+            id: idx,
+            title: fac.title || 'Facility',
+            description: fac.description || 'State-of-the-art facility providing high-resolution diagnostics and specialized care.',
+            images: fac.images && fac.images.length > 0 ? fac.images : [data.coverImage || 'https://images.unsplash.com/photo-1586773860418-d37222d8fce3?auto=format&fit=crop&q=80&w=800']
+          })),
+          doctors: (data.doctors || []).map(d => ({
+            id: d.user?._id || d._id,
+            name: d.user?.name || 'Dr. Specialist',
+            spec: d.specialization,
+            rating: 4.8,
+            exp: d.experience,
+            initials: (d.user?.name || 'D').split(' ').map(n => n[0]).join('').substring(0, 2),
+            color: 'from-[#0D9488] to-[#115E59]',
+            location: d.address || (data.city ? `${data.city}, ${data.state || ''}` : '')
+          })),
+          reviews: [
+            { id: 1, name: 'Anjali Sharma', date: 'Oct 12, 2023', rating: 5, text: `Fantastic experience. Very professionally managed.`, initials: 'AS' },
+            { id: 2, name: 'Rahul Verma', date: 'Sep 28, 2023', rating: 4, text: 'The infrastructure is great, though waiting times can be improved.', initials: 'RV' },
+          ]
+        };
+        
+        setHospital(transformedData);
+      } catch (error) {
+        console.error("Failed to fetch hospital details", error);
+        toast.error("Hospital not found");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  // If not found, we could redirect or show error, but let's assume valid ID for now
-  const hospital = hospitalData ? {
-    ...hospitalData,
-    coverImage: hospitalData.image, // mapping field names
-    reviewCount: '1,200+', // default for now
-    about: `${hospitalData.name} is a leading ${hospitalData.type} healthcare provider with international standards of technology, infrastructure, and clinical care. Located in ${hospitalData.location}, we are committed to achieving excellence in patient care through our dedicated team of medical experts.`,
-    // Filter doctors belonging to this hospital
-    doctors: DOCTORS.filter(d => d.hospitalId === id).map(d => ({
-      id: d.id,
-      name: d.name,
-      spec: d.specialization,
-      rating: d.rating,
-      exp: d.experience,
-      initials: d.initials,
-      color: d.gradient
-    })),
-    // Standard facilities template if not specifically defined in mockData object
-    facilityDetails: hospitalData.facilities.map((fac, idx) => ({
-      id: idx,
-      title: fac,
-      description: `State-of-the-art ${fac} facilities providing high-resolution diagnostics and specialized care to all our patients.`,
-      images: [hospitalData.image]
-    })),
-    reviews: [
-      { id: 1, name: 'Anjali Sharma', date: 'Oct 12, 2023', rating: 5, text: `Fantastic experience at ${hospitalData.name}. Very professionally managed.`, initials: 'AS' },
-      { id: 2, name: 'Rahul Verma', date: 'Sep 28, 2023', rating: 4, text: 'The infrastructure is great, though waiting times can be improved.', initials: 'RV' },
-    ]
-  } : null;
+    fetchHospitalDetails();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center font-body gap-4">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-[#0D9488]"></div>
+        <p className="text-navy/40 font-bold uppercase tracking-widest text-xs">Loading Hospital Profile...</p>
+      </div>
+    );
+  }
 
   if (!hospital) {
     return (
@@ -58,20 +90,14 @@ const HospitalDetails = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-body">
-      {/* Reusing PublicNavbar for logged-in or logged-out state representation. */}
-      {/* Assuming PublicNavbar checks authStore internally, we can just render it. */}
       <PublicNavbar />
 
       <main className="flex-1 pb-20 pt-20">
          {/* Hero Banner Section */}
          <div className="relative h-[300px] md:h-[400px] w-full bg-navy">
-            {/* Background Image */}
             <img src={hospital.coverImage} alt={hospital.name} className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-luminosity" />
-            
-            {/* Gradient Overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-navy via-navy/80 to-transparent" />
             
-            {/* Content Container */}
             <div className="absolute bottom-0 w-full px-6 pb-12">
                <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-end justify-between gap-6">
                   <div className="space-y-4">
@@ -80,10 +106,10 @@ const HospitalDetails = () => {
                            <CheckCircle2 size={12} className="mr-1 inline" /> MedCare Verified
                         </Badge>
                         <Badge className="bg-white/10 text-white border-white/20 uppercase tracking-widest text-[10px] px-3 font-black backdrop-blur-md">
-                           {hospital.type}
+                           {hospital.facilityType}
                         </Badge>
                      </div>
-                     <h1 className="text-4xl md:text-5xl font-heading font-black text-white tracking-tight leading-none">
+                     <h1 className="text-4xl md:text-5xl font-heading font-black text-white tracking-tight leading-none uppercase">
                         {hospital.name}
                      </h1>
                      <div className="flex flex-wrap items-center gap-6 text-white/80 font-bold text-sm">
@@ -99,11 +125,14 @@ const HospitalDetails = () => {
                   </div>
 
                   <div className="flex flex-col gap-3 shrink-0 w-full md:w-auto">
-                     <Button className="w-full md:w-auto bg-[#0D9488] text-white rounded-[20px] font-black text-sm px-8 py-4 shadow-xl shadow-[#0D9488]/30 border-none flex items-center justify-center gap-2">
+                     <Button 
+                        onClick={() => setActiveTab('doctors')}
+                        className="w-full md:w-auto bg-[#0D9488] text-white rounded-[20px] font-black text-sm px-8 py-4 shadow-xl shadow-[#0D9488]/30 border-none flex items-center justify-center gap-2"
+                      >
                         <Calendar size={18} /> Book Appointment
                      </Button>
                      <Button variant="outline" className="w-full md:w-auto bg-white/10 text-white border-white/20 hover:bg-white/20 rounded-[20px] font-black text-sm px-8 py-3 backdrop-blur-md flex items-center justify-center gap-2">
-                        <Phone size={18} /> Call Hospital
+                        <Phone size={18} /> {hospital.user?.phone || 'Call Hospital'}
                      </Button>
                   </div>
                </div>
@@ -113,17 +142,22 @@ const HospitalDetails = () => {
          {/* Navigation Tabs */}
          <div className="bg-white border-b border-gray-200 sticky top-[72px] z-30">
             <div className="max-w-6xl mx-auto px-6 flex overflow-x-auto hide-scrollbar">
-               {['overview', 'facilities', 'doctors', 'reviews'].map((tab) => (
+               {[
+                 { id: 'overview', label: 'Overview' },
+                 { id: 'facilities', label: 'Facilities' },
+                 { id: 'doctors', label: 'Doctors' },
+                 { id: 'reviews', label: 'Reviews' }
+               ].map((tab) => (
                   <button
-                     key={tab}
-                     onClick={() => setActiveTab(tab)}
+                     key={tab.id}
+                     onClick={() => setActiveTab(tab.id)}
                      className={`px-8 py-5 text-xs font-black uppercase tracking-widest transition-all border-b-[3px] whitespace-nowrap ${
-                        activeTab === tab 
+                        activeTab === tab.id 
                            ? 'border-[#0D9488] text-[#0D9488]' 
                            : 'border-transparent text-navy/40 hover:text-navy hover:bg-gray-50'
                      }`}
                   >
-                     {tab}
+                     {tab.label}
                   </button>
                ))}
             </div>
@@ -139,7 +173,7 @@ const HospitalDetails = () => {
                   {activeTab === 'overview' && (
                      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <section>
-                           <h2 className="text-2xl font-black text-navy mb-4">About the Hospital</h2>
+                           <h2 className="text-2xl font-black text-navy mb-4 uppercase tracking-tight">About the Hospital</h2>
                            <p className="text-sm font-bold text-navy/60 leading-relaxed">
                               {hospital.about}
                            </p>
@@ -151,7 +185,7 @@ const HospitalDetails = () => {
                      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="flex items-center justify-between mb-8">
                            <div>
-                              <h2 className="text-2xl font-black text-navy leading-none mb-1">Available Facilities</h2>
+                              <h2 className="text-2xl font-black text-navy leading-none mb-1 uppercase tracking-tight">Available Facilities</h2>
                               <p className="text-xs font-bold text-navy/40 uppercase tracking-widest">State of the art medical infrastructure</p>
                            </div>
                            <Badge className="bg-blue-50 text-blue-600 border-none font-black text-[10px] uppercase px-4 py-2">
@@ -159,11 +193,9 @@ const HospitalDetails = () => {
                            </Badge>
                         </div>
 
-                        {/* Facilities Grid */}
                         <div className="space-y-6">
-                           {hospital.facilityDetails.map((fac) => (
+                           {hospital.facilityDetails.length > 0 ? hospital.facilityDetails.map((fac) => (
                               <Card key={fac.id} className="p-0 border border-gray-100 bg-white rounded-[32px] overflow-hidden hover:shadow-xl hover:shadow-navy/5 transition-all flex flex-col md:flex-row group">
-                                 {/* Image Carousel (Read Only) */}
                                  <div className="md:w-1/3 min-h-[220px] bg-gray-100 flex overflow-x-auto snap-x hide-scrollbar shrink-0 relative">
                                     {fac.images.map((img, idx) => (
                                        <div key={idx} className="w-full h-full shrink-0 snap-start relative border-r border-white/20">
@@ -177,9 +209,8 @@ const HospitalDetails = () => {
                                     )}
                                  </div>
                                  
-                                 {/* Info Box */}
                                  <div className="p-8 md:w-2/3 flex flex-col justify-center">
-                                    <h3 className="text-xl font-black text-navy mb-3">{fac.title}</h3>
+                                    <h3 className="text-xl font-black text-navy mb-3 uppercase tracking-tight">{fac.title}</h3>
                                     <p className="text-sm font-bold text-navy/60 leading-relaxed">
                                        {fac.description}
                                     </p>
@@ -190,7 +221,12 @@ const HospitalDetails = () => {
                                     </div>
                                  </div>
                               </Card>
-                           ))}
+                           )) : (
+                             <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-gray-200">
+                                <Building2 size={48} className="mx-auto text-gray-200 mb-4" />
+                                <p className="text-navy/40 font-bold uppercase tracking-widest text-xs">No specific facilities listed yet.</p>
+                             </div>
+                           )}
                         </div>
                      </div>
                   )}
@@ -199,7 +235,7 @@ const HospitalDetails = () => {
                      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="flex items-center justify-between mb-8">
                            <div>
-                              <h2 className="text-2xl font-black text-navy leading-none mb-1">Our Specialists</h2>
+                              <h2 className="text-2xl font-black text-navy leading-none mb-1 uppercase tracking-tight">Our Specialists</h2>
                               <p className="text-xs font-bold text-navy/40 uppercase tracking-widest">Book an appointment with top doctors</p>
                            </div>
                            <Badge className="bg-purple-50 text-purple-600 border-none font-black text-[10px] uppercase px-4 py-2">
@@ -208,17 +244,23 @@ const HospitalDetails = () => {
                         </div>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                           {hospital.doctors.map((doc) => (
+                           {hospital.doctors.length > 0 ? hospital.doctors.map((doc) => (
                               <Card key={doc.id} className="p-6 border border-gray-100 bg-white hover:shadow-xl hover:-translate-y-1 transition-all group flex flex-col">
                                  <div className="flex items-center gap-4 mb-5">
                                    <div className={`w-14 h-14 bg-gradient-to-br ${doc.color} rounded-2xl flex items-center justify-center text-white text-xl font-bold shrink-0`}>
                                      {doc.initials}
                                    </div>
                                    <div>
-                                     <h4 className="font-heading font-black text-navy">{doc.name}</h4>
-                                     <p className="text-navy/40 font-bold text-xs">{doc.spec}</p>
+                                     <h4 className="font-heading font-black text-navy uppercase tracking-tight leading-none mb-1">{doc.name}</h4>
+                                     <p className="text-navy/40 font-bold text-[10px] uppercase tracking-widest">{doc.spec}</p>
                                    </div>
                                  </div>
+                                 {doc.location && (
+                                   <div className="flex items-center gap-1.5 mb-4 text-navy/30">
+                                     <MapPin size={12} className="text-primary" />
+                                     <span className="text-[9px] font-bold uppercase tracking-widest truncate">{doc.location}</span>
+                                   </div>
+                                 )}
                                  <div className="flex items-center justify-between mb-6">
                                    <div className="flex items-center gap-1.5">
                                      <Star size={14} className="text-[#FBBF24] fill-[#FBBF24]" />
@@ -226,11 +268,19 @@ const HospitalDetails = () => {
                                    </div>
                                    <span className="text-[10px] text-navy/40 uppercase tracking-widest font-black bg-gray-50 px-2 py-1 rounded-md">{doc.exp} EXP</span>
                                  </div>
-                                 <Button variant="outline" className="w-full rounded-xl font-black text-xs mt-auto border-gray-200 group-hover:bg-[#0D9488] hover:!bg-[#115E59] group-hover:!text-white group-hover:border-[#0D9488] transition-all">
+                                 <Button 
+                                    onClick={() => navigate(ROUTES.PATIENT.BOOKING_HUB, { state: { doctorId: doc.id } })}
+                                    className="w-full rounded-xl font-black text-[10px] uppercase tracking-widest mt-auto border-gray-200 group-hover:bg-[#0D9488] hover:!bg-[#115E59] group-hover:!text-white group-hover:border-[#0D9488] transition-all py-3"
+                                  >
                                    Check Availability
                                  </Button>
                               </Card>
-                           ))}
+                           )) : (
+                             <div className="col-span-full py-20 text-center bg-white rounded-3xl border border-dashed border-gray-200">
+                                <Stethoscope size={48} className="mx-auto text-gray-200 mb-4" />
+                                <p className="text-navy/40 font-bold uppercase tracking-widest text-xs">No doctors currently listed for this hospital.</p>
+                             </div>
+                           )}
                         </div>
                      </div>
                   )}
@@ -239,7 +289,7 @@ const HospitalDetails = () => {
                      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="flex items-center justify-between mb-8">
                            <div>
-                              <h2 className="text-2xl font-black text-navy leading-none mb-1">Patient Reviews</h2>
+                              <h2 className="text-2xl font-black text-navy leading-none mb-1 uppercase tracking-tight">Patient Reviews</h2>
                               <p className="text-xs font-bold text-navy/40 uppercase tracking-widest">Verified feedback from MedCare users</p>
                            </div>
                            <Button size="sm" className="bg-[#0D9488] text-white rounded-xl font-black text-[10px] uppercase tracking-widest px-4 border-none flex items-center gap-2">
@@ -249,14 +299,14 @@ const HospitalDetails = () => {
                         
                         <div className="space-y-4">
                            {hospital.reviews.map((review) => (
-                              <Card key={review.id} className="p-6 border border-gray-100 bg-white">
+                              <Card key={review.id} className="p-6 border border-gray-100 bg-white rounded-3xl">
                                  <div className="flex justify-between items-start mb-4">
                                     <div className="flex items-center gap-3">
                                        <div className="w-10 h-10 bg-gradient-to-br from-[#0C1A2E] to-[#1e3a8a] rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">
                                           {review.initials}
                                        </div>
                                        <div>
-                                          <h4 className="font-heading font-black text-navy text-sm">{review.name}</h4>
+                                          <h4 className="font-heading font-black text-navy text-sm uppercase">{review.name}</h4>
                                           <p className="text-[10px] text-navy/40 uppercase tracking-widest font-bold">{review.date}</p>
                                        </div>
                                     </div>
@@ -281,7 +331,7 @@ const HospitalDetails = () => {
                <div className="lg:col-span-4 relative">
                   <div className="sticky top-[160px] space-y-6">
                      <Card className="p-8 bg-white border border-gray-100 rounded-[40px] shadow-xl shadow-navy/5">
-                        <h3 className="text-sm font-black text-navy uppercase tracking-widest mb-6">Quick Information</h3>
+                        <h3 className="text-xs font-black text-navy uppercase tracking-widest mb-6">Quick Information</h3>
                         <div className="space-y-6">
                            <div className="flex gap-4">
                               <div className="w-10 h-10 bg-[#0D9488]/10 text-[#0D9488] rounded-2xl flex items-center justify-center shrink-0">
@@ -300,8 +350,8 @@ const HospitalDetails = () => {
                               </div>
                               <div>
                                  <h4 className="text-xs font-black text-navy uppercase tracking-widest mb-1">Infrastructure</h4>
-                                 <p className="text-sm font-bold text-navy/70">{hospital.beds} Beds</p>
-                                 <p className="text-sm font-bold text-navy/70 mt-0.5">12 Operation Theaters</p>
+                                 <p className="text-sm font-bold text-navy/70">{hospital.beds || 'N/A'} Beds</p>
+                                 <p className="text-sm font-bold text-navy/70 mt-0.5">Verified Facility</p>
                               </div>
                            </div>
                            
@@ -311,7 +361,9 @@ const HospitalDetails = () => {
                               </div>
                               <div>
                                  <h4 className="text-xs font-black text-navy uppercase tracking-widest mb-1">Web Presence</h4>
-                                 <a href="#" className="text-sm font-bold text-[#0D9488] hover:underline">apollohospitals.com</a>
+                                 <a href="#" className="text-sm font-bold text-[#0D9488] hover:underline uppercase tracking-tight truncate block max-w-[150px]">
+                                   {hospital.user?.name?.split(' ')[0].toLowerCase()}.com
+                                 </a>
                               </div>
                            </div>
                         </div>
@@ -321,7 +373,7 @@ const HospitalDetails = () => {
                         <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 blur-2xl" />
                         <h3 className="text-xs font-black uppercase tracking-widest mb-2 relative z-10">Need Assistance?</h3>
                         <p className="text-[10px] text-white/50 font-bold mb-4 relative z-10">Contact our support desk for bookings</p>
-                        <Button className="w-full bg-[#0D9488] text-white rounded-2xl border-none font-black text-xs relative z-10">
+                        <Button className="w-full bg-[#0D9488] text-white rounded-2xl border-none font-black text-xs relative z-10 py-3">
                            Chat with Support
                         </Button>
                      </Card>
@@ -331,6 +383,7 @@ const HospitalDetails = () => {
             </div>
          </div>
       </main>
+      <Footer />
     </div>
   );
 };

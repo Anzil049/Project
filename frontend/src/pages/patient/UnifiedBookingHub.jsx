@@ -7,9 +7,11 @@ import {
   ChevronRight, CheckCircle2, X, BadgeCheck, ShieldCheck, 
   CreditCard, Building2, Info, Star as LucideStar 
 } from 'lucide-react';
-import { DOCTORS, HOSPITALS, SPECIALIZATIONS } from '../../data/mockData';
+import { SPECIALIZATIONS } from '../../data/mockData';
 import useBookingStore from '../../store/bookingStore';
 import { ROUTES } from '../../constants/routes';
+import doctorService from '../../services/doctorService';
+import { toast } from 'react-hot-toast';
 
 const UnifiedBookingHub = () => {
   const navigate = useNavigate();
@@ -22,32 +24,69 @@ const UnifiedBookingHub = () => {
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTime, setSelectedTime] = useState(null);
   
-  // States
+  const [doctors, setDoctors] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showPayment, setShowPayment] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
 
-  // Auto-selection logic
+  // Fetch doctors
+  useEffect(() => {
+    const fetchDoctors = async () => {
+      setLoading(true);
+      try {
+        const data = await doctorService.getDoctors({
+          mode: activeTab === 'online' ? 'Online' : 'Offline'
+        });
+        
+        const transformed = data.map(d => ({
+          id: d._id || d.id,
+          name: d.user?.name || 'Dr. Specialist',
+          specialization: d.specialization,
+          fee: d.fee || 500,
+          rating: 4.8,
+          experience: d.experience,
+          hospitalId: d.hospitalId?._id || d.hospitalId,
+          hospitalName: d.hospitalId?.name || 'Independent Clinic',
+          initials: (d.user?.name || 'D').split(' ').map(n => n[0]).join('').substring(0, 2),
+          gradient: 'from-[#0D9488] to-[#115E59]',
+          isOnline: d.onlineConsultation,
+          isOffline: true,
+          slots: d.slots || [],
+          location: d.address || ''
+        }));
+        
+        setDoctors(transformed);
+
+        // If doctorId passed in state, select it
+        if (location.state?.doctorId) {
+          const doc = transformed.find(d => d.id === location.state.doctorId);
+          if (doc) {
+            setSelectedDoc(doc);
+          }
+        }
+      } catch (error) {
+        toast.error("Failed to fetch doctors");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDoctors();
+  }, [activeTab]);
+
+  // Auto-selection logic for state updates
   useEffect(() => {
     if (location.state?.initialMode) {
       setActiveTab(location.state.initialMode);
     }
-    
-    if (location.state?.doctorId) {
-      const doc = DOCTORS.find(d => d.id === location.state.doctorId);
-      if (doc) {
-        setSelectedDoc(doc);
-      }
-    }
     window.history.replaceState({}, document.title);
   }, [location.state]);
 
-  const filteredDoctors = DOCTORS.filter(d => {
-    const matchesSearch = d.name.toLowerCase().includes(search.toLowerCase()) || 
-                          d.specialization.toLowerCase().includes(search.toLowerCase());
-    const matchesMode = activeTab === 'clinical' ? d.isOffline : d.isOnline;
-    return matchesSearch && matchesMode;
-  });
+  const filteredDoctors = doctors.filter(d => 
+    d.name.toLowerCase().includes(search.toLowerCase()) || 
+    d.specialization.toLowerCase().includes(search.toLowerCase())
+  );
 
   const selectDoctor = (doc) => {
     setSelectedDoc(doc);
@@ -157,7 +196,12 @@ const UnifiedBookingHub = () => {
                     </div>
 
                     <div className="space-y-3">
-                       {filteredDoctors.map(doc => {
+                       {loading ? (
+                         <div className="py-20 text-center">
+                            <div className="animate-spin rounded-full h-10 w-10 border-t-4 border-primary mx-auto mb-4"></div>
+                            <p className="text-navy/40 font-bold uppercase tracking-widest text-[10px]">Fetching Specialists...</p>
+                         </div>
+                       ) : filteredDoctors.map(doc => {
                           const isSelected = selectedDoc?.id === doc.id;
                           return (
                              <button 
@@ -172,10 +216,15 @@ const UnifiedBookingHub = () => {
                                 </div>
                                 <div className="flex-1">
                                    <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">{doc.specialization}</p>
-                                   <h3 className="text-lg font-heading font-black text-navy leading-none mb-1">{doc.name}</h3>
+                                   <h3 className="text-lg font-heading font-black text-navy leading-none mb-1 uppercase tracking-tight">{doc.name}</h3>
                                    <p className="text-[11px] font-bold text-navy/30 flex items-center gap-1.5 min-w-0">
                                       {doc.hospitalId ? <Building2 size={12} className="shrink-0" /> : <Stethoscope size={12} className="shrink-0" />} <span className="truncate">{doc.hospitalName}</span>
                                    </p>
+                                    {doc.location && (
+                                       <p className="text-[9px] font-bold text-navy/20 flex items-center gap-1.5 mt-1">
+                                          <MapPin size={10} className="text-primary/50" /> <span className="truncate">{doc.location}</span>
+                                       </p>
+                                    )}
                                 </div>
                                 <div className="text-right">
                                    <p className="text-lg font-black text-navy">₹{doc.fee}</p>
@@ -186,6 +235,12 @@ const UnifiedBookingHub = () => {
                              </button>
                           );
                        })}
+                       {!loading && filteredDoctors.length === 0 && (
+                         <div className="py-20 text-center bg-white rounded-[40px] border-2 border-dashed border-gray-100">
+                            <Stethoscope size={48} className="mx-auto text-gray-200 mb-4" />
+                            <h3 className="text-lg font-black text-navy/40">No specialists found</h3>
+                         </div>
+                       )}
                     </div>
                  </div>
 
@@ -196,7 +251,7 @@ const UnifiedBookingHub = () => {
                              <div>
                                 <h3 className="text-xs font-black uppercase tracking-widest text-navy/30 mb-6">Schedule Selection</h3>
                                 <div className="space-y-3">
-                                   {selectedDoc.slots.map(slot => (
+                                   {selectedDoc.slots && selectedDoc.slots.length > 0 ? selectedDoc.slots.map(slot => (
                                       <div key={slot.date} className="space-y-4">
                                          <button 
                                             onClick={() => { setSelectedDate(slot.date); setSelectedTime(null); }}
@@ -227,7 +282,11 @@ const UnifiedBookingHub = () => {
                                             </div>
                                          )}
                                       </div>
-                                   ))}
+                                   )) : (
+                                     <div className="py-10 text-center bg-gray-50 rounded-2xl">
+                                        <p className="text-[10px] font-black uppercase text-navy/30">No slots available currently</p>
+                                     </div>
+                                   )}
                                 </div>
                              </div>
 

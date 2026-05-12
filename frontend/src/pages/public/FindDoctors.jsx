@@ -8,9 +8,10 @@ import {
   ChevronRight, Filter, Stethoscope, BadgeCheck,
   Building2, Globe, Clock
 } from 'lucide-react';
-import { DOCTORS, HOSPITALS, SPECIALIZATIONS } from '../../data/mockData';
+import { SPECIALIZATIONS } from '../../data/mockData';
 import { ROUTES } from '../../constants/routes';
 import doctorService from '../../services/doctorService';
+import hospitalService from '../../services/hospitalService';
 import { toast } from 'react-hot-toast';
 
 const FindDoctors = () => {
@@ -34,14 +35,47 @@ const FindDoctors = () => {
   const [nearbyMode, setNearbyMode] = useState(false);
   const [coords, setCoords] = useState(null);
   const [realDoctors, setRealDoctors] = useState([]);
+  const [realHospitals, setRealHospitals] = useState([]);
   const [loadingReal, setLoadingReal] = useState(false);
 
-  // Fetch nearby doctors when mode or coords change
+  // Fetch doctors when filters change
   useEffect(() => {
     if (nearbyMode && coords) {
       fetchNearby();
+    } else if (!nearbyMode) {
+      fetchAll();
     }
-  }, [nearbyMode, coords, activeSpec]);
+  }, [nearbyMode, coords, activeSpec, mode, hospitalId, search]);
+
+  // Fetch hospitals once on mount
+  useEffect(() => {
+    const fetchHospitals = async () => {
+      try {
+        const data = await hospitalService.getHospitals();
+        setRealHospitals(data);
+      } catch (error) {
+        console.error("Failed to fetch hospitals", error);
+      }
+    };
+    fetchHospitals();
+  }, []);
+
+  const fetchAll = async () => {
+    setLoadingReal(true);
+    try {
+      const data = await doctorService.getDoctors({ 
+        search, 
+        specialization: activeSpec, 
+        mode, 
+        hospitalId 
+      });
+      setRealDoctors(data);
+    } catch (error) {
+      toast.error("Failed to fetch doctors");
+    } finally {
+      setLoadingReal(false);
+    }
+  };
 
   const fetchNearby = async () => {
     setLoadingReal(true);
@@ -78,30 +112,21 @@ const FindDoctors = () => {
     }
   };
 
-  const filtered = nearbyMode ? realDoctors.map(d => ({
-    id: d._id,
-    name: d.user.name,
+  const filtered = realDoctors.map(d => ({
+    id: d._id || d.id,
+    name: d.user?.name || d.name,
     specialization: d.specialization,
     experience: d.experience,
-    rating: 4.8, // Fallback if not in schema
+    rating: d.rating || 4.8, 
     fee: d.fee || 500,
     hospitalName: d.hospitalId?.name || 'Independent Clinic',
-    initials: d.user.name.split(' ').map(n => n[0]).join(''),
-    gradient: 'from-primary to-navy',
+    initials: (d.user?.name || d.name || 'D').split(' ').map(n => n[0]).join('').substring(0, 2),
+    gradient: d.color || 'from-[#0D9488] to-[#115E59]',
     isOnline: d.onlineConsultation,
-    isOffline: true,
-    slots: d.slots || []
-  })) : DOCTORS.filter(d => {
-    const matchesSearch = d.name.toLowerCase().includes(search.toLowerCase()) || 
-                          d.specialization.toLowerCase().includes(search.toLowerCase());
-    const matchesSpec = activeSpec === 'All' || d.specialization === activeSpec;
-    const matchesHospital = hospitalId === 'All' || 
-                            (hospitalId === 'null' ? d.hospitalId === null : d.hospitalId === hospitalId);
-    const matchesMode = mode === 'All' || 
-                        (mode === 'Online' && d.isOnline) || 
-                        (mode === 'Offline' && d.isOffline);
-    return matchesSearch && matchesSpec && matchesHospital && matchesMode;
-  });
+    isOffline: true, // Most doctors have a clinic
+    slots: d.slots || [],
+    location: d.address || ''
+  }));
 
   const handleBook = (doctor) => {
     // Pass doctor ID and current filtering context (e.g., if user was looking for Online)
@@ -185,7 +210,7 @@ const FindDoctors = () => {
                        >
                           <option value="All">All Partner Hospitals</option>
                           <option value="null">Private Clinics / Independent</option>
-                          {HOSPITALS.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                          {realHospitals.map(h => <option key={h._id} value={h._id}>{h.user?.name || h.name}</option>)}
                        </select>
                     </div>
 
@@ -229,7 +254,14 @@ const FindDoctors = () => {
 
               {/* MAIN CONTENT - DOCTOR GRID */}
               <div className="lg:col-span-9">
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                 {loadingReal ? (
+                    <div className="py-24 text-center">
+                       <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-primary mx-auto mb-4"></div>
+                       <p className="text-navy/40 font-bold uppercase tracking-widest text-xs">Finding verified specialists...</p>
+                    </div>
+                  ) : (
+                    <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {filtered.map((doctor) => (
                        <Card key={doctor.id} className="p-8 border-none bg-white rounded-3xl shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-500 overflow-hidden group">
                           <div className="flex items-start justify-between gap-4 mb-8">
@@ -249,6 +281,13 @@ const FindDoctors = () => {
                                 <Star size={14} fill="currentColor" /> {doctor.rating}
                              </div>
                           </div>
+
+                          {doctor.location && (
+                             <div className="flex items-center gap-2 mb-6 text-navy/40">
+                                <MapPin size={14} className="text-primary" />
+                                <span className="text-[11px] font-bold uppercase tracking-widest truncate">{doctor.location}</span>
+                             </div>
+                          )}
 
                           <div className="grid grid-cols-2 gap-4 mb-8">
                              <div className="bg-[#F8FAFC] p-4 rounded-[24px]">
@@ -278,15 +317,17 @@ const FindDoctors = () => {
                           </div>
                        </Card>
                     ))}
+                    </div>
 
                     {filtered.length === 0 && (
-                       <div className="col-span-full py-24 text-center">
+                       <div className="py-24 text-center">
                           <Stethoscope size={64} className="mx-auto text-gray-200 mb-6" />
                           <h3 className="text-2xl font-black text-navy mb-2">No specialists matched</h3>
                           <p className="text-sm font-bold text-navy/40">Try loosening your search or filter criteria.</p>
                        </div>
                     )}
-                 </div>
+                    </>
+                  )}
               </div>
            </div>
         </section>
