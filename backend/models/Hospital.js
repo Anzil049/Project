@@ -55,6 +55,18 @@ const hospitalSchema = mongoose.Schema({
         type: Boolean,
         default: false,
     },
+    facilities: [{
+        title: {
+            type: String,
+            required: true,
+        },
+        description: {
+            type: String,
+        },
+        images: [{
+            type: String, // URLs
+        }],
+    }],
 }, {
     timestamps: true,
 });

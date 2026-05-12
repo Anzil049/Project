@@ -216,6 +216,11 @@ const updateUserProfile = async (req, res, next) => {
                     hospital.zip = req.body.zip || hospital.zip;
                     hospital.establishYear = req.body.establishYear || hospital.establishYear;
                     hospital.coverImage = req.body.coverImage || hospital.coverImage;
+
+                    if (req.body.facilities) {
+                        hospital.facilities = req.body.facilities;
+                    }
+
                     updatedProfile = await hospital.save();
                 }
             }

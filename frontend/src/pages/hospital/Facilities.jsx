@@ -1,46 +1,61 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button, Input, Badge } from '../../components/common';
 import { 
   Building, Plus, Image as ImageIcon, X, MapPin, 
-  CheckCircle2, UploadCloud, Info
+  CheckCircle2, UploadCloud, Info, Loader2, Trash2
 } from 'lucide-react';
+import hospitalService from '../../services/hospitalService';
+import toast from 'react-hot-toast';
 
 const HospitalFacilities = () => {
+  const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
-  const [facilities, setFacilities] = useState([
-    {
-      id: 1,
-      title: 'Advanced ICU',
-      description: 'Fully equipped Intensive Care Unit with 24/7 monitoring, life support systems, and a dedicated team of critical care specialists.',
-      images: ['https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80']
-    },
-    {
-      id: 2,
-      title: 'Radiology & Imaging',
-      description: 'State-of-the-art MRI, CT Scan, and digital X-Ray facilities providing high-resolution diagnostics.',
-      images: ['https://images.unsplash.com/photo-1538108149393-cebb47acddb2?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80']
-    }
-  ]);
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [facilities, setFacilities] = useState([]);
 
   const [newFacility, setNewFacility] = useState({
     title: '',
     description: '',
-    images: [] // Array of object URLs
+    images: [] // Array of URLs
   });
 
   const fileInputRef = useRef(null);
 
-  const handleImageUpload = (e) => {
-    const files = Array.from(e.target.files);
-    
-    // Simulate generation of object URLs for the uploaded images
-    const newImageUrls = files.map(file => URL.createObjectURL(file));
+  useEffect(() => {
+    fetchFacilities();
+  }, []);
 
-    setNewFacility(prev => ({
-      ...prev,
-      images: [...prev.images, ...newImageUrls]
-    }));
+  const fetchFacilities = async () => {
+    try {
+      setLoading(true);
+      const data = await hospitalService.getProfile();
+      setFacilities(data.hospitalProfile?.facilities || []);
+    } catch (error) {
+      toast.error('Failed to load facilities');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImageUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    try {
+      toast.loading('Uploading images...', { id: 'upload' });
+      const uploadPromises = files.map(file => hospitalService.uploadImage(file));
+      const uploadedUrls = await Promise.all(uploadPromises);
+      
+      setNewFacility(prev => ({
+        ...prev,
+        images: [...prev.images, ...uploadedUrls]
+      }));
+      toast.success('Images uploaded successfully', { id: 'upload' });
+    } catch (error) {
+      toast.error('Failed to upload images', { id: 'upload' });
+    }
   };
 
   const removeImage = (indexToRemove) => {
@@ -50,21 +65,91 @@ const HospitalFacilities = () => {
     }));
   };
 
-  const handleSaveFacility = () => {
-    if (!newFacility.title) return; // simple validation
+  const handleEditFacility = (index) => {
+    setNewFacility(facilities[index]);
+    setEditingIndex(index);
+    setIsAdding(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-    const newEntry = {
-      id: Date.now(),
-      title: newFacility.title,
-      description: newFacility.description,
-      images: newFacility.images.length > 0 ? newFacility.images : ['https://images.unsplash.com/photo-1586773860418-d37222d8fce3?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80']
-    };
+  const handleSaveFacility = async () => {
+    if (!newFacility.title) return;
 
-    setFacilities([newEntry, ...facilities]);
-    
-    // Reset form
-    setNewFacility({ title: '', description: '', images: [] });
-    setIsAdding(false);
+    try {
+      setIsSaving(true);
+      let updatedFacilities;
+      
+      if (editingIndex !== null) {
+        updatedFacilities = [...facilities];
+        updatedFacilities[editingIndex] = newFacility;
+      } else {
+        updatedFacilities = [newFacility, ...facilities];
+      }
+      
+      await hospitalService.updateProfile({
+        facilities: updatedFacilities
+      });
+      
+      setFacilities(updatedFacilities);
+      toast.success(editingIndex !== null ? 'Facility updated successfully' : 'Facility published successfully');
+      
+      // Reset form
+      setNewFacility({ title: '', description: '', images: [] });
+      setIsAdding(false);
+      setEditingIndex(null);
+    } catch (error) {
+      toast.error('Failed to save facility');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const performDelete = async (indexToDelete) => {
+    try {
+      const updatedFacilities = facilities.filter((_, idx) => idx !== indexToDelete);
+      await hospitalService.updateProfile({
+        facilities: updatedFacilities
+      });
+      setFacilities(updatedFacilities);
+      toast.success('Facility removed');
+    } catch (error) {
+      toast.error('Failed to delete facility');
+    }
+  };
+
+  const handleDeleteFacility = (indexToDelete) => {
+    toast((t) => (
+      <div className="flex flex-col gap-3 p-1">
+        <p className="text-sm font-bold text-navy">Remove this facility?</p>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => {
+              toast.dismiss(t.id);
+              performDelete(indexToDelete);
+            }}
+            className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest"
+          >
+            Confirm
+          </button>
+          <button 
+            onClick={() => toast.dismiss(t.id)}
+            className="bg-gray-100 text-navy px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: 5000,
+      position: 'top-center',
+      style: {
+        borderRadius: '20px',
+        background: '#fff',
+        color: '#0C1A2E',
+        boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
+        border: '1px solid #f1f5f9'
+      }
+    });
   };
 
   return (
@@ -97,10 +182,14 @@ const HospitalFacilities = () => {
           <Card className="p-8 bg-white border border-[#0D9488]/20 rounded-[40px] shadow-2xl shadow-[#0D9488]/10 animate-in slide-in-from-top-4 duration-300">
              <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-6">
                 <div>
-                   <h2 className="text-xl font-black text-navy">Add Facility Details</h2>
-                   <p className="text-xs font-bold text-navy/40">Upload photos and describe the amenity</p>
+                   <h2 className="text-xl font-black text-navy">{editingIndex !== null ? 'Edit Facility Details' : 'Add Facility Details'}</h2>
+                   <p className="text-xs font-bold text-navy/40">{editingIndex !== null ? 'Update photos and description' : 'Upload photos and describe the amenity'}</p>
                 </div>
-                <button onClick={() => setIsAdding(false)} className="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full text-navy/50 hover:bg-gray-100 transition-colors">
+                <button onClick={() => {
+                   setIsAdding(false);
+                   setEditingIndex(null);
+                   setNewFacility({ title: '', description: '', images: [] });
+                 }} className="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full text-navy/50 hover:bg-gray-100 transition-colors">
                    <X size={18} />
                 </button>
              </div>
@@ -174,63 +263,104 @@ const HospitalFacilities = () => {
                 </div>
              </div>
 
-             <div className="pt-8 mt-6 border-t border-gray-100 flex items-center justify-end gap-4">
-                <Button variant="outline" onClick={() => setIsAdding(false)} className="rounded-2xl px-8 border-gray-200">
+              <div className="pt-8 mt-6 border-t border-gray-100 flex items-center justify-end gap-4">
+                <button 
+                  onClick={() => {
+                    setIsAdding(false);
+                    setEditingIndex(null);
+                    setNewFacility({ title: '', description: '', images: [] });
+                  }} 
+                  disabled={isSaving}
+                  className="px-8 py-3 text-xs font-black uppercase tracking-widest text-navy/40 hover:text-navy transition-colors disabled:opacity-50"
+                >
                    Cancel
+                </button>
+                <Button onClick={handleSaveFacility} disabled={!newFacility.title || isSaving} className="bg-[#0D9488] text-white rounded-2xl px-10 shadow-xl shadow-[#0D9488]/20 border-none disabled:opacity-50">
+                   {isSaving ? <Loader2 className="animate-spin" size={18} /> : (editingIndex !== null ? 'Update Facility' : 'Publish Facility')}
                 </Button>
-                <Button onClick={handleSaveFacility} disabled={!newFacility.title} className="bg-[#0D9488] text-white rounded-2xl px-10 shadow-xl shadow-[#0D9488]/20 border-none disabled:opacity-50">
-                   Publish Facility
-                </Button>
-             </div>
+              </div>
           </Card>
         )}
 
-        {/* Existing Facilities Display Grid */}
-        <div className="space-y-4">
-           {facilities.map((facility) => (
-             <Card key={facility.id} className="p-0 bg-white border border-gray-100 rounded-[32px] overflow-hidden hover:shadow-xl hover:shadow-navy/5 transition-all group group/card flex flex-col md:flex-row">
-                {/* Carousel / Image Area */}
-                <div className="md:w-1/3 min-h-[200px] md:min-h-full relative overflow-hidden bg-gray-50 flex items-center justify-center shrink-0 border-r border-gray-100 border-b md:border-b-0">
-                   {facility.images && facility.images.length > 0 ? (
-                      <div className="flex w-full h-full overflow-x-auto snap-x snap-mandatory hide-scrollbar">
-                         {facility.images.map((img, i) => (
-                            <div key={i} className="w-full h-full shrink-0 snap-start relative">
-                               <img src={img} alt={`${facility.title} ${i}`} className="w-full h-full object-cover absolute inset-0" />
-                               {/* Badge indicating multiple images */}
-                               {facility.images.length > 1 && (
-                                  <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md text-white px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
-                                     <ImageIcon size={12} /> {i + 1} / {facility.images.length}
-                                  </div>
-                               )}
-                            </div>
-                         ))}
-                      </div>
-                   ) : (
-                      <div className="text-gray-300 flex items-center justify-center">
-                         <ImageIcon size={48} />
-                      </div>
-                   )}
+        {/* Loading State */}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 space-y-4">
+             <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-[#0D9488]"></div>
+             <p className="text-navy/40 font-black uppercase tracking-widest text-[10px]">Synchronizing Facilities...</p>
+          </div>
+        ) : (
+          /* Existing Facilities Display Grid */
+          <div className="space-y-4">
+            {facilities.length === 0 && !isAdding && (
+              <Card className="p-20 flex flex-col items-center justify-center text-center space-y-4 bg-gray-50/50 border-dashed border-2 border-gray-200 rounded-[48px]">
+                <div className="w-20 h-20 bg-white rounded-[32px] flex items-center justify-center text-navy/20 shadow-sm">
+                   <Building size={40} />
                 </div>
+                <div className="space-y-1">
+                   <h3 className="text-xl font-black text-navy">No Facilities Added</h3>
+                   <p className="text-sm font-bold text-navy/40 max-w-xs mx-auto">Start by adding your hospital's advanced equipment and amenities to attract more patients.</p>
+                </div>
+                <Button onClick={() => setIsAdding(true)} className="bg-navy text-white px-8 rounded-2xl border-none">Add Your First Facility</Button>
+              </Card>
+            )}
+            {facilities.map((facility, index) => (
+              <Card key={index} className="p-0 bg-white border border-gray-100 rounded-[32px] overflow-hidden hover:shadow-xl hover:shadow-navy/5 transition-all group group/card flex flex-col md:flex-row">
+                 {/* Carousel / Image Area */}
+                 <div className="md:w-1/3 min-h-[200px] md:min-h-full relative overflow-hidden bg-gray-50 flex items-center justify-center shrink-0 border-r border-gray-100 border-b md:border-b-0">
+                    {facility.images && facility.images.length > 0 ? (
+                       <div className="flex w-full h-full overflow-x-auto snap-x snap-mandatory hide-scrollbar">
+                          {facility.images.map((img, i) => (
+                             <div key={i} className="w-full h-full shrink-0 snap-start relative">
+                                <img src={img} alt={`${facility.title} ${i}`} className="w-full h-full object-cover absolute inset-0" />
+                                {/* Badge indicating multiple images */}
+                                {facility.images.length > 1 && (
+                                   <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md text-white px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                                      <ImageIcon size={12} /> {i + 1} / {facility.images.length}
+                                   </div>
+                                )}
+                             </div>
+                          ))}
+                       </div>
+                    ) : (
+                       <div className="text-gray-300 flex items-center justify-center">
+                          <ImageIcon size={48} />
+                       </div>
+                    )}
+                 </div>
 
-                {/* Details Area */}
-                <div className="p-8 md:w-2/3 flex flex-col justify-center">
-                   <div className="flex items-center gap-3 mb-2">
-                       <h3 className="text-xl font-black text-navy">{facility.title}</h3>
-                       <Badge variant="success" className="text-[8px] bg-green-50 text-green-600 border-none uppercase tracking-widest px-2">Published</Badge>
-                   </div>
-                   <p className="text-sm font-bold text-navy/60 leading-relaxed mb-6">
-                      {facility.description || "No description provided."}
-                   </p>
-                   
-                   <div className="flex items-center gap-3 mt-auto">
-                      <Button size="sm" variant="outline" className="rounded-xl border-gray-200 text-[10px] px-6 font-black hover:bg-gray-50">
-                         Edit Details
-                      </Button>
-                   </div>
-                </div>
-             </Card>
-           ))}
-        </div>
+                 {/* Details Area */}
+                 <div className="p-8 md:w-2/3 flex flex-col justify-center relative">
+                    <div className="flex items-center gap-3 mb-2">
+                        <h3 className="text-xl font-black text-navy">{facility.title}</h3>
+                        <Badge variant="success" className="text-[8px] bg-green-50 text-green-600 border-none uppercase tracking-widest px-2">Published</Badge>
+                    </div>
+                    <p className="text-sm font-bold text-navy/60 leading-relaxed mb-6">
+                       {facility.description || "No description provided."}
+                    </p>
+                    
+                    <div className="flex items-center gap-3 mt-auto">
+                       <Button 
+                         onClick={() => handleEditFacility(index)}
+                         size="sm" 
+                         variant="outline" 
+                         className="rounded-xl border-gray-200 text-navy text-[10px] px-6 font-black hover:bg-gray-50"
+                       >
+                          Edit Details
+                       </Button>
+                       <Button 
+                         onClick={() => handleDeleteFacility(index)}
+                         size="sm" 
+                         variant="outline" 
+                         className="rounded-xl border-red-50/50 text-red-500 hover:bg-red-50 text-[10px] px-6 font-black"
+                       >
+                          <Trash2 size={14} className="mr-2" /> Remove
+                       </Button>
+                    </div>
+                 </div>
+              </Card>
+            ))}
+          </div>
+        )}
 
       </div>
     </DashboardLayout>

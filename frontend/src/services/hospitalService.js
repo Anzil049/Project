@@ -69,6 +69,16 @@ const hospitalService = {
     });
     return response.data.url;
   },
+
+  getProfile: async () => {
+    const response = await api.get('/auth/me');
+    return response.data;
+  },
+
+  updateProfile: async (profileData) => {
+    const response = await api.put('/auth/profile', profileData);
+    return response.data;
+  }
 };
 
 export default hospitalService;

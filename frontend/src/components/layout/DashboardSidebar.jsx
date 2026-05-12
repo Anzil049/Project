@@ -60,7 +60,7 @@ const DashboardSidebar = ({ role = ROLES.PATIENT }) => {
       {/* Sidebar Header */}
       <div className="px-8 py-8">
         <Link to="/" className="flex items-center">
-          <img src={logo} alt="MedCare Logo" className="h-14 w-auto object-contain" />
+          <img src={logo} alt="MedCare Logo" className="h-20 w-auto object-contain" />
         </Link>
       </div>
 
