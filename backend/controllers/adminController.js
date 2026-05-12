@@ -58,6 +58,10 @@ const getApprovedRegistrations = asyncHandler(async (req, res) => {
         let specificData = null;
         if (user.role === 'doctor') {
             specificData = await Doctor.findOne({ user: user._id });
+            // Skip doctors that were added by hospitals (they have a hospitalId)
+            if (specificData && specificData.hospitalId) {
+                continue;
+            }
         } else if (user.role === 'hospital') {
             specificData = await Hospital.findOne({ user: user._id });
         }

@@ -4,6 +4,7 @@ import { Stethoscope, Menu, X, PhoneCall, LayoutDashboard } from 'lucide-react';
 import { Button } from '../common';
 import { ROUTES } from '../../constants/routes';
 import useAuthStore from '../../store/authStore';
+import logo from '../../assets/logo.png';
 
 const PublicNavbar = () => {
   const location = useLocation();
@@ -23,13 +24,8 @@ const PublicNavbar = () => {
       <div className="container mx-auto px-6 flex items-center justify-between">
         
         {/* Logo */}
-        <Link to={ROUTES.HOME} className="flex items-center gap-2 group">
-          <div className="text-[#115E59] group-hover:rotate-12 transition-transform duration-300">
-            <Stethoscope size={28} strokeWidth={2.5} />
-          </div>
-          <span className="text-2xl font-heading font-black text-navy tracking-tighter">
-            MedCare
-          </span>
+        <Link to={ROUTES.HOME} className="flex items-center group">
+          <img src={logo} alt="MedCare Logo" className="h-12 w-auto object-contain transition-transform duration-300 group-hover:scale-105" />
         </Link>
 
         {/* Desktop Nav */}

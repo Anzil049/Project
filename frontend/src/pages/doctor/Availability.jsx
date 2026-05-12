@@ -1,343 +1,367 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
-import { Card, Button, Input, Badge } from '../../components/common';
+import { Card, Button } from '../../components/common';
 import { 
-  Clock, Save, Check, Copy, 
-  Calendar, AlertCircle, Info,
-  Unlock, Lock, ChevronRight, Plus, X, Video
+  Clock, Save, Calendar, Info,
+  Plus, Trash2, Building2, Edit2
 } from 'lucide-react';
+import doctorService from '../../services/doctorService';
+import toast from 'react-hot-toast';
 
 const Availability = () => {
-  const [activeTab, setActiveTab] = useState('offline');
+  const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-
-  // Online consultation slots state
-  const [onlineSlots, setOnlineSlots] = useState([
-    { id: 1, date: '2026-04-19', times: ['10:00 AM', '11:00 AM', '2:00 PM'] },
-    { id: 2, date: '2026-04-21', times: ['9:30 AM', '10:30 AM', '3:00 PM'] },
-  ]);
-  const [newDate, setNewDate] = useState('');
-  const [newTime, setNewTime] = useState('');
-  const [slotSaved, setSlotSaved] = useState(false);
-
-  const addDate = () => {
-    if (!newDate) return;
-    if (onlineSlots.find(s => s.date === newDate)) return;
-    setOnlineSlots(prev => [...prev, { id: Date.now(), date: newDate, times: [] }]);
-    setNewDate('');
-  };
-
-  const addTimeToDate = (dateId) => {
-    if (!newTime) return;
-    setOnlineSlots(prev => prev.map(s =>
-      s.id === dateId && !s.times.includes(newTime)
-        ? { ...s, times: [...s.times, newTime] }
-        : s
-    ));
-    setNewTime('');
-  };
-
-  const removeTime = (dateId, time) => {
-    setOnlineSlots(prev => prev.map(s =>
-      s.id === dateId ? { ...s, times: s.times.filter(t => t !== time) } : s
-    ));
-  };
-
-  const removeDate = (dateId) => {
-    setOnlineSlots(prev => prev.filter(s => s.id !== dateId));
-  };
-
-  const saveOnlineSlots = () => {
-    setSlotSaved(true);
-    setTimeout(() => setSlotSaved(false), 3000);
-  };
+  const [isEditing, setIsEditing] = useState(false);
+  const [doctorProfile, setDoctorProfile] = useState(null);
   
-  const [availability, setAvailability] = useState([
-    { id: 1, day: 'Monday', startTime: '09:00', endTime: '13:00', maxTokens: 25, active: true },
-    { id: 2, day: 'Tuesday', startTime: '09:00', endTime: '13:00', maxTokens: 25, active: true },
-    { id: 3, day: 'Wednesday', startTime: '09:00', endTime: '13:00', maxTokens: 25, active: true },
-    { id: 4, day: 'Thursday', startTime: '09:00', endTime: '13:00', maxTokens: 25, active: true },
-    { id: 5, day: 'Friday', startTime: '09:00', endTime: '13:00', maxTokens: 25, active: true },
-    { id: 6, day: 'Saturday', startTime: '10:00', endTime: '14:00', maxTokens: 20, active: true },
-    { id: 7, day: 'Sunday', startTime: '00:00', endTime: '00:00', maxTokens: 0, active: false }
-  ]);
+  const [isAccepting, setIsAccepting] = useState(true);
+  const [isOnlineAccepting, setIsOnlineAccepting] = useState(true);
+  const [selectedDays, setSelectedDays] = useState([]);
+  const [sessions, setSessions] = useState([{ start: '09:00', end: '12:00' }]);
+  
+  const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  const handleUpdate = (id, field, value) => {
-    setAvailability(prev => prev.map(day => 
-      day.id === id ? { ...day, [field]: value } : day
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  const fetchProfile = async () => {
+    try {
+      setLoading(true);
+      const data = await doctorService.getProfile();
+      const profile = data.doctorProfile;
+      setDoctorProfile(profile);
+      
+      if (profile) {
+        setIsAccepting(profile.isAcceptingAppointments ?? true);
+        setIsOnlineAccepting(profile.onlineConsultation ?? true);
+        setSelectedDays(profile.availableDays || []);
+        setSessions(profile.slots?.length > 0 ? profile.slots : [{ start: '09:00', end: '12:00' }]);
+      }
+    } catch (error) {
+      toast.error('Failed to load availability settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleDay = (day) => {
+    if (!isEditing || doctorProfile?.hospitalId) return;
+    setSelectedDays(prev => 
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    );
+  };
+
+  const addSession = () => {
+    if (!isEditing || doctorProfile?.hospitalId) return;
+    setSessions(prev => [...prev, { start: '09:00', end: '17:00' }]);
+  };
+
+  const removeSession = (index) => {
+    if (!isEditing || doctorProfile?.hospitalId) return;
+    if (sessions.length <= 1) {
+      toast.error('At least one session is required');
+      return;
+    }
+    setSessions(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateSession = (index, field, value) => {
+    if (!isEditing || doctorProfile?.hospitalId) return;
+    setSessions(prev => prev.map((s, i) => 
+      i === index ? { ...s, [field]: value } : s
     ));
-    setSaveSuccess(false);
   };
 
-  const applyToAll = (sourceDay) => {
-    setAvailability(prev => prev.map(day => ({
-      ...day,
-      startTime: sourceDay.startTime,
-      endTime: sourceDay.endTime,
-      maxTokens: sourceDay.maxTokens,
-      active: true // Auto-activate if copying
-    })));
+  const validateSlots = () => {
+    // Check if start time is before end time for all slots
+    for (let i = 0; i < sessions.length; i++) {
+      if (sessions[i].start >= sessions[i].end) {
+        toast.error(`Session ${i + 1}: Start time must be before end time`);
+        return false;
+      }
+    }
+
+    // Check for overlapping slots
+    for (let i = 0; i < sessions.length; i++) {
+      for (let j = i + 1; j < sessions.length; j++) {
+        const s1 = sessions[i];
+        const s2 = sessions[j];
+        
+        if (s1.start < s2.end && s2.start < s1.end) {
+          toast.error(`Session ${i + 1} and Session ${j + 1} overlap`);
+          return false;
+        }
+      }
+    }
+    return true;
   };
 
-  const handleSave = () => {
-    setIsSaving(true);
-    // Simulate API call
-    setTimeout(() => {
+  const handleSave = async () => {
+    if (!validateSlots()) return;
+
+    try {
+      setIsSaving(true);
+      await doctorService.updateProfile({
+        isAcceptingAppointments: isAccepting,
+        onlineConsultation: isOnlineAccepting,
+        availableDays: selectedDays,
+        slots: sessions
+      });
+      toast.success('Schedule updated successfully');
+      setIsEditing(false); // Go back to view mode after saving
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update schedule');
+    } finally {
       setIsSaving(false);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    }, 1500);
+    }
   };
 
-  const isValidTime = (start, end) => {
-    if (!start || !end) return true;
-    return start < end;
-  };
+  const isHospitalAdded = !!doctorProfile?.hospitalId;
+  const canEdit = !isHospitalAdded;
+
+  if (loading) {
+    return (
+      <DashboardLayout title="Availability" role="doctor">
+        <div className="flex items-center justify-center h-[60vh]">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-[#0D9488]"></div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout title="Availability Settings" role="doctor">
-      <div className="max-w-5xl mx-auto space-y-8 pb-20 font-body animate-in fade-in duration-700">
-
+      <div className="max-w-4xl mx-auto space-y-8 pb-20 font-body animate-in fade-in duration-700">
+        
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
           <div className="space-y-2">
             <h1 className="text-4xl font-heading font-black text-navy tracking-tight">
-              Manage <span className="text-[#0D9488]">Schedule</span>
+              Manage Doctor <span className="text-[#0D9488]">Schedule</span>
             </h1>
             <p className="text-[10px] font-black text-navy/40 uppercase tracking-[0.25em] flex items-center gap-2">
-              <Calendar size={14} className="text-[#0D9488]" /> Configure your weekly hours and online consultation slots
+              <Calendar size={14} className="text-[#0D9488]" /> Configure your active sessions and working days
             </p>
           </div>
-          {activeTab === 'offline' ? (
-            <Button
-              onClick={handleSave}
-              disabled={isSaving}
-              className={`${
-                saveSuccess ? 'bg-green-500' : 'bg-navy'
-              } text-white rounded-[24px] px-10 py-6 h-auto shadow-2xl shadow-navy/20 border-none transition-all flex items-center gap-3`}
-            >
-              {isSaving ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : saveSuccess ? (
-                <><Check size={20} /> Changes Saved</>
+
+          {canEdit && (
+            <div className="flex gap-3">
+              {isEditing ? (
+                <>
+                  <Button
+                    onClick={() => {
+                      setIsEditing(false);
+                      fetchProfile(); // Reset changes
+                    }}
+                    variant="outline"
+                    className="rounded-2xl px-6 h-14 text-xs font-black uppercase tracking-widest border-2"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSave}
+                    loading={isSaving}
+                    className="bg-[#0D9488] hover:bg-[#0D9488]/90 text-white rounded-2xl px-8 h-14 shadow-xl shadow-[#0D9488]/20 border-none transition-all flex items-center gap-2 text-xs font-black uppercase tracking-widest"
+                  >
+                    <Save size={18} /> Save Changes
+                  </Button>
+                </>
               ) : (
-                <><Save size={20} /> Save Changes</>
+                <Button
+                  onClick={() => setIsEditing(true)}
+                  className="bg-navy hover:bg-navy/90 text-white rounded-2xl px-8 h-14 shadow-xl shadow-navy/20 border-none transition-all flex items-center gap-2 text-xs font-black uppercase tracking-widest"
+                >
+                  <Edit2 size={18} /> Edit Schedule
+                </Button>
               )}
-            </Button>
-          ) : (
-            <Button
-              onClick={saveOnlineSlots}
-              className={`${
-                slotSaved ? 'bg-green-500' : 'bg-[#0D9488]'
-              } text-white rounded-[24px] px-10 py-6 h-auto shadow-2xl shadow-[#0D9488]/20 border-none transition-all flex items-center gap-3`}
-            >
-              {slotSaved ? <><Check size={20} /> Saved!</> : <><Save size={20} /> Save Slots</>}
-            </Button>
+            </div>
           )}
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 bg-gray-100 rounded-2xl p-1 w-fit">
-          <button
-            onClick={() => setActiveTab('offline')}
-            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === 'offline' ? 'bg-white text-navy shadow-sm' : 'text-navy/40 hover:text-navy'
-            }`}
-          >
-            📅 Offline Hours
-          </button>
-          <button
-            onClick={() => setActiveTab('online')}
-            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === 'online' ? 'bg-white text-navy shadow-sm' : 'text-navy/40 hover:text-navy'
-            }`}
-          >
-            🎥 Online Slots
-          </button>
-        </div>
-
-        {/* Info Alert — only for offline tab */}
-        {activeTab === 'offline' && (
-          <div className="bg-[#E0F2FE] border border-blue-100 p-6 rounded-[32px] flex items-start gap-4 shadow-sm">
-            <Info className="text-[#0D9488] shrink-0 mt-1" size={24} />
+        {/* Hospital Disclaimer */}
+        {isHospitalAdded && (
+          <div className="bg-amber-50 border-2 border-amber-100 p-6 rounded-[32px] flex items-start gap-4 shadow-sm animate-in slide-in-from-top-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center shrink-0">
+               <Building2 className="text-amber-600" size={24} />
+            </div>
             <div className="space-y-1">
-              <h4 className="text-xs font-black text-navy uppercase tracking-widest">Platform Sync</h4>
-              <p className="text-xs text-navy/60 font-medium leading-relaxed">
-                Your availability schedule is automatically synced with the patient booking portal.
+              <h4 className="text-sm font-black text-navy uppercase tracking-widest">Hospital Managed Schedule</h4>
+              <p className="text-xs text-navy/60 font-bold leading-relaxed">
+                Your practice hours are currently managed by your affiliated hospital. 
+                <span className="text-amber-700 block mt-1 underline">Please contact the hospital administration for any schedule adjustments.</span>
               </p>
             </div>
           </div>
         )}
 
-        {/* OFFLINE TAB */}
-        {activeTab === 'offline' && (
-          <div className="space-y-4">
-            {availability.map((day) => {
-              const timeWarning = !isValidTime(day.startTime, day.endTime);
-              return (
-                <Card
-                  key={day.id}
-                  className={`p-6 md:p-8 rounded-[40px] border transition-all duration-300 relative overflow-hidden ${
-                    day.active ? 'bg-white border-gray-100 shadow-xl shadow-navy/5' : 'bg-gray-50/50 border-transparent opacity-60'
-                  }`}
-                >
-                  {day.active && timeWarning && (
-                    <div className="absolute top-0 left-0 w-full h-1 bg-red-500 animate-pulse" />
-                  )}
-                  <div className="flex flex-col lg:flex-row lg:items-center gap-8 lg:gap-12 relative z-10">
-                    <div className="flex items-center justify-between lg:w-48 shrink-0">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-lg font-black text-navy tracking-tight">{day.day}</span>
-                        <Badge className={`text-[8px] px-2 py-0.5 rounded-full ${day.active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`}>
-                          {day.active ? 'ACTIVE' : 'OFF-DUTY'}
-                        </Badge>
-                      </div>
-                      <button
-                        onClick={() => handleUpdate(day.id, 'active', !day.active)}
-                        className={`w-14 h-8 rounded-full transition-all duration-300 relative ${
-                          day.active ? 'bg-[#0D9488]' : 'bg-gray-300'
-                        }`}
-                      >
-                        <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-all duration-300 ${
-                          day.active ? 'left-7' : 'left-1'
-                        }`} />
-                      </button>
-                    </div>
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-end">
-                      <div className="space-y-4 md:col-span-2 lg:col-span-2">
-                        <div className="flex items-center gap-4">
-                          <div className={`flex-1 transition-all ${timeWarning ? 'ring-2 ring-red-500 rounded-2xl' : ''}`}>
-                            <Input label="Start Time" type="time" value={day.startTime} disabled={!day.active} onChange={(e) => handleUpdate(day.id, 'startTime', e.target.value)} />
-                          </div>
-                          <div className="text-navy/20 pt-6"><ChevronRight size={20} /></div>
-                          <div className={`flex-1 transition-all ${timeWarning ? 'ring-2 ring-red-500 rounded-2xl' : ''}`}>
-                            <Input label="End Time" type="time" value={day.endTime} disabled={!day.active} onChange={(e) => handleUpdate(day.id, 'endTime', e.target.value)} />
-                          </div>
-                        </div>
-                        {day.active && timeWarning && (
-                          <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-2 px-2">
-                            <AlertCircle size={12} /> Start time must be before end time
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <div className="flex-1">
-                          <Input label="Max Tokens" type="number" value={day.maxTokens} disabled={!day.active} onChange={(e) => handleUpdate(day.id, 'maxTokens', e.target.value)} />
-                        </div>
-                        <button
-                          onClick={() => applyToAll(day)}
-                          disabled={!day.active || timeWarning}
-                          className="p-4 bg-gray-50 text-navy/40 hover:text-[#0D9488] hover:bg-[#0D9488]/10 rounded-2xl transition-all group disabled:opacity-0"
-                          title="Copy settings to all days"
-                        >
-                          <Copy size={20} className="group-hover:rotate-12 transition-transform" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ONLINE SLOTS TAB */}
-        {activeTab === 'online' && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-400">
-            <div className="bg-[#E0F2FE] border border-blue-100 p-5 rounded-2xl flex items-start gap-3">
-              <Video size={18} className="text-[#0D9488] shrink-0 mt-0.5" />
-              <p className="text-xs font-bold text-navy/60 leading-relaxed">
-                Add specific dates and time slots when you are available for <strong>online consultations</strong>. Patients will see and book these slots from the patient portal.
-              </p>
+        {/* Main Configuration Card */}
+        <Card className="p-8 md:p-10 rounded-[48px] border-none shadow-2xl shadow-navy/5 bg-white relative overflow-hidden">
+          
+          <div className="space-y-10">
+            {/* Status Toggle */}
+            <div className={`flex flex-col md:flex-row md:items-center justify-between gap-6 p-8 rounded-[32px] border ${(!isEditing || isHospitalAdded) ? 'bg-gray-50/30 border-gray-100' : 'bg-gray-50/50 border-gray-100 ring-2 ring-[#0D9488]/10'}`}>
+              <div className="flex items-center gap-5">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${isAccepting ? 'bg-amber-50 text-amber-500' : 'bg-gray-100 text-gray-400'}`}>
+                  <Calendar size={24} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-navy uppercase tracking-widest">Accepting Appointments</h3>
+                  <p className="text-[10px] font-bold text-navy/40 uppercase mt-1">
+                    {isHospitalAdded ? 'Status managed by platform' : isEditing ? 'Toggle availability status' : 'Current booking status'}
+                  </p>
+                </div>
+              </div>
+              <button
+                disabled={!isEditing || isHospitalAdded}
+                onClick={() => setIsAccepting(!isAccepting)}
+                className={`w-16 h-9 rounded-full transition-all duration-300 relative shadow-inner ${
+                  isAccepting ? 'bg-amber-500' : 'bg-gray-300'
+                } ${(!isEditing || isHospitalAdded) ? 'cursor-default opacity-80' : 'hover:scale-105 active:scale-95'}`}
+              >
+                <div className={`absolute top-1 w-7 h-7 bg-white rounded-full shadow-lg transition-all duration-300 ${
+                  isAccepting ? 'left-8' : 'left-1'
+                }`} />
+              </button>
             </div>
 
-            {/* Add new date */}
-            <Card className="p-6 border border-gray-100 bg-white">
-              <p className="text-[10px] font-black uppercase tracking-widest text-navy/50 mb-4">Add Available Date</p>
-              <div className="flex gap-3">
-                <input
-                  type="date"
-                  value={newDate}
-                  min={new Date().toISOString().split('T')[0]}
-                  onChange={(e) => setNewDate(e.target.value)}
-                  className="flex-1 bg-gray-50 border border-gray-100 rounded-2xl py-3 px-4 text-sm font-bold text-navy outline-none focus:border-[#0D9488] transition-all"
-                />
-                <button
-                  onClick={addDate}
-                  disabled={!newDate}
-                  className="flex items-center gap-2 bg-[#0D9488] text-white text-[10px] font-black uppercase tracking-widest px-5 rounded-2xl hover:bg-[#0f766e] transition-all disabled:opacity-40"
-                >
-                  <Plus size={16} /> Add Date
-                </button>
-              </div>
-            </Card>
-
-            {/* Date + slot cards */}
-            {onlineSlots.length === 0 && (
-              <div className="py-16 text-center">
-                <Calendar size={40} className="mx-auto text-gray-200 mb-3" />
-                <p className="text-sm font-bold text-navy/40">No online slots added yet.</p>
-              </div>
-            )}
-
-            {onlineSlots.map((slot) => (
-              <Card key={slot.id} className="p-6 border border-gray-100 bg-white">
-                <div className="flex items-center justify-between mb-5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[#0D9488]/10 flex items-center justify-center">
-                      <Calendar size={18} className="text-[#0D9488]" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-black text-navy">
-                        {new Date(slot.date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                      </p>
-                      <p className="text-[10px] font-bold text-navy/40">{slot.times.length} time slot{slot.times.length !== 1 ? 's' : ''} added</p>
-                    </div>
-                  </div>
-                  <button onClick={() => removeDate(slot.id)} className="w-8 h-8 rounded-full bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center transition-all">
-                    <X size={14} />
-                  </button>
+            {/* Online Consultation Toggle */}
+            <div className={`flex flex-col md:flex-row md:items-center justify-between gap-6 p-8 rounded-[32px] border ${(!isEditing || isHospitalAdded) ? 'bg-gray-50/30 border-gray-100' : 'bg-gray-50/50 border-gray-100 ring-2 ring-[#0D9488]/10'}`}>
+              <div className="flex items-center gap-5">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${isOnlineAccepting ? 'bg-[#0D9488]/10 text-[#0D9488]' : 'bg-gray-100 text-gray-400'}`}>
+                  <Clock size={24} />
                 </div>
-
-                {/* Existing time chips */}
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {slot.times.map(t => (
-                    <div key={t} className="flex items-center gap-1.5 bg-[#0D9488]/10 text-[#0D9488] border border-[#0D9488]/20 px-3 py-1.5 rounded-xl text-[10px] font-black">
-                      <Clock size={10} /> {t}
-                      <button onClick={() => removeTime(slot.id, t)} className="text-[#0D9488]/50 hover:text-red-500 ml-1"><X size={10} /></button>
-                    </div>
-                  ))}
-                  {slot.times.length === 0 && (
-                    <p className="text-[10px] font-bold text-navy/30">No time slots yet. Add one below.</p>
-                  )}
+                <div>
+                  <h3 className="text-sm font-black text-navy uppercase tracking-widest">Online Consultations</h3>
+                  <p className="text-[10px] font-bold text-navy/40 uppercase mt-1">
+                    {isHospitalAdded ? 'Independent doctors only' : isEditing ? 'Toggle online appointment status' : 'Current online status'}
+                  </p>
                 </div>
+              </div>
+              <button
+                disabled={!isEditing || isHospitalAdded}
+                onClick={() => setIsOnlineAccepting(!isOnlineAccepting)}
+                className={`w-16 h-9 rounded-full transition-all duration-300 relative shadow-inner ${
+                  isOnlineAccepting ? 'bg-[#0D9488]' : 'bg-gray-300'
+                } ${(!isEditing || isHospitalAdded) ? 'cursor-default opacity-80' : 'hover:scale-105 active:scale-95'}`}
+              >
+                <div className={`absolute top-1 w-7 h-7 bg-white rounded-full shadow-lg transition-all duration-300 ${
+                  isOnlineAccepting ? 'left-8' : 'left-1'
+                }`} />
+              </button>
+            </div>
 
-                {/* Add time */}
-                <div className="flex gap-2">
-                  <input
-                    type="time"
-                    onChange={(e) => {
-                      const [h, m] = e.target.value.split(':');
-                      const hr = parseInt(h);
-                      const ampm = hr >= 12 ? 'PM' : 'AM';
-                      const hr12 = hr % 12 || 12;
-                      setNewTime(`${hr12}:${m} ${ampm}`);
-                    }}
-                    className="flex-1 bg-gray-50 border border-gray-100 rounded-xl py-2.5 px-4 text-sm font-bold text-navy outline-none focus:border-[#0D9488] transition-all"
-                  />
-                  <button
-                    onClick={() => addTimeToDate(slot.id)}
-                    className="flex items-center gap-1.5 bg-navy text-white text-[10px] font-black uppercase tracking-widest px-4 rounded-xl hover:bg-[#0D9488] transition-all"
+            {/* Working Days */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2">
+                <h3 className="text-[10px] font-black text-navy/30 uppercase tracking-[0.2em]">Working Days</h3>
+                <div className="flex-1 h-[1px] bg-gray-100" />
+              </div>
+              
+              <div className="flex flex-wrap gap-3">
+                {daysOfWeek.map((day) => {
+                  const isActive = selectedDays.includes(day);
+                  return (
+                    <button
+                      key={day}
+                      disabled={!isEditing || isHospitalAdded}
+                      onClick={() => toggleDay(day)}
+                      className={`
+                        w-12 h-12 rounded-2xl flex items-center justify-center text-xs font-black transition-all duration-300
+                        ${isActive 
+                          ? 'bg-[#0D9488] text-white shadow-lg shadow-[#0D9488]/30 scale-110' 
+                          : 'bg-white border-2 border-gray-100 text-navy/30 hover:border-[#0D9488]/30'}
+                        ${(!isEditing || isHospitalAdded) && isActive ? 'opacity-100 ring-4 ring-[#0D9488]/10' : ''}
+                        ${(!isEditing || isHospitalAdded) && !isActive ? 'opacity-40 grayscale-[0.5]' : ''}
+                        ${(!isEditing || isHospitalAdded) ? 'cursor-default' : 'hover:scale-110 active:scale-95'}
+                      `}
+                      title={isActive ? `${day} (Active)` : day}
+                    >
+                      {day.charAt(0)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Active Sessions */}
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                   <Clock size={16} className="text-[#0D9488]" />
+                   <h3 className="text-[10px] font-black text-navy uppercase tracking-[0.2em]">Active Sessions</h3>
+                </div>
+                {isEditing && !isHospitalAdded && (
+                  <button 
+                    onClick={addSession}
+                    className="flex items-center gap-2 text-[10px] font-black text-[#0D9488] uppercase tracking-widest hover:bg-[#0D9488]/5 px-4 py-2 rounded-xl transition-all"
                   >
-                    <Plus size={14} /> Add
+                    <Plus size={14} /> Add Session
                   </button>
-                </div>
-              </Card>
-            ))}
+                )}
+              </div>
+
+              <div className="space-y-4">
+                {sessions.map((session, index) => (
+                  <div key={index} className={`group relative rounded-[28px] p-6 border transition-all ${isEditing ? 'bg-white border-[#0D9488]/20 shadow-xl shadow-navy/5' : 'bg-gray-50/30 border-gray-100'}`}>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2 text-left">
+                        <label className="text-[10px] font-black text-navy/30 uppercase ml-2">Starts</label>
+                        <div className="relative">
+                          <input 
+                            type="time" 
+                            disabled={!isEditing || isHospitalAdded}
+                            value={session.start}
+                            onChange={(e) => updateSession(index, 'start', e.target.value)}
+                            className={`w-full bg-white border-2 rounded-2xl py-4 px-5 text-sm font-black outline-none transition-all ${(!isEditing || isHospitalAdded) ? 'text-navy/80 cursor-default border-dashed border-gray-100' : 'text-navy border-[#0D9488]/10 focus:border-[#0D9488]'}`}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2 text-left">
+                        <label className="text-[10px] font-black text-navy/30 uppercase ml-2">Ends</label>
+                        <div className="relative">
+                          <input 
+                            type="time" 
+                            disabled={!isEditing || isHospitalAdded}
+                            value={session.end}
+                            onChange={(e) => updateSession(index, 'end', e.target.value)}
+                            className={`w-full bg-white border-2 rounded-2xl py-4 px-5 text-sm font-black outline-none transition-all ${(!isEditing || isHospitalAdded) ? 'text-navy/80 cursor-default border-dashed border-gray-100' : 'text-navy border-[#0D9488]/10 focus:border-[#0D9488]'}`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {isEditing && !isHospitalAdded && sessions.length > 1 && (
+                      <button 
+                        onClick={() => removeSession(index)}
+                        className="absolute -right-3 -top-3 w-8 h-8 bg-red-50 text-red-500 rounded-full flex items-center justify-center border-2 border-white shadow-lg opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Decorative Background Elements */}
+          <div className="absolute -top-24 -right-24 w-64 h-64 bg-[#0D9488]/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-navy/5 rounded-full blur-3xl pointer-events-none" />
+        </Card>
+
+        {/* Action Help */}
+        {!isHospitalAdded && (
+          <div className="flex items-center gap-3 px-8 text-navy/40">
+             <Info size={16} />
+             <p className="text-[10px] font-bold uppercase tracking-widest leading-relaxed">
+               {isEditing 
+                 ? "You are currently modifying your schedule. Don't forget to save your changes to update the public patient portal."
+                 : "Your schedule is currently in view mode. Click 'Edit Schedule' to make any changes to your working hours."
+               }
+             </p>
           </div>
         )}
-
       </div>
     </DashboardLayout>
   );

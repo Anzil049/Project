@@ -10,6 +10,7 @@ import { Avatar } from '../common';
 import useAuthStore from '../../store/authStore';
 import { ROLES } from '../../constants/roles';
 import { ROUTES } from '../../constants/routes';
+import logo from '../../assets/logo.png';
 
 const DashboardSidebar = ({ role = ROLES.PATIENT }) => {
   const { user, logout } = useAuthStore();
@@ -58,13 +59,8 @@ const DashboardSidebar = ({ role = ROLES.PATIENT }) => {
     <aside className="w-[260px] h-screen bg-white sticky top-0 left-0 flex flex-col border-r border-gray-100 shadow-sm z-40 overflow-y-auto">
       {/* Sidebar Header */}
       <div className="px-8 py-8">
-        <Link to="/" className="flex items-center gap-3">
-          <div className="bg-[#0D9488] p-2 rounded-xl">
-            <Stethoscope className="text-white w-6 h-6" />
-          </div>
-          <span className="text-2xl font-heading font-black text-[#0C1A2E] tracking-tight">
-            Med<span className="text-[#0D9488]">Care</span>
-          </span>
+        <Link to="/" className="flex items-center">
+          <img src={logo} alt="MedCare Logo" className="h-14 w-auto object-contain" />
         </Link>
       </div>
 

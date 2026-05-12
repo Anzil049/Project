@@ -165,6 +165,38 @@ const updateUserProfile = async (req, res, next) => {
                     doctor.fee = req.body.fee || doctor.fee;
                     doctor.phone = req.body.phone || doctor.phone;
                     doctor.address = req.body.address || doctor.address;
+                    
+                    // Availability fields
+                    doctor.isAcceptingAppointments = req.body.isAcceptingAppointments !== undefined ? req.body.isAcceptingAppointments : doctor.isAcceptingAppointments;
+                    
+                    // Only independent doctors can update their slots and days
+                    if (!doctor.hospitalId) {
+                        if (req.body.availableDays) doctor.availableDays = req.body.availableDays;
+                        
+                        if (req.body.slots) {
+                            const sessions = req.body.slots;
+                            // Validate slots
+                            for (let i = 0; i < sessions.length; i++) {
+                                // Start time before end time
+                                if (sessions[i].start >= sessions[i].end) {
+                                    return res.status(400).json({ message: `Session ${i + 1}: Start time must be before end time` });
+                                }
+
+                                // Overlap check
+                                for (let j = i + 1; j < sessions.length; j++) {
+                                    const s1 = sessions[i];
+                                    const s2 = sessions[j];
+                                    if (s1.start < s2.end && s2.start < s1.end) {
+                                        return res.status(400).json({ message: `Session ${i + 1} and Session ${j + 1} overlap` });
+                                    }
+                                }
+                            }
+                            doctor.slots = sessions;
+                        }
+                        
+                        if (req.body.maxTokens) doctor.maxTokens = req.body.maxTokens;
+                    }
+
                     doctor.onlineConsultation = req.body.onlineConsultation !== undefined ? req.body.onlineConsultation : doctor.onlineConsultation;
                     if (doctor.hospitalId) doctor.onlineConsultation = false;
                     updatedProfile = await doctor.save();

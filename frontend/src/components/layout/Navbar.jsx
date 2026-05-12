@@ -4,17 +4,17 @@ import { Activity, User, LogIn, LogOut } from 'lucide-react';
 import { ROUTES } from '../../constants/routes';
 import useAuthStore from '../../store/authStore';
 import { Avatar } from '../common';
+import logo from '../../assets/logo.png';
 
 const Navbar = () => {
   const { isAuthenticated, logout } = useAuthStore();
 
   return (
     <nav className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-100 flex items-center justify-between px-8 z-50 shadow-sm">
-      <div className="flex items-center gap-2">
-        <div className="bg-primary p-2 rounded-lg">
-          <Activity className="text-white w-6 h-6" />
-        </div>
-        <span className="text-navy font-heading font-bold text-xl tracking-tight">Medicare</span>
+      <div className="flex items-center">
+        <Link to="/" className="flex items-center">
+          <img src={logo} alt="MedCare Logo" className="h-10 w-auto object-contain" />
+        </Link>
       </div>
 
       <div className="flex items-center gap-6">
