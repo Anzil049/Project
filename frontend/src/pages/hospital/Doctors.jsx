@@ -15,10 +15,34 @@ import toast from 'react-hot-toast';
 import hospitalService from '../../services/hospitalService';
 import { hospitalDoctorSchema } from '../../utils/validationSchemas';
 
+const minutesFromTime = (time) => {
+  const [hour, minute] = String(time).split(':').map(Number);
+  return (hour * 60) + minute;
+};
+
+const calculateSlotSummary = (schedule) => {
+  const start = minutesFromTime(schedule.start_time);
+  const end = minutesFromTime(schedule.end_time);
+  const duration = Number(schedule.slot_duration);
+  const total = Number.isFinite(start) && Number.isFinite(end) && duration > 0 && end > start
+    ? Math.floor((end - start) / duration)
+    : 0;
+  return {
+    total,
+    regular: total,
+  };
+};
+
 const HospitalDoctors = () => {
   const allDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
   const fileInputRef = useRef(null);
+
+  const getAvailableDaysFromSchedules = (schedules) => {
+    if (!schedules || schedules.length === 0) return [];
+    const days = schedules.map(s => s.day_of_week);
+    return allDays.filter(d => days.includes(d));
+  };
 
   // Mock Data
   const [doctors, setDoctors] = useState([]);
@@ -44,10 +68,12 @@ const HospitalDoctors = () => {
         experience: doc.experience,
         qualifications: doc.qualifications || '',
         image: doc.user?.image || '',
+        schedules: doc.schedules || [],
         slots: doc.slots || [],
         availableDays: doc.availableDays || [],
         maxTokens: doc.maxTokens,
-
+        booking_window_days: doc.booking_window_days || 30,
+        unavailability: doc.unavailability || [],
         isAcceptingAppointments: doc.isAcceptingAppointments ?? true,
         appointmentsToday: 0, // Mock for now
         status: doc.user?.status || 'active'
@@ -67,9 +93,10 @@ const HospitalDoctors = () => {
   const [viewingDoctor, setViewingDoctor] = useState(null);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [scheduleDoctor, setScheduleDoctor] = useState(null);
-  const [tempSlots, setTempSlots] = useState([]);
-  const [tempDays, setTempDays] = useState([]);
+  const [tempSchedules, setTempSchedules] = useState([]);
+  const [bookingWindow, setBookingWindow] = useState(30);
   const [isAccepting, setIsAccepting] = useState(true);
+  const [unavailability, setUnavailability] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
 
   const {
@@ -81,24 +108,9 @@ const HospitalDoctors = () => {
     formState: { errors }
   } = useForm({
     resolver: zodResolver(hospitalDoctorSchema),
-    defaultValues: {
-      name: '',
-      specialization: '',
-      customSpecialization: '',
-      email: '',
-      phone: '',
-      maxTokens: 20,
-
-      experience: '',
-      qualifications: '',
-      image: null
-    }
   });
-
-  const specialization = watch('specialization');
-  const availableDays = watch('availableDays');
-  const slots = watch('slots');
   const image = watch('image');
+  const specialization = watch('specialization');
 
   const specializations = [
     'Cardiology', 'Neurology', 'Orthopedics', 'Pediatrics', 
@@ -123,7 +135,6 @@ const HospitalDoctors = () => {
         experience: doctor.experience || '',
         qualifications: doctor.qualifications || '',
         maxTokens: doctor.maxTokens || 20,
-
         image: doctor.image || null
       });
     } else {
@@ -138,7 +149,6 @@ const HospitalDoctors = () => {
         experience: '',
         qualifications: '',
         maxTokens: 20,
-
         image: null
       });
     }
@@ -160,61 +170,68 @@ const HospitalDoctors = () => {
     }
   };
 
-  const handleDayToggle = (day) => {
-    const newDays = availableDays.includes(day)
-      ? availableDays.filter(d => d !== day)
-      : [...availableDays, day];
-    setValue('availableDays', newDays, { shouldValidate: true });
-  };
-
-  const handleAddSlot = () => {
-    setValue('slots', [...slots, { start: '09:00', end: '17:00' }]);
-  };
-
-  const handleRemoveSlot = (index) => {
-    if (slots.length > 1) {
-      const newSlots = slots.filter((_, i) => i !== index);
-      setValue('slots', newSlots);
-    }
-  };
-  const handleSlotChange = (index, field, value) => {
-    const newSlots = [...slots];
-    newSlots[index][field] = value;
-    setValue('slots', newSlots);
-  };
-
   const handleOpenScheduleModal = (doctor) => {
     setScheduleDoctor(doctor);
-    setTempSlots(doctor.slots.length > 0 ? [...doctor.slots] : [{ start: '09:00', end: '17:00' }]);
-    setTempDays(doctor.availableDays.length > 0 ? [...doctor.availableDays] : allDays);
+    setTempSchedules(doctor.schedules && doctor.schedules.length > 0 
+      ? doctor.schedules.map(s => ({
+          day_of_week: s.day_of_week,
+          start_time: s.start_time,
+          end_time: s.end_time,
+          slot_duration: s.slot_duration || 15,
+          follow_up_percentage: s.follow_up_percentage || 0,
+        }))
+      : [{ day_of_week: 'Mon', start_time: '10:00', end_time: '13:00', slot_duration: 15, follow_up_percentage: 0 }]
+    );
+    setBookingWindow(doctor.booking_window_days || 30);
     setIsAccepting(doctor.isAcceptingAppointments ?? true);
+    setUnavailability(doctor.unavailability ? [...doctor.unavailability] : []);
     setIsScheduleModalOpen(true);
   };
 
-  const validateSlots = (slotsToValidate) => {
-    for (const slot of slotsToValidate) {
-      if (!slot.start || !slot.end) return 'All slots must have a start and end time';
-      if (slot.start >= slot.end) {
-        return `Invalid slot: End time (${slot.end}) must be after start time (${slot.start})`;
+  const handleAddScheduleRow = () => {
+    setTempSchedules(prev => [
+      ...prev,
+      { day_of_week: 'Mon', start_time: '10:00', end_time: '13:00', slot_duration: 15, follow_up_percentage: 0 }
+    ]);
+  };
+
+  const handleRemoveScheduleRow = (index) => {
+    setTempSchedules(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleScheduleRowChange = (index, field, value) => {
+    setTempSchedules(prev => prev.map((s, i) => i === index ? { ...s, [field]: value } : s));
+  };
+
+  const handleAddLeaveDate = () => {
+    setUnavailability(prev => [...prev, { date: new Date().toISOString().slice(0, 10), reason: 'leave', note: '' }]);
+  };
+
+  const handleRemoveLeaveDate = (index) => {
+    setUnavailability(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleLeaveDateChange = (index, field, value) => {
+    setUnavailability(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
+  };
+
+  const validateSchedules = (schedulesToValidate) => {
+    for (const schedule of schedulesToValidate) {
+      if (!schedule.start_time || !schedule.end_time) {
+        return 'All schedules must have a start and end time';
+      }
+      if (schedule.start_time >= schedule.end_time) {
+        return `Start time (${schedule.start_time}) must be before end time (${schedule.end_time})`;
+      }
+      if (!schedule.slot_duration || schedule.slot_duration < 5) {
+        return 'Slot duration must be at least 5 minutes';
       }
     }
-
-    const sortedSlots = [...slotsToValidate].sort((a, b) => a.start.localeCompare(b.start));
-
-    for (let i = 0; i < sortedSlots.length - 1; i++) {
-      const currentSlot = sortedSlots[i];
-      const nextSlot = sortedSlots[i + 1];
-
-      if (nextSlot.start < currentSlot.end) {
-        return `Slots overlap detected: ${currentSlot.start}-${currentSlot.end} and ${nextSlot.start}-${nextSlot.end}`;
-      }
-    }
-
     return null;
   };
 
   const submitSchedule = async () => {
-    const error = validateSlots(tempSlots);
+    const error = validateSchedules(tempSchedules);
     if (error) {
       toast.error(error);
       return;
@@ -223,54 +240,34 @@ const HospitalDoctors = () => {
     try {
       setSubmitting(true);
       const response = await hospitalService.updateDoctor(scheduleDoctor.id, {
-        slots: tempSlots,
-        availableDays: tempDays,
-        isAcceptingAppointments: isAccepting
+        isAcceptingAppointments: isAccepting,
+        booking_window_days: Number(bookingWindow),
+        schedules: tempSchedules,
+        unavailability: unavailability
       });
-      toast.success(response.message);
+      toast.success(response.message || 'Doctor schedule updated successfully!');
       setIsScheduleModalOpen(false);
       fetchDoctors();
     } catch (err) {
-      toast.error('Failed to update schedule');
+      toast.error(err.response?.data?.message || 'Failed to update schedule');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleTempDayToggle = (day) => {
-    setTempDays(prev => 
-      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
-    );
-  };
-
-  const handleAddTempSlot = () => {
-    setTempSlots([...tempSlots, { start: '09:00', end: '17:00' }]);
-  };
-  const handleRemoveTempSlot = (index) => {
-    if (tempSlots.length > 1) {
-      setTempSlots(tempSlots.filter((_, i) => i !== index));
-    }
-  };
-
-  const handleTempSlotChange = (index, field, value) => {
-    const newSlots = [...tempSlots];
-    newSlots[index][field] = value;
-    setTempSlots(newSlots);
-  };
-
   const handleToggleStatus = async (id) => {
     try {
       const response = await hospitalService.toggleDoctorStatus(id);
-      toast.success(response.message);
+      toast.success(response.message || 'Status updated successfully');
       fetchDoctors();
     } catch (err) {
-      toast.error('Failed to update doctor status');
+      toast.error(err.response?.data?.message || 'Failed to toggle doctor status');
     }
   };
 
   const handleDelete = (id) => {
     const doctor = doctors.find(d => d.id === id);
-    
+    if (!doctor) return;
     toast((t) => (
       <div className="flex flex-col gap-4 p-1">
         <div>
@@ -458,7 +455,7 @@ const HospitalDoctors = () => {
                            </div>
                            <div className="flex items-center gap-4 mt-1.5">
                               <p className="text-[10px] font-black text-[#0D9488] uppercase tracking-wider flex items-center gap-1">
-                                 <Calendar size={10} /> {formatDays(doctor.availableDays)}
+                                 <Calendar size={10} /> {formatDays(getAvailableDaysFromSchedules(doctor.schedules))}
                               </p>
 
                            </div>
@@ -466,16 +463,16 @@ const HospitalDoctors = () => {
                         <td className="px-8 py-6">
                            <div className="flex flex-col gap-1.5">
                               {!doctor.isAcceptingAppointments && (
-                                <div className="inline-flex items-center self-start gap-1.5 px-2 py-0.5 bg-red-50 text-red-600 rounded text-[8px] font-black uppercase tracking-tighter border border-red-100 mb-1">
-                                   <X size={10} /> Booking Paused
-                                </div>
+                                 <div className="inline-flex items-center self-start gap-1.5 px-2 py-0.5 bg-red-50 text-red-600 rounded text-[8px] font-black uppercase tracking-tighter border border-red-100 mb-1">
+                                    <X size={10} /> Booking Paused
+                                 </div>
                               )}
-                              {doctor.slots.length > 0 ? doctor.slots.map((slot, i) => (
-                                <div key={i} className="inline-flex items-center self-start gap-2 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-wider border border-blue-100/50">
-                                   <Clock size={10} /> {slot.start} - {slot.end}
-                                </div>
+                              {doctor.schedules && doctor.schedules.length > 0 ? doctor.schedules.map((schedule, i) => (
+                                 <div key={i} className="inline-flex items-center self-start gap-2 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-wider border border-blue-100/50">
+                                    <Clock size={10} /> {schedule.day_of_week}: {schedule.start_time} - {schedule.end_time} ({schedule.slot_duration}m)
+                                 </div>
                               )) : (
-                                <p className="text-[10px] font-bold text-navy/20 italic">No slots defined</p>
+                                 <p className="text-[10px] font-bold text-navy/20 italic">No schedules defined</p>
                               )}
                            </div>
                         </td>
@@ -527,7 +524,7 @@ const HospitalDoctors = () => {
                         <div>
                            <p className="font-bold text-navy">{doctor.name}</p>
                            <div className="flex items-center gap-2 mt-1">
-                              <p className="text-[10px] font-bold text-navy/40 uppercase tracking-wider text-[#0D9488]">{formatDays(doctor.availableDays)}</p>
+                              <p className="text-[10px] font-bold text-navy/40 uppercase tracking-wider text-[#0D9488]">{formatDays(getAvailableDaysFromSchedules(doctor.schedules))}</p>
 
                            </div>
                         </div>
@@ -553,17 +550,17 @@ const HospitalDoctors = () => {
                             <div className="flex items-center gap-2">
                                {!doctor.isAcceptingAppointments && (
                                  <span className="text-[8px] font-black text-red-500 bg-red-50 px-1.5 py-0.5 rounded uppercase tracking-tighter">Paused</span>
-                               )}
+                                )}
                                <span className="text-[#0D9488]">{doctor.specialization}</span>
                             </div>
                          </p>
                          <div className="flex flex-wrap gap-2">
-                            {doctor.slots.length > 0 ? doctor.slots.map((slot, i) => (
+                            {doctor.schedules && doctor.schedules.length > 0 ? doctor.schedules.map((schedule, i) => (
                               <p key={i} className="text-[9px] font-bold text-navy/70 flex items-center gap-1.5 uppercase bg-white px-2 py-1 rounded-md shadow-sm border border-gray-100">
-                                 <Clock size={10} className="text-[#0D9488]" /> {slot.start} - {slot.end}
+                                 <Clock size={10} className="text-[#0D9488]" /> {schedule.day_of_week}: {schedule.start_time} - {schedule.end_time}
                               </p>
                             )) : (
-                              <p className="text-[10px] font-bold text-navy/20 italic">No slots defined</p>
+                              <p className="text-[10px] font-bold text-navy/20 italic">No schedules defined</p>
                             )}
                          </div>
                       </div>
@@ -646,7 +643,7 @@ const HospitalDoctors = () => {
                     <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mb-3">Working Days</p>
                     <div className="flex flex-wrap gap-2">
                        {allDays.map(day => (
-                         <span key={day} className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${viewingDoctor.availableDays.includes(day) ? 'bg-[#0D9488] text-white shadow-md shadow-[#0D9488]/10' : 'bg-white text-navy/20 border border-gray-100'}`}>
+                         <span key={day} className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${getAvailableDaysFromSchedules(viewingDoctor.schedules).includes(day) ? 'bg-[#0D9488] text-white shadow-md shadow-[#0D9488]/10' : 'bg-white text-navy/20 border border-gray-100'}`}>
                            {day}
                          </span>
                        ))}
@@ -655,12 +652,14 @@ const HospitalDoctors = () => {
                   <div>
                     <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mb-3">Time Slots</p>
                     <div className="space-y-2">
-                       {viewingDoctor.slots.map((slot, i) => (
+                       {viewingDoctor.schedules && viewingDoctor.schedules.length > 0 ? viewingDoctor.schedules.map((schedule, i) => (
                          <div key={i} className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-gray-100 shadow-sm group-hover:border-[#0D9488]/30 transition-all">
-                            <span className="text-[10px] font-black text-navy/30 uppercase tracking-widest italic">Session {i+1}</span>
-                            <span className="text-[10px] font-black text-[#0D9488]">{slot.start} - {slot.end}</span>
+                            <span className="text-[10px] font-black text-navy/30 uppercase tracking-widest italic">{schedule.day_of_week} ({schedule.slot_duration}m)</span>
+                            <span className="text-[10px] font-black text-[#0D9488]">{schedule.start_time} - {schedule.end_time}</span>
                          </div>
-                       ))}
+                       )) : (
+                          <p className="text-[10px] font-bold text-navy/20 italic">No schedules configured</p>
+                       )}
                     </div>
                   </div>
                </div>
@@ -880,73 +879,185 @@ const HospitalDoctors = () => {
                </button>
             </div>
 
-            <div className="space-y-6">
-              <div className="space-y-3">
-                 <label className="text-[10px] font-black text-navy/30 uppercase tracking-widest pl-1">Working Days</label>
-                 <div className="flex justify-between items-center bg-gray-50 rounded-2xl p-3 border border-gray-100">
-                    {allDays.map((day) => {
-                      const isSelected = tempDays.includes(day);
-                      return (
-                         <button
-                           key={day}
-                           type="button"
-                           onClick={() => handleTempDayToggle(day)}
-                           className={`w-9 h-9 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${isSelected ? 'bg-[#0D9488] text-white shadow-lg' : 'bg-white text-navy/20'}`}
-                         >
-                           {day.charAt(0)}
-                         </button>
-                      );
-                    })}
+            {/* Booking Window Inputs */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-6 bg-[#F8FAFC] rounded-[24px] border border-gray-100">
+              <label className="space-y-2 text-left">
+                <span className="text-[10px] font-black uppercase text-navy/35">Booking Window</span>
+                <select
+                  value={bookingWindow}
+                  onChange={(e) => setBookingWindow(Number(e.target.value))}
+                  className="w-full rounded-2xl bg-white border border-gray-100 px-4 py-3 text-sm font-bold text-navy outline-none"
+                >
+                  {[7, 15, 30, 60, bookingWindow].filter((v, i, a) => a.indexOf(v) === i).map(days => (
+                    <option key={days} value={days}>{days} days</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2 text-left">
+                <span className="text-[10px] font-black uppercase text-navy/35">Custom Window (Days)</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={bookingWindow}
+                  onChange={(e) => setBookingWindow(Number(e.target.value))}
+                  className="w-full rounded-2xl bg-white border border-gray-100 px-4 py-3 text-sm font-bold text-navy outline-none"
+                />
+              </label>
+            </div>
+
+            {/* Offline Consultation Schedules */}
+            <div className="p-6 bg-teal-50/30 rounded-[32px] border border-teal-100/50 space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Clock size={16} className="text-[#0D9488]" />
+                  <p className="text-xs font-black text-[#0D9488] uppercase tracking-widest">Offline Schedules</p>
+                </div>
+                <button 
+                  type="button"
+                  onClick={handleAddScheduleRow}
+                  className="text-[10px] font-black text-[#0D9488] uppercase tracking-wider flex items-center gap-1 hover:underline text-left border-none bg-transparent"
+                >
+                  <Plus size={14} /> Add Schedule
+                </button>
+              </div>
+              
+              <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
+                {tempSchedules.length === 0 ? (
+                  <div className="rounded-2xl border-2 border-dashed border-gray-100 p-8 text-center bg-white">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-navy/35">No schedules configured</p>
                   </div>
-               </div>
-              <div className="p-6 bg-teal-50/50 rounded-[32px] border border-teal-100 space-y-5">
-                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                       <Clock size={16} className="text-[#0D9488]" />
-                       <p className="text-xs font-black text-[#0D9488] uppercase tracking-widest">Active Sessions</p>
-                    </div>
-                    <button 
-                       type="button"
-                       onClick={handleAddTempSlot}
-                       className="text-[10px] font-black text-[#0D9488] uppercase tracking-wider flex items-center gap-1"
-                    >
-                       <Plus size={14} /> Add Session
-                    </button>
-                 </div>
-                 
-                 <div className="space-y-4">
-                    {tempSlots.map((slot, index) => (
-                      <div key={index} className="grid grid-cols-[1fr,1fr,auto] gap-4 items-end">
-                         <div className="space-y-1.5 text-left">
-                            <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest pl-1">Starts</p>
-                            <input 
-                               type="time" 
-                               value={slot.start}
-                               onChange={(e) => handleTempSlotChange(index, 'start', e.target.value)}
-                               className="w-full bg-white border border-teal-100 rounded-xl px-4 py-2 text-xs font-bold text-navy" 
+                ) : (
+                  tempSchedules.map((schedule, index) => {
+                    const summary = calculateSlotSummary(schedule);
+                    return (
+                      <div key={index} className="rounded-2xl border border-gray-100 bg-white p-4 space-y-4 text-left shadow-sm">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="rounded-xl bg-gray-50 border border-gray-100/50 p-2.5">
+                            <p className="text-[8px] font-black uppercase tracking-widest text-navy/30">Total Slots</p>
+                            <p className="text-lg font-black text-navy mt-0.5">{summary.total}</p>
+                          </div>
+                          <div className="rounded-xl bg-gray-50 border border-gray-100/50 p-2.5">
+                            <p className="text-[8px] font-black uppercase tracking-widest text-navy/30">Patient Slots</p>
+                            <p className="text-lg font-black text-[#0D9488] mt-0.5">{summary.regular}</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <label className="space-y-1">
+                            <span className="text-[9px] font-black uppercase text-navy/35">Day</span>
+                            <select
+                              value={schedule.day_of_week}
+                              onChange={(e) => handleScheduleRowChange(index, 'day_of_week', e.target.value)}
+                              className="w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 text-xs font-bold text-navy outline-none"
+                            >
+                              {allDays.map(day => <option key={day} value={day}>{day}</option>)}
+                            </select>
+                          </label>
+                          <label className="space-y-1">
+                            <span className="text-[9px] font-black uppercase text-navy/35">Starts</span>
+                            <input
+                              type="time"
+                              value={schedule.start_time}
+                              onChange={(e) => handleScheduleRowChange(index, 'start_time', e.target.value)}
+                              className="w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 text-xs font-bold text-navy outline-none"
                             />
-                         </div>
-                         <div className="space-y-1.5 text-left">
-                            <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest pl-1">Ends</p>
-                            <input 
-                               type="time" 
-                               value={slot.end}
-                               onChange={(e) => handleTempSlotChange(index, 'end', e.target.value)}
-                               className="w-full bg-white border border-teal-100 rounded-xl px-4 py-2 text-xs font-bold text-navy" 
+                          </label>
+                          <label className="space-y-1">
+                            <span className="text-[9px] font-black uppercase text-navy/35">Ends</span>
+                            <input
+                              type="time"
+                              value={schedule.end_time}
+                              onChange={(e) => handleScheduleRowChange(index, 'end_time', e.target.value)}
+                              className="w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 text-xs font-bold text-navy outline-none"
                             />
-                         </div>
-                         {tempSlots.length > 1 && (
-                           <button 
-                              type="button" 
-                              onClick={() => handleRemoveTempSlot(index)}
-                              className="p-2 text-red-400 hover:bg-red-50 rounded-lg"
-                           >
-                              <Trash2 size={16} />
-                           </button>
-                         )}
+                          </label>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="space-y-1">
+                            <span className="text-[9px] font-black uppercase text-navy/35">Duration (mins)</span>
+                            <input
+                              type="number"
+                              min="5"
+                              value={schedule.slot_duration}
+                              onChange={(e) => handleScheduleRowChange(index, 'slot_duration', Number(e.target.value))}
+                              className="w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 text-xs font-bold text-navy outline-none"
+                            />
+                          </label>
+                          <label className="space-y-1">
+                            <span className="text-[9px] font-black uppercase text-navy/35">Follow-up %</span>
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={schedule.follow_up_percentage}
+                              onChange={(e) => handleScheduleRowChange(index, 'follow_up_percentage', Number(e.target.value))}
+                              className="w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 text-xs font-bold text-navy outline-none"
+                            />
+                          </label>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveScheduleRow(index)}
+                          className="text-red-500 hover:text-red-600 text-[9px] font-black uppercase tracking-widest flex items-center gap-1 text-left border-none bg-transparent"
+                        >
+                          <Trash2 size={12} /> Remove Schedule
+                        </button>
                       </div>
-                    ))}
-                 </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Unavailability Section */}
+            <div className="p-6 bg-amber-50/30 rounded-[32px] border border-amber-100/50 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Calendar size={16} className="text-amber-600" />
+                  <h2 className="text-xs font-black text-navy uppercase tracking-widest">Doctor Unavailability</h2>
+                </div>
+                <button 
+                  type="button"
+                  onClick={handleAddLeaveDate} 
+                  className="bg-navy text-white rounded-xl px-3 py-1.5 text-[9px] font-black uppercase tracking-widest border-none flex items-center gap-1 hover:bg-navy/95 text-left"
+                >
+                  <Plus size={12} /> Add Date
+                </button>
+              </div>
+              <div className="space-y-3 max-h-[200px] overflow-y-auto pr-1">
+                {unavailability.length === 0 ? (
+                  <p className="text-[9px] font-black uppercase tracking-widest text-navy/30 py-3 text-left">No leave or closure dates configured</p>
+                ) : (
+                  unavailability.map((leave, index) => (
+                    <div key={index} className="grid grid-cols-[1.5fr_1.5fr_auto] gap-2 rounded-xl bg-white p-3 border border-gray-100 items-center">
+                      <input
+                        type="date"
+                        value={leave.date ? String(leave.date).slice(0, 10) : ''}
+                        onChange={(e) => handleLeaveDateChange(index, 'date', e.target.value)}
+                        className="rounded-lg bg-gray-50 border border-gray-100 px-2 py-1.5 text-xs font-bold text-navy outline-none"
+                      />
+                      <select
+                        value={leave.reason}
+                        onChange={(e) => handleLeaveDateChange(index, 'reason', e.target.value)}
+                        className="rounded-lg bg-gray-50 border border-gray-100 px-2 py-1.5 text-xs font-bold text-navy outline-none"
+                      >
+                        <option value="leave">Leave</option>
+                        <option value="vacation">Vacation</option>
+                        <option value="holiday">Holiday</option>
+                        <option value="emergency_closure">Emergency Closure</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveLeaveDate(index)}
+                        className="text-red-500 hover:text-red-600 p-1 rounded hover:bg-red-50 border-none bg-transparent"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 

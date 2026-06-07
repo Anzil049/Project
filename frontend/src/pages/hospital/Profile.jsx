@@ -46,6 +46,7 @@ const HospitalProfile = () => {
     email: user?.email || '',
     phone: user?.hospitalProfile?.phone || user?.phone || '',
     website: user?.hospitalProfile?.website || '',
+    beds: user?.hospitalProfile?.beds || '',
     address: user?.hospitalProfile?.address || '',
     city: user?.hospitalProfile?.city || '',
     state: user?.hospitalProfile?.state || '',
@@ -67,6 +68,7 @@ const HospitalProfile = () => {
         email: user.email || '',
         phone: user.hospitalProfile?.phone || user.phone || '',
         website: user.hospitalProfile?.website || '',
+        beds: user.hospitalProfile?.beds || '',
         address: user.hospitalProfile?.address || '',
         city: user.hospitalProfile?.city || '',
         state: user.hospitalProfile?.state || '',
@@ -154,6 +156,7 @@ const HospitalProfile = () => {
         facilityType: profile.type,
         about: profile.about,
         website: profile.website,
+        beds: profile.beds,
         address: profile.address,
         city: profile.city,
         state: profile.state,
@@ -342,6 +345,7 @@ const HospitalProfile = () => {
                     error={errors.type}
                  />
                 <Input label="License No." value={profile.registrationNumber} onChange={(e) => setProfile({...profile, registrationNumber: e.target.value})} disabled={!isEditing} error={errors.registrationNumber} />
+                <Input label="Bed Capacity" type="number" required value={profile.beds} onChange={(e) => setProfile({...profile, beds: e.target.value})} disabled={!isEditing} error={errors.beds} />
                 <div className="md:col-span-2 space-y-2">
                    <label className="text-[10px] font-black uppercase text-navy/60 pl-2">About</label>
                    <textarea

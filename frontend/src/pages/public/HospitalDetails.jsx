@@ -30,7 +30,7 @@ const HospitalDetails = () => {
         const transformedData = {
           ...data,
           name: data.user?.name || 'Unknown Hospital',
-          coverImage: data.coverImage || data.user?.image || 'https://images.unsplash.com/photo-1586773860418-d37222d8fce3?auto=format&fit=crop&q=80&w=800',
+          coverImage: data.coverImage || data.user?.image || null,
           location: `${data.city || ''}${data.city && data.state ? ', ' : ''}${data.state || ''}` || 'Location N/A',
           rating: 4.8, 
           reviewCount: '1,200+', 
@@ -39,7 +39,7 @@ const HospitalDetails = () => {
             id: idx,
             title: fac.title || 'Facility',
             description: fac.description || 'State-of-the-art facility providing high-resolution diagnostics and specialized care.',
-            images: fac.images && fac.images.length > 0 ? fac.images : [data.coverImage || 'https://images.unsplash.com/photo-1586773860418-d37222d8fce3?auto=format&fit=crop&q=80&w=800']
+            images: fac.images && fac.images.length > 0 ? fac.images : (data.coverImage ? [data.coverImage] : [])
           })),
           doctors: (data.doctors || []).map(d => ({
             id: d.user?._id || d._id,
@@ -94,8 +94,14 @@ const HospitalDetails = () => {
 
       <main className="flex-1 pb-20 pt-20">
          {/* Hero Banner Section */}
-         <div className="relative h-[300px] md:h-[400px] w-full bg-navy">
-            <img src={hospital.coverImage} alt={hospital.name} className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-luminosity" />
+         <div className="relative h-[300px] md:h-[400px] w-full bg-gradient-to-br from-navy to-[#115E59]/90 flex items-center justify-center">
+             {hospital.coverImage ? (
+                <img src={hospital.coverImage} alt={hospital.name} className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-luminosity" />
+             ) : (
+                <div className="w-24 h-24 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-[#99F6E4] shadow-sm z-10">
+                   <Building2 size={48} />
+                </div>
+             )}
             <div className="absolute inset-0 bg-gradient-to-t from-navy via-navy/80 to-transparent" />
             
             <div className="absolute bottom-0 w-full px-6 pb-12">
@@ -354,28 +360,7 @@ const HospitalDetails = () => {
                                  <p className="text-sm font-bold text-navy/70 mt-0.5">Verified Facility</p>
                               </div>
                            </div>
-                           
-                           <div className="flex gap-4 border-t border-gray-50 pt-6">
-                              <div className="w-10 h-10 bg-purple-50 text-purple-500 rounded-2xl flex items-center justify-center shrink-0">
-                                 <Globe size={18} />
-                              </div>
-                              <div>
-                                 <h4 className="text-xs font-black text-navy uppercase tracking-widest mb-1">Web Presence</h4>
-                                 <a href="#" className="text-sm font-bold text-[#0D9488] hover:underline uppercase tracking-tight truncate block max-w-[150px]">
-                                   {hospital.user?.name?.split(' ')[0].toLowerCase()}.com
-                                 </a>
-                              </div>
-                           </div>
                         </div>
-                     </Card>
-
-                     <Card className="p-6 bg-navy text-white rounded-[40px] shadow-2xl shadow-navy/20 text-center relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 blur-2xl" />
-                        <h3 className="text-xs font-black uppercase tracking-widest mb-2 relative z-10">Need Assistance?</h3>
-                        <p className="text-[10px] text-white/50 font-bold mb-4 relative z-10">Contact our support desk for bookings</p>
-                        <Button className="w-full bg-[#0D9488] text-white rounded-2xl border-none font-black text-xs relative z-10 py-3">
-                           Chat with Support
-                        </Button>
                      </Card>
                   </div>
                </div>

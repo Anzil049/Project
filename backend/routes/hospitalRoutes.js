@@ -8,7 +8,8 @@ const {
     updateDoctor,
     getNearbyHospitals,
     getPublicHospitals,
-    getHospitalById
+    getHospitalById,
+    getFacilityTitles
 } = require('../controllers/hospitalController');
 const { protect } = require('../middleware/authMiddleware');
 const validate = require('../middleware/validatorMiddleware');
@@ -17,6 +18,7 @@ const { hospitalDoctorValidator, hospitalDoctorUpdateValidator } = require('../v
 const { doctorAddLimiter } = require('../middleware/rateLimitMiddleware');
 
 // Public Routes
+router.get('/public/facilities', getFacilityTitles);
 router.get('/public', getPublicHospitals);
 router.get('/public/nearby', getNearbyHospitals);
 router.get('/public/:id', getHospitalById);

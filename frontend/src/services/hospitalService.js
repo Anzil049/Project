@@ -1,4 +1,5 @@
 import api from './api';
+import appointmentService from './appointmentService';
 
 const hospitalService = {
   /**
@@ -38,6 +39,16 @@ const hospitalService = {
     return response.data;
   },
 
+  getAppointments: appointmentService.getHospitalAppointments,
+
+  createOfflineAppointment: appointmentService.createOfflineAppointment,
+
+  cancelAppointment: appointmentService.cancelAppointment,
+
+  getQueuePreview: appointmentService.getQueuePreview,
+
+  blockDoctorDate: appointmentService.blockDoctorDate,
+
   /**
    * Get all public hospitals
    */
@@ -54,10 +65,18 @@ const hospitalService = {
   /**
    * Get nearby hospitals
    */
-  getNearbyHospitals: async (longitude, latitude, radius = 50, facility = 'All') => {
+  getNearbyHospitals: async (longitude, latitude, radius = 50, facility = 'All', search = '') => {
     const response = await api.get('/hospital/public/nearby', {
-      params: { longitude, latitude, radius, facility }
+      params: { longitude, latitude, radius, facility, search }
     });
+    return response.data;
+  },
+
+  /**
+   * Get all unique facilities
+   */
+  getFacilities: async () => {
+    const response = await api.get('/hospital/public/facilities');
     return response.data;
   },
 

@@ -58,14 +58,22 @@ const hospitalSchema = mongoose.Schema({
     facilities: [{
         title: {
             type: String,
-            required: true,
+            required: [true, 'Facility title is required'],
         },
         description: {
             type: String,
+            required: [true, 'Facility description is required'],
         },
-        images: [{
-            type: String, // URLs
-        }],
+        images: {
+            type: [String],
+            required: [true, 'Facility images are required'],
+            validate: {
+                validator: function(v) {
+                    return Array.isArray(v) && v.length > 0;
+                },
+                message: 'At least one facility image is required'
+            }
+        },
     }],
 }, {
     timestamps: true,

@@ -43,7 +43,7 @@ const Landing = () => {
           rating: (4.5 + Math.random() * 0.5).toFixed(1),
           loc: hosp.city ? `${hosp.city}, ${hosp.state}` : 'Verified Partner',
           type: hosp.facilityType,
-          image: hosp.image || 'https://images.unsplash.com/photo-1587351021759-3e566b6af7cc?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80'
+          image: hosp.image || null
         }));
 
         setDoctors(coloredDoctors);
@@ -297,12 +297,18 @@ const Landing = () => {
                 onClick={() => navigate(ROUTES.PUBLIC_HOSPITAL.replace(':id', hosp.id))}
                 className={`snap-center bg-white rounded-[24px] border border-gray-200 overflow-hidden cursor-pointer group hover:shadow-2xl hover:-translate-y-3 !transition-all !duration-1000 hover:!delay-[150ms] ease-out flex flex-col ${i >= currentHospital && i < currentHospital + 3 ? '' : 'lg:hidden'}`}
               >
-                <div className="h-48 overflow-hidden relative">
-                   <img src={hosp.image} alt={hosp.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-                   <div className="absolute top-3 left-3 bg-white/90 backdrop-blur text-navy text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full">
-                      {hosp.type}
-                   </div>
-                </div>
+                 <div className="h-48 overflow-hidden relative bg-gradient-to-br from-[#0D9488]/10 to-[#115E59]/10 flex items-center justify-center">
+                    {hosp.image ? (
+                       <img src={hosp.image} alt={hosp.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 absolute inset-0" />
+                    ) : (
+                       <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-[#0D9488] shadow-sm z-10">
+                          <Building2 size={20} />
+                       </div>
+                    )}
+                    <div className="absolute top-3 left-3 bg-white/90 backdrop-blur text-navy text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full z-10">
+                       {hosp.type}
+                    </div>
+                 </div>
                 <div className="p-6 flex-1 flex flex-col">
                   <div className="flex items-center justify-between mb-2">
                      <h4 className="font-heading font-black text-lg text-[#0C1A2E]">{hosp.name}</h4>

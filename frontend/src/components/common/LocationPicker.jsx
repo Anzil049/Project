@@ -3,13 +3,15 @@ import { useJsApiLoader, Autocomplete, GoogleMap, Marker } from '@react-google-m
 import { toast } from 'react-hot-toast';
 import { Search, MapPin, Navigation, Lock } from 'lucide-react';
 
+const GOOGLE_MAPS_LIBRARIES = ['places'];
+
 const LocationPicker = React.forwardRef(({ lat, lng, onLocationSelect, isEditing, disabled, hideLocateButton = false }, ref) => {
   const activeEditing = isEditing !== undefined ? isEditing : (disabled !== undefined ? !disabled : true);
   
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "",
-    libraries: ['places']
+    libraries: GOOGLE_MAPS_LIBRARIES
   });
 
   const [address, setAddress] = useState('');
@@ -64,7 +66,7 @@ const LocationPicker = React.forwardRef(({ lat, lng, onLocationSelect, isEditing
   const onPlaceSelected = () => {
     if (autocompleteRef.current !== null) {
       const place = autocompleteRef.current.getPlace();
-      if (place.geometry) {
+      if (place && place.geometry) {
         const newPos = {
           lat: place.geometry.location.lat(),
           lng: place.geometry.location.lng()

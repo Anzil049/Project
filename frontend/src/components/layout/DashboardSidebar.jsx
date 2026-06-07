@@ -36,9 +36,12 @@ const DashboardSidebar = ({ role = ROLES.PATIENT }) => {
       { name: 'Dashboard', icon: <LayoutGrid size={22} />, path: '/doctor/dashboard' },
       { name: 'Appointments', icon: <Calendar size={22} />, path: '/doctor/appointments' },
       ...(user?.doctorProfile && !user?.doctorProfile?.hospitalId ? [
-        { name: 'Consultation', icon: <Video size={22} />, path: '/doctor/consultation/sessions' }
+        { name: 'Offline Booking', icon: <Plus size={22} />, path: '/doctor/offline-booking' }
       ] : []),
-      { name: 'Availability', icon: <Activity size={22} />, path: '/doctor/availability' },
+      { name: 'Consultation', icon: <Video size={22} />, path: '/doctor/consultation/sessions' },
+      ...(user?.doctorProfile && !user?.doctorProfile?.hospitalId ? [
+        { name: 'Availability', icon: <Activity size={22} />, path: '/doctor/availability' }
+      ] : []),
       { name: 'Prescriptions', icon: <ClipboardList size={22} />, path: '/doctor/prescriptions' },
       { name: 'Profile', icon: <User size={22} />, path: '/doctor/profile' },
     ],

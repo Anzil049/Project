@@ -118,8 +118,10 @@ const registerUser = asyncHandler(async (req, res) => {
         latitude, longitude 
     } = req.body;
     const { role } = req.params;
+    const normalizedEmail = email.toLowerCase();
 
-    let user = await User.findOne({ email });
+    // Use regex to catch any existing mis-cased records
+    let user = await User.findOne({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } });
 
     if (user) {
         // If user exists and is already verified, block registration
@@ -155,7 +157,7 @@ const registerUser = asyncHandler(async (req, res) => {
 
         user = await User.create({
             name,
-            email,
+            email: normalizedEmail,
             password,
             role,
             bloodGroup: role === 'patient' ? bloodGroup : null,
@@ -217,7 +219,7 @@ const verifyOTP = asyncHandler(async (req, res) => {
     console.log(`Verification attempt for ${normalizedEmail} with OTP: ${otp}`);
 
     const otpRecord = await OTP.findOne({ 
-        email: normalizedEmail, 
+        email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') }, 
         otp: otp.toString() 
     });
 
@@ -227,7 +229,11 @@ const verifyOTP = asyncHandler(async (req, res) => {
     }
 
     // Mark user as verified
-    const user = await User.findOneAndUpdate({ email: normalizedEmail }, { isVerified: true }, { new: true });
+    const user = await User.findOneAndUpdate(
+        { email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } }, 
+        { isVerified: true }, 
+        { new: true }
+    );
 
     if (!user) {
         res.status(404);
@@ -235,7 +241,7 @@ const verifyOTP = asyncHandler(async (req, res) => {
     }
 
     // Delete the used OTP
-    await OTP.deleteMany({ email });
+    await OTP.deleteMany({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } });
 
     // Now generate tokens and log them in
     generateTokens(res, user._id, user.role);
@@ -259,7 +265,7 @@ const resendOTP = asyncHandler(async (req, res) => {
 
     console.log(`Resend OTP request for: ${normalizedEmail}, type: ${type}`);
 
-    const user = await User.findOne({ email: normalizedEmail });
+    const user = await User.findOne({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } });
 
     if (!user) {
         res.status(404);
@@ -272,7 +278,7 @@ const resendOTP = asyncHandler(async (req, res) => {
     }
 
     // Delete any existing OTPs for this email
-    await OTP.deleteMany({ email: normalizedEmail });
+    await OTP.deleteMany({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } });
 
     // Generate a new 6-digit OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -360,7 +366,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
     const { email } = req.body;
     const normalizedEmail = email.toLowerCase();
 
-    const user = await User.findOne({ email: normalizedEmail });
+    const user = await User.findOne({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } });
 
     if (!user) {
         res.status(404);
@@ -368,7 +374,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
     }
 
     // Delete any existing OTPs for this email
-    await OTP.deleteMany({ email: normalizedEmail });
+    await OTP.deleteMany({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } });
 
     // Generate a new 6-digit OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -394,7 +400,7 @@ const resetPassword = asyncHandler(async (req, res) => {
 
     // Verify OTP
     const otpRecord = await OTP.findOne({ 
-        email: normalizedEmail, 
+        email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') }, 
         otp: otp.toString() 
     });
 
@@ -404,7 +410,7 @@ const resetPassword = asyncHandler(async (req, res) => {
     }
 
     // Find user and update password
-    const user = await User.findOne({ email: normalizedEmail });
+    const user = await User.findOne({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } });
 
     if (!user) {
         res.status(404);
@@ -416,7 +422,7 @@ const resetPassword = asyncHandler(async (req, res) => {
     await user.save();
 
     // Delete the used OTP
-    await OTP.deleteMany({ email: normalizedEmail });
+    await OTP.deleteMany({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } });
 
     res.status(200).json({ message: 'Password reset successful. You can now login.' });
 });

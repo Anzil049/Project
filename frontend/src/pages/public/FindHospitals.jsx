@@ -20,7 +20,19 @@ const FindHospitals = () => {
   const [nearbyMode, setNearbyMode] = useState(false);
   const [coords, setCoords] = useState(null);
 
-  const facilities = ['All', 'Emergency', 'ICU', 'Radiology', 'Pharmacy', 'Cardiac Surgery', 'Blood Bank'];
+  const [facilities, setFacilities] = useState(['All']);
+
+  useEffect(() => {
+    const loadFacilities = async () => {
+      try {
+        const facs = await hospitalService.getFacilities();
+        setFacilities(['All', ...facs]);
+      } catch (error) {
+        console.error('Failed to load facilities:', error);
+      }
+    };
+    loadFacilities();
+  }, []);
 
   useEffect(() => {
     if (nearbyMode && coords) {
@@ -45,7 +57,7 @@ const FindHospitals = () => {
   const fetchNearby = async () => {
     setLoading(true);
     try {
-      const data = await hospitalService.getNearbyHospitals(coords.longitude, coords.latitude, 50, activeFacility);
+      const data = await hospitalService.getNearbyHospitals(coords.longitude, coords.latitude, 50, activeFacility, search);
       setHospitals(data);
     } catch (error) {
       toast.error("Failed to find nearby hospitals");
@@ -72,17 +84,18 @@ const FindHospitals = () => {
       }
     } else {
       setNearbyMode(false);
+      setCoords(null);
     }
   };
 
   const displayHospitals = hospitals.map(h => ({
-    id: h._id,
+    id: h.user?._id || h._id,
     name: h.user?.name || 'Unknown Hospital',
     type: h.facilityType || 'Medical Facility',
     location: `${h.city || ''}${h.city && h.state ? ', ' : ''}${h.state || ''}` || 'Location N/A',
     rating: 4.8, // Mocked as it's not in schema
-    image: h.coverImage || h.user?.image || 'https://images.unsplash.com/photo-1586773860418-d37222d8fce3?auto=format&fit=crop&q=80&w=800',
-    facilities: h.about ? [h.facilityType, 'verified'] : [h.facilityType]
+    image: h.coverImage || h.user?.image || null,
+    facilities: h.facilities && h.facilities.length > 0 ? h.facilities.map(f => f.title) : [h.facilityType]
   }));
 
   return (
@@ -105,7 +118,7 @@ const FindHospitals = () => {
                  <Search size={22} className="absolute left-6 top-1/2 -translate-y-1/2 text-navy/40 group-focus-within:text-[#0D9488] transition-colors" />
                  <input 
                     type="text"
-                    placeholder="Search by hospital name or city..."
+                    placeholder="Search by hospital, clinic, city, or specialization..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="w-full bg-white rounded-[24px] py-6 pl-16 pr-8 text-sm font-bold text-navy outline-none shadow-2xl shadow-navy/20 focus:ring-4 focus:ring-[#0D9488]/10 transition-all"
@@ -119,8 +132,8 @@ const FindHospitals = () => {
                     nearbyMode ? 'bg-[#0D9488]/10 border-[#0D9488] text-[#0D9488]' : 'bg-white/5 border-white/10 text-white/60 hover:border-white/30'
                   }`}
                 >
-                  <MapPin size={16} className={nearbyMode ? 'animate-bounce' : ''} />
-                  {nearbyMode ? 'Using My Location' : 'Hospitals Near Me'}
+                  <MapPin size={16} />
+                  {nearbyMode ? 'Clear Location Filter' : 'Hospitals Near Me'}
                 </button>
               </div>
            </div>
@@ -153,10 +166,20 @@ const FindHospitals = () => {
            ) : (
              <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {displayHospitals.map((hospital) => (
-                   <Card key={hospital.id} className="p-0 border-none bg-white rounded-3xl shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-500 overflow-hidden group">
-                      <div className="relative aspect-video">
-                         <img src={hospital.image} alt={hospital.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-                         <div className="absolute inset-0 bg-gradient-to-t from-navy/80 to-transparent" />
+                   <Card 
+                      key={hospital.id} 
+                      onClick={() => navigate(ROUTES.PUBLIC_HOSPITAL.replace(':id', hospital.id))}
+                      className="p-0 border-none bg-white rounded-3xl shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-500 overflow-hidden group cursor-pointer"
+                   >
+                      <div className="relative aspect-video bg-gradient-to-br from-[#0D9488]/10 to-[#115E59]/10 flex items-center justify-center">
+                          {hospital.image ? (
+                             <img src={hospital.image} alt={hospital.name} className="w-full h-full object-cover transition-transform duration-700 absolute inset-0" />
+                          ) : (
+                             <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center text-[#0D9488] shadow-sm z-10">
+                                <Building2 size={28} />
+                             </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-navy/80 to-transparent" />
                          <Badge variant="success" className="absolute top-4 right-4 bg-white/20 backdrop-blur-md border-white/30 text-white font-black text-[9px] uppercase tracking-widest px-3">
                             <CheckCircle2 size={12} className="inline mr-1" /> {hospital.type}
                          </Badge>
@@ -184,8 +207,11 @@ const FindHospitals = () => {
                          </div>
 
                          <Button 
-                            onClick={() => navigate(ROUTES.PUBLIC_HOSPITAL.replace(':id', hospital.id))}
-                            className="w-full bg-[#EEF2F6] text-navy hover:bg-[#0D9488] hover:text-white rounded-[20px] font-black text-[11px] uppercase tracking-[0.15em] py-4 border-none shadow-none group-hover:shadow-xl group-hover:shadow-[#0D9488]/20 transition-all flex items-center justify-center gap-2"
+                            onClick={(e) => {
+                               e.stopPropagation();
+                               navigate(ROUTES.PUBLIC_HOSPITAL.replace(':id', hospital.id));
+                            }}
+                            className="w-full bg-[#0D9488] text-white hover:bg-[#0F766E] rounded-[20px] font-black text-[11px] uppercase tracking-[0.15em] py-4 border-none shadow-none group-hover:shadow-xl group-hover:shadow-[#0D9488]/40 transition-all flex items-center justify-center gap-2"
                          >
                             View Details <ChevronRight size={16} />
                          </Button>

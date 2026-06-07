@@ -121,3 +121,23 @@
 .animate-blob { animation: blob-drift 8s ease-in-out infinite; }
 .animate-blob-delay { animation: blob-drift 8s ease-in-out 2s infinite; }
 .animate-marquee { animation: marquee 25s linear infinite; }
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Force-suppress any scrollbars in the sticky sidebar and its descendants */
+aside, aside * {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+aside::-webkit-scrollbar, aside *::-webkit-scrollbar {
+  display: none !important;
+}

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
-import { Card, Button, Input, Select, Badge, LocationPicker, Avatar } from '../../components/common';
+import { Card, Button, Input, Select, Badge, Avatar } from '../../components/common';
 import { 
   User, Mail, Phone, MapPin, 
   Shield, Camera, UploadCloud, X, Save,
@@ -22,7 +22,6 @@ const PatientProfile = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [avatarFile, setAvatarFile] = useState(null);
   const fileInputRef = useRef(null);
-  const locationPickerRef = useRef(null);
   const [errors, setErrors] = useState({});
 
   // Core structured data initialized from real user data
@@ -44,9 +43,6 @@ const PatientProfile = () => {
     emgName: user?.emgName || '',
     emgRelation: user?.emgRelation || '',
     emgPhone: user?.emgPhone || '',
-    
-    latitude: user?.location?.coordinates?.[1] || null,
-    longitude: user?.location?.coordinates?.[0] || null,
   });
 
   // Sync profile state if user data updates (e.g. from App.jsx session check)
@@ -69,8 +65,6 @@ const PatientProfile = () => {
         emgName: user.emgName || '',
         emgRelation: user.emgRelation || '',
         emgPhone: user.emgPhone || '',
-        latitude: user.location?.coordinates?.[1] || null,
-        longitude: user.location?.coordinates?.[0] || null,
       }));
     }
   }, [user]);
@@ -98,11 +92,6 @@ const PatientProfile = () => {
   const validateForm = () => {
     const result = patientProfileSchema.safeParse(profile);
     const newErrors = zodErrorsToObject(result);
-    if (newErrors.latitude || newErrors.longitude) {
-      newErrors.location = newErrors.latitude || newErrors.longitude || 'Please select your location on the map';
-      delete newErrors.latitude;
-      delete newErrors.longitude;
-    }
     setErrors(newErrors);
     return newErrors;
   };
@@ -139,10 +128,6 @@ const PatientProfile = () => {
         emgRelation: profile.emgRelation,
         emgPhone: profile.emgPhone,
         image: finalImageUrl,
-        location: (profile.latitude && profile.longitude && !isNaN(parseFloat(profile.latitude)) && !isNaN(parseFloat(profile.longitude))) ? {
-          type: 'Point',
-          coordinates: [parseFloat(profile.longitude), parseFloat(profile.latitude)]
-        } : undefined
       };
 
       const result = await authService.updateProfile(updateData);
@@ -209,7 +194,7 @@ const PatientProfile = () => {
             <div>
               <h3 className="text-lg font-black text-red-900">Incomplete Profile</h3>
               <p className="text-sm font-bold text-red-800/60 leading-relaxed">
-                Some required fields are missing. Please complete all personal and residential details (including your location on the map) to unlock all dashboard features.
+                Some required fields are missing. Please complete all personal and residential details to unlock all dashboard features.
               </p>
             </div>
           </div>
@@ -330,49 +315,6 @@ const PatientProfile = () => {
                    placeholder="State"
                    error={errors.state}
                 />
-
-                {/* Location Picker Integrated */}
-                <div className="md:col-span-2 pt-6 border-t border-gray-50 space-y-4">
-                   <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Residential Location (Map)</p>
-                      <Badge variant={errors.location ? "destructive" : "outline"} className="text-[9px] font-black px-2 py-0.5">
-                         {profile.latitude ? `${Number(profile.latitude).toFixed(4)}, ${Number(profile.longitude).toFixed(4)}` : (errors.location ? 'REQUIRED' : 'NOT SET')}
-                      </Badge>
-                   </div>
-                   {errors.location && <p className="text-[10px] text-red-500 font-bold uppercase">{errors.location}</p>}
-                   
-                   <LocationPicker 
-                        ref={locationPickerRef}
-                        lat={profile.latitude}
-                        lng={profile.longitude}
-                        onLocationSelect={(lat, lng, addressData) => {
-                           const updates = { 
-                               latitude: lat.toFixed(6), 
-                               longitude: lng.toFixed(6) 
-                           };
-                           if (addressData) {
-                              if (addressData.city) updates.city = addressData.city;
-                              if (addressData.state) updates.state = addressData.state;
-                              if (addressData.zip) updates.zip = addressData.zip;
-                              if (addressData.fullAddress) updates.address = addressData.fullAddress;
-                           }
-                           setProfile(prev => ({ ...prev, ...updates }));
-                        }}
-                        isEditing={isEditing}
-                        hideLocateButton={true}
-                     />
-
-                    {isEditing && (
-                      <Button 
-                        type="button"
-                        variant="outline"
-                        onClick={() => locationPickerRef.current?.handleLocateMe()}
-                        className="w-full py-4 rounded-2xl border-dashed border-2 text-[10px] font-black uppercase tracking-widest"
-                      >
-                        <MapPin size={14} className="mr-2" /> Detect My Current Location
-                      </Button>
-                    )}
-                </div>
              </div>
            )}
 

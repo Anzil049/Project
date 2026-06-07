@@ -11,6 +11,7 @@ export const ROUTES = {
   FIND_DOCTORS: '/find-doctors',
   FIND_HOSPITALS: '/find-hospitals',
   PUBLIC_HOSPITAL: '/hospitals/:id',
+  PUBLIC_DOCTOR: '/doctors/:id',
   NOTIFICATIONS: '/notifications',
   EMERGENCY: '/emergency',
   BLOOD_BANK: '/blood-bank',

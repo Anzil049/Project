@@ -1,18 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useJsApiLoader, Autocomplete } from '@react-google-maps/api';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PublicNavbar from '../../components/layout/PublicNavbar';
 import Footer from '../../components/layout/Footer';
 import { Card, Badge, Button } from '../../components/common';
 import { 
-  Search, Star, Video, MapPin, 
+  Search, Star, Video, MapPin, Navigation,
   ChevronRight, Filter, Stethoscope, BadgeCheck,
   Building2, Globe, Clock
 } from 'lucide-react';
-import { SPECIALIZATIONS } from '../../data/mockData';
 import { ROUTES } from '../../constants/routes';
 import doctorService from '../../services/doctorService';
 import hospitalService from '../../services/hospitalService';
 import { toast } from 'react-hot-toast';
+
+const libraries = ['places'];
 
 const FindDoctors = () => {
   const navigate = useNavigate();
@@ -21,6 +23,14 @@ const FindDoctors = () => {
   const [activeSpec, setActiveSpec] = useState(location.state?.specialization || 'All');
   const [hospitalId, setHospitalId] = useState('All');
   const [mode, setMode] = useState(location.state?.mode || 'All'); // 'All' | 'Online' | 'Offline'
+
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "",
+    libraries: libraries
+  });
+
+  const autocompleteRef = useRef(null);
 
   // Effect to handle incoming state updates if navigating to the same component
   useEffect(() => {
@@ -37,7 +47,24 @@ const FindDoctors = () => {
   const [realDoctors, setRealDoctors] = useState([]);
   const [realHospitals, setRealHospitals] = useState([]);
   const [loadingReal, setLoadingReal] = useState(false);
+  const [dbSpecializations, setDbSpecializations] = useState([]);
 
+  // Fetch initial data (hospitals and specializations)
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      try {
+        const [hospitalsData, specsData] = await Promise.all([
+          hospitalService.getHospitals(),
+          doctorService.getSpecializations()
+        ]);
+        setRealHospitals(hospitalsData);
+        setDbSpecializations(specsData);
+      } catch (error) {
+        console.error("Failed to fetch initial data", error);
+      }
+    };
+    fetchInitialData();
+  }, []);
   // Fetch doctors when filters change
   useEffect(() => {
     if (nearbyMode && coords) {
@@ -80,7 +107,7 @@ const FindDoctors = () => {
   const fetchNearby = async () => {
     setLoadingReal(true);
     try {
-      const data = await doctorService.getNearbyDoctors(coords.longitude, coords.latitude, 50, activeSpec);
+      const data = await doctorService.getNearbyDoctors(coords.longitude, coords.latitude, 50, activeSpec, search);
       setRealDoctors(data);
     } catch (error) {
       toast.error("Failed to fetch nearby doctors");
@@ -109,12 +136,29 @@ const FindDoctors = () => {
       }
     } else {
       setNearbyMode(false);
+      setCoords(null);
+      const input = document.getElementById('location-search-input');
+      if (input) input.value = '';
+    }
+  };
+
+  const onPlaceSelected = () => {
+    if (autocompleteRef.current !== null) {
+      const place = autocompleteRef.current.getPlace();
+      if (place && place.geometry) {
+        setCoords({
+          latitude: place.geometry.location.lat(),
+          longitude: place.geometry.location.lng()
+        });
+        setNearbyMode(true);
+      }
     }
   };
 
   const filtered = realDoctors.map(d => ({
     id: d._id || d.id,
     name: d.user?.name || d.name,
+    image: d.user?.image || null,
     specialization: d.specialization,
     experience: d.experience,
     rating: d.rating || 4.8, 
@@ -128,7 +172,8 @@ const FindDoctors = () => {
     location: d.address || ''
   }));
 
-  const handleBook = (doctor) => {
+  const handleBook = (e, doctor) => {
+    e.stopPropagation();
     // Pass doctor ID and current filtering context (e.g., if user was looking for Online)
     navigate(ROUTES.PATIENT.BOOKING_HUB, { 
       state: { 
@@ -136,6 +181,10 @@ const FindDoctors = () => {
         initialMode: mode === 'All' ? (doctor.isOffline ? 'clinical' : 'online') : (mode === 'Online' ? 'online' : 'clinical')
       } 
     });
+  };
+
+  const handleViewDetails = (id) => {
+    navigate(ROUTES.PUBLIC_DOCTOR.replace(':id', id));
   };
 
   return (
@@ -157,13 +206,13 @@ const FindDoctors = () => {
                  
                  <div className="pt-4 relative group max-w-2xl mx-auto">
                     <Search size={22} className="absolute left-6 top-1/2 -translate-y-1/2 text-navy/40 group-focus-within:text-primary transition-colors" />
-                    <input 
-                       type="text"
-                       placeholder="Search by specialty, doctor name, or condition..."
-                       value={search}
-                       onChange={(e) => setSearch(e.target.value)}
-                       className="w-full bg-white rounded-[24px] py-6 pl-16 pr-8 text-sm font-bold text-navy outline-none shadow-2xl shadow-navy/20 focus:ring-4 focus:ring-primary/10 transition-all"
-                    />
+                       <input 
+                          type="text"
+                          placeholder="Search by doctor, hospital, specialty, or location..."
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                          className="w-full bg-white rounded-[24px] py-6 pl-16 pr-8 text-sm font-bold text-navy outline-none shadow-2xl shadow-navy/20 focus:ring-4 focus:ring-primary/10 transition-all"
+                       />
                  </div>
               </div>
            </div>
@@ -174,8 +223,8 @@ const FindDoctors = () => {
            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
               
               {/* SIDEBAR FILTERS */}
-              <aside className="lg:col-span-3 space-y-6">
-                 <div className="bg-white p-8 rounded-[40px] shadow-sm border border-gray-100/50 sticky top-32">
+              <aside className="lg:col-span-3 space-y-6 overflow-hidden hide-scrollbar">
+                 <div className="bg-white p-8 rounded-[40px] shadow-sm border border-gray-100/50 sticky top-32 overflow-hidden">
                     <div className="flex items-center gap-2 mb-8">
                        <Filter size={18} className="text-primary" />
                        <h3 className="text-xs font-black uppercase tracking-widest text-navy">Filters</h3>
@@ -184,14 +233,44 @@ const FindDoctors = () => {
                     {/* Geolocation Filter */}
                     <div className="space-y-4 mb-10">
                        <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Location Search</p>
+                       
+                       {isLoaded && (
+                         <Autocomplete
+                           onLoad={(ref) => (autocompleteRef.current = ref)}
+                           onPlaceChanged={onPlaceSelected}
+                           options={{
+                             componentRestrictions: { country: "in" },
+                             fields: ["geometry", "formatted_address"],
+                           }}
+                         >
+                           <div className="relative mb-3">
+                             <div className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/30">
+                               <MapPin size={16} />
+                             </div>
+                             <input
+                               id="location-search-input"
+                               type="text"
+                               placeholder="Search specific location..."
+                               className="w-full pl-11 pr-4 py-3 rounded-xl bg-gray-50 border-none shadow-sm outline-none text-xs font-bold text-navy placeholder:text-navy/30 focus:ring-2 focus:ring-primary/20 transition-all"
+                             />
+                           </div>
+                         </Autocomplete>
+                       )}
+
+                       <div className="flex items-center gap-4 py-2">
+                         <div className="h-px bg-gray-100 flex-1"></div>
+                         <span className="text-[9px] font-black uppercase tracking-widest text-navy/20">OR</span>
+                         <div className="h-px bg-gray-100 flex-1"></div>
+                       </div>
+
                        <button 
                           onClick={toggleNearby}
                           className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
-                             nearbyMode ? 'bg-primary/10 border-primary text-primary shadow-lg shadow-primary/10' : 'bg-white border-gray-100 text-navy/60 hover:border-primary/30'
+                             nearbyMode && coords ? 'bg-primary/10 border-primary text-primary shadow-lg shadow-primary/10' : 'bg-white border-gray-100 text-navy/60 hover:border-primary/30'
                           }`}
                        >
-                          <MapPin size={18} className={nearbyMode ? 'animate-bounce' : ''} />
-                          {nearbyMode ? 'Using My Location' : 'Doctors Near Me'}
+                          <Navigation size={18} />
+                          {nearbyMode && coords ? 'Clear Location Filter' : 'Detect My Location'}
                        </button>
                        {nearbyMode && coords && (
                           <p className="text-[9px] font-bold text-center text-navy/40 italic">
@@ -200,43 +279,21 @@ const FindDoctors = () => {
                        )}
                     </div>
 
-                    {/* Hospital Selection */}
-                    <div className="space-y-4 mb-10">
-                       <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Hospital Network</p>
-                       <select 
-                          value={hospitalId} 
-                          onChange={(e) => setHospitalId(e.target.value)}
-                          className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 text-xs font-bold text-navy outline-none focus:ring-2 focus:ring-primary/10"
-                       >
-                          <option value="All">All Partner Hospitals</option>
-                          <option value="null">Private Clinics / Independent</option>
-                          {realHospitals.map(h => <option key={h._id} value={h._id}>{h.user?.name || h.name}</option>)}
-                       </select>
-                    </div>
 
-                    {/* Mode Selection */}
-                    <div className="space-y-4 mb-10">
-                       <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Consultation Mode</p>
-                       <div className="flex flex-col gap-2">
-                          {['All', 'Online', 'Offline'].map(m => (
-                             <button 
-                                key={m} 
-                                onClick={() => setMode(m)}
-                                className={`text-left px-5 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
-                                   mode === m ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-gray-50 text-navy/40 hover:bg-gray-100'
-                                }`}
-                             >
-                                {m} Mode
-                             </button>
-                          ))}
-                       </div>
-                    </div>
 
                     {/* Quick Specs */}
                     <div className="space-y-4">
                        <p className="text-[10px] font-black uppercase tracking-widest text-navy/30">Specialization</p>
                        <div className="flex flex-wrap gap-2">
-                          {SPECIALIZATIONS.slice(0, 8).map(spec => (
+                          <button 
+                             onClick={() => setActiveSpec('All')}
+                             className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${
+                                activeSpec === 'All' ? 'bg-[#0C1A2E] text-white border-[#0C1A2E]' : 'bg-white text-navy/40 border-gray-100 hover:border-primary/30'
+                             }`}
+                          >
+                             All
+                          </button>
+                          {dbSpecializations.slice(0, 15).map(spec => (
                              <button 
                                 key={spec} 
                                 onClick={() => setActiveSpec(spec)}
@@ -263,11 +320,19 @@ const FindDoctors = () => {
                     <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {filtered.map((doctor) => (
-                       <Card key={doctor.id} className="p-8 border-none bg-white rounded-3xl shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-500 overflow-hidden group">
+                       <Card 
+                          key={doctor.id} 
+                          onClick={() => handleViewDetails(doctor.id)}
+                          className="p-8 border-none bg-white rounded-3xl shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-500 overflow-hidden group cursor-pointer"
+                       >
                           <div className="flex items-start justify-between gap-4 mb-8">
                              <div className="flex items-center gap-5">
-                                <div className={`w-20 h-20 rounded-[28px] bg-gradient-to-br ${doctor.gradient} flex items-center justify-center text-white text-2xl font-black shadow-xl group-hover:scale-105 transition-transform`}>
-                                   {doctor.initials}
+                                <div className={`w-20 h-20 rounded-[28px] bg-gradient-to-br ${doctor.gradient} flex items-center justify-center text-white text-2xl font-black shadow-xl group-hover:scale-105 transition-transform overflow-hidden shrink-0`}>
+                                   {doctor.image ? (
+                                      <img src={doctor.image} alt={doctor.name} className="w-full h-full object-cover" />
+                                   ) : (
+                                      doctor.initials
+                                   )}
                                 </div>
                                 <div>
                                    <div className="flex items-center gap-1.5 mb-1 text-navy">
@@ -308,12 +373,23 @@ const FindDoctors = () => {
                                 <p className="text-[10px] font-black uppercase tracking-widest text-navy/30 mb-1">Consultation Fee</p>
                                 <p className="text-2xl font-black text-navy tracking-tight">₹{doctor.fee}<span className="text-xs text-navy/40 font-bold tracking-normal ml-1">/visit</span></p>
                              </div>
-                             <Button 
-                                onClick={() => handleBook(doctor)}
-                                className="bg-[#0C1A2E] text-white hover:bg-primary rounded-[20px] font-black text-[11px] uppercase tracking-widest px-8 py-4 border-none shadow-xl shadow-navy/20 transition-all flex items-center gap-2"
-                             >
-                                <Clock size={16} /> Book Now
-                             </Button>
+                             <div className="flex flex-col gap-2">
+                                <Button 
+                                   onClick={(e) => handleBook(e, doctor)}
+                                   className="bg-[#0C1A2E] text-white hover:bg-primary rounded-[20px] font-black text-[11px] uppercase tracking-widest px-6 py-3 border-none shadow-xl shadow-navy/20 transition-all flex items-center justify-center gap-2"
+                                >
+                                   <Clock size={16} /> Book Now
+                                </Button>
+                                <Button 
+                                   onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleViewDetails(doctor.id);
+                                   }}
+                                   className="!bg-[#EEF2F6] !text-navy hover:!bg-[#0D9488] hover:!text-white rounded-[20px] font-black !text-[10px] uppercase tracking-[0.15em] px-6 py-3 border-none transition-all flex items-center justify-center gap-2"
+                                >
+                                   View Details <ChevronRight size={14} />
+                                </Button>
+                             </div>
                           </div>
                        </Card>
                     ))}

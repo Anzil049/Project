@@ -17,9 +17,7 @@ export const isProfileComplete = (user) => {
             user.bloodGroup && 
             user.dob && 
             user.gender && 
-            user.address &&
-            user.location?.coordinates?.[0] !== 0 &&
-            user.location?.coordinates?.[1] !== 0
+            user.address
         );
     }
 

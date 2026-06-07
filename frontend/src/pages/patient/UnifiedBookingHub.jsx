@@ -7,8 +7,6 @@ import {
   ChevronRight, CheckCircle2, X, BadgeCheck, ShieldCheck, 
   CreditCard, Building2, Info, Star as LucideStar 
 } from 'lucide-react';
-import { SPECIALIZATIONS } from '../../data/mockData';
-import useBookingStore from '../../store/bookingStore';
 import { ROUTES } from '../../constants/routes';
 import doctorService from '../../services/doctorService';
 import { toast } from 'react-hot-toast';
@@ -16,13 +14,15 @@ import { toast } from 'react-hot-toast';
 const UnifiedBookingHub = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const bookAppointment = useBookingStore(s => s.bookAppointment);
   
   const [activeTab, setActiveTab] = useState('clinical'); // 'clinical' | 'online'
   const [search, setSearch] = useState('');
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTime, setSelectedTime] = useState(null);
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
   
   const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,9 +50,8 @@ const UnifiedBookingHub = () => {
           hospitalName: d.hospitalId?.name || 'Independent Clinic',
           initials: (d.user?.name || 'D').split(' ').map(n => n[0]).join('').substring(0, 2),
           gradient: 'from-[#0D9488] to-[#115E59]',
-          isOnline: d.onlineConsultation,
+          isOnline: d.onlineConsultation && !d.hospitalId,
           isOffline: true,
-          slots: d.slots || [],
           location: d.address || ''
         }));
         
@@ -65,7 +64,7 @@ const UnifiedBookingHub = () => {
             setSelectedDoc(doc);
           }
         }
-      } catch (error) {
+      } catch {
         toast.error("Failed to fetch doctors");
       } finally {
         setLoading(false);
@@ -73,7 +72,7 @@ const UnifiedBookingHub = () => {
     };
 
     fetchDoctors();
-  }, [activeTab]);
+  }, [activeTab, location.state?.doctorId]);
 
   // Auto-selection logic for state updates
   useEffect(() => {
@@ -92,27 +91,54 @@ const UnifiedBookingHub = () => {
     setSelectedDoc(doc);
     setSelectedDate(null);
     setSelectedTime(null);
+    setSelectedSlot(null);
   };
 
-  const processPayment = () => {
+  useEffect(() => {
+    const fetchSlots = async () => {
+      if (!selectedDoc) {
+        setAvailableSlots([]);
+        return;
+      }
+
+      try {
+        setSlotsLoading(true);
+        const consultationType = activeTab === 'online' ? 'online' : 'offline';
+        const data = await doctorService.getDoctorSlots(selectedDoc.id, consultationType);
+        setAvailableSlots(data);
+      } catch (error) {
+        setAvailableSlots([]);
+        toast.error(error.response?.data?.message || 'Failed to load slots');
+      } finally {
+        setSlotsLoading(false);
+      }
+    };
+
+    fetchSlots();
+  }, [selectedDoc, activeTab]);
+
+  const processPayment = async () => {
+    if (!selectedSlot) {
+      toast.error('Please select a slot');
+      return;
+    }
+
     setProcessing(true);
-    setTimeout(() => {
-      bookAppointment({
-        doctorId: selectedDoc.id,
-        doctorName: selectedDoc.name,
-        doctorInitials: selectedDoc.initials,
-        specialization: selectedDoc.specialization,
-        doctorGradient: selectedDoc.gradient,
-        hospitalId: selectedDoc.hospitalId,
-        hospitalName: selectedDoc.hospitalName,
-        type: activeTab,
-        totalFee: selectedDoc.fee,
-        scheduledTime: `${selectedDate} at ${selectedTime}`,
+    try {
+      const consultationType = activeTab === 'online' ? 'online' : 'offline';
+      await doctorService.bookAppointment({
+        doctor_id: selectedDoc.id,
+        consultation_type: consultationType,
+        start_datetime: selectedSlot.start_datetime,
       });
+
       setProcessing(false);
       setShowPayment(false);
       setConfirmed(true);
-    }, 2000);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to book selected slot');
+      setProcessing(false);
+    }
   };
 
   const fmtDate = (ds) => new Date(ds).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -165,7 +191,7 @@ const UnifiedBookingHub = () => {
            <>
               <div className="flex bg-[#EEF2F6] p-1.5 rounded-[24px] mb-10 w-fit">
                  <button 
-                    onClick={() => { setActiveTab('clinical'); setSelectedDoc(null); }}
+                    onClick={() => { setActiveTab('clinical'); setSelectedDoc(null); setAvailableSlots([]); }}
                     className={`px-8 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
                        activeTab === 'clinical' ? 'bg-white text-navy shadow-xl shadow-navy/5' : 'text-navy/40 hover:text-navy/60'
                     }`}
@@ -173,7 +199,7 @@ const UnifiedBookingHub = () => {
                     <Building2 size={15} /> Clinical Visits
                  </button>
                  <button 
-                    onClick={() => { setActiveTab('online'); setSelectedDoc(null); }}
+                    onClick={() => { setActiveTab('online'); setSelectedDoc(null); setAvailableSlots([]); }}
                     className={`px-8 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
                        activeTab === 'online' ? 'bg-white text-navy shadow-xl shadow-navy/5' : 'text-navy/40 hover:text-navy/60'
                     }`}
@@ -251,10 +277,15 @@ const UnifiedBookingHub = () => {
                              <div>
                                 <h3 className="text-xs font-black uppercase tracking-widest text-navy/30 mb-6">Schedule Selection</h3>
                                 <div className="space-y-3">
-                                   {selectedDoc.slots && selectedDoc.slots.length > 0 ? selectedDoc.slots.map(slot => (
+                                   {slotsLoading ? (
+                                     <div className="py-10 text-center bg-gray-50 rounded-2xl">
+                                        <div className="animate-spin rounded-full h-7 w-7 border-t-4 border-primary mx-auto mb-4"></div>
+                                        <p className="text-[10px] font-black uppercase text-navy/30">Loading rolling slots...</p>
+                                     </div>
+                                   ) : availableSlots && availableSlots.length > 0 ? availableSlots.map(slot => (
                                       <div key={slot.date} className="space-y-4">
                                          <button 
-                                            onClick={() => { setSelectedDate(slot.date); setSelectedTime(null); }}
+                                            onClick={() => { setSelectedDate(slot.date); setSelectedTime(null); setSelectedSlot(null); }}
                                             className={`w-full flex items-center justify-between p-5 rounded-[20px] transition-all ${
                                                selectedDate === slot.date ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'bg-[#F8FAFC] text-navy hover:bg-[#EEF2F6]'
                                             }`}
@@ -268,15 +299,15 @@ const UnifiedBookingHub = () => {
                                          
                                          {selectedDate === slot.date && (
                                             <div className="flex flex-wrap gap-2 px-1 animate-in fade-in duration-300">
-                                               {slot.times.map(t => (
+                                               {slot.times.filter(t => t.status === 'available' && !t.is_reserved).map(t => (
                                                   <button 
-                                                     key={t}
-                                                     onClick={() => setSelectedTime(t)}
+                                                     key={t.start_datetime}
+                                                     onClick={() => { setSelectedTime(t.time); setSelectedSlot(t); }}
                                                      className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                                        selectedTime === t ? 'bg-navy text-white' : 'bg-white border-2 border-gray-50 text-navy/40 hover:border-primary/30'
+                                                        selectedSlot?.start_datetime === t.start_datetime ? 'bg-navy text-white' : 'bg-white border-2 border-gray-50 text-navy/40 hover:border-primary/30'
                                                      }`}
                                                   >
-                                                     {t}
+                                                     {t.time}
                                                   </button>
                                                ))}
                                             </div>

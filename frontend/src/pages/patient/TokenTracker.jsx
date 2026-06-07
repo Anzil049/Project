@@ -1,146 +1,172 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import DashboardLayout from '../../components/layout/DashboardLayout';
-import { Card, Button, Avatar } from '../../components/common';
-import { Activity, Clock, MapPin, Users, BellRing, UserCheck, AlertCircle } from 'lucide-react';
+import { Card, Button, Avatar, Badge } from '../../components/common';
+import { Activity, BellRing, Calendar, Clock, Users, Video } from 'lucide-react';
+import appointmentService from '../../services/appointmentService';
+import toast from 'react-hot-toast';
 
 const TokenTracker = () => {
-  // Simulating a WebSocket hook state for a frontend-only application
-  const [currentToken, setCurrentToken] = useState(3);
-  const yourToken = 8;
-  const totalTokens = 25;
+  const location = useLocation();
+  const [appointments, setAppointments] = useState([]);
+  const [selectedId, setSelectedId] = useState(location.state?.appointmentId || '');
+  const [queue, setQueue] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const trackedAppointments = useMemo(() => (
+    appointments.filter(item => ['booked', 'consulting'].includes(item.status))
+  ), [appointments]);
+
+  const selectedAppointment = trackedAppointments.find(item => item._id === selectedId) || trackedAppointments[0];
+
+  const loadAppointments = async () => {
+    try {
+      setLoading(true);
+      const data = await appointmentService.getMyAppointments();
+      setAppointments(data);
+      if (!selectedId && data.length > 0) {
+        const firstActive = data.find(item => ['booked', 'consulting'].includes(item.status));
+        if (firstActive) setSelectedId(firstActive._id);
+      }
+    } catch (error) {
+      toast.error('Failed to load appointments');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadQueue = async (id) => {
+    if (!id) return;
+    try {
+      setQueue(await appointmentService.getQueuePreview(id));
+    } catch (error) {
+      setQueue(null);
+    }
+  };
 
   useEffect(() => {
-    // Mocking WebSocket message payload
-    const simInterval = setInterval(() => {
-      setCurrentToken(prev => {
-        if (prev < yourToken) return prev + 1;
-        clearInterval(simInterval);
-        return prev;
-      });
-    }, 8000); // Accelerating the interval to 8 seconds for visual demo purposes
+    loadAppointments();
+  }, []);
 
-    return () => clearInterval(simInterval);
-  }, [yourToken]);
+  useEffect(() => {
+    const id = selectedAppointment?._id;
+    if (!id) return;
+    loadQueue(id);
+    const interval = setInterval(() => loadQueue(id), 30000);
+    return () => clearInterval(interval);
+  }, [selectedAppointment?._id]);
 
-  const remaining = yourToken - currentToken;
-  const isTurn = remaining <= 0;
-  const progressPercent = Math.min((currentToken / yourToken) * 100, 100);
-  const estimatedWait = remaining > 0 ? remaining * 15 : 0;
+  const doctorName = selectedAppointment?.doctor_id?.user?.name || 'Doctor';
+  const start = selectedAppointment?.slot_id?.start_datetime ? new Date(selectedAppointment.slot_id.start_datetime) : null;
+  const isTurn = queue?.token_number && queue?.current_token === queue?.token_number;
+  const progress = queue?.queue?.length
+    ? Math.min(100, ((queue.current_token || 0) / Math.max(queue.token_number || 1, 1)) * 100)
+    : 0;
 
   return (
     <DashboardLayout title="Live Token Tracker" role="patient">
-      <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-        
-        {/* Tracker Header */}
-        <div className="bg-gradient-to-r from-[#0C1A2E] to-[#1a2b45] rounded-3xl p-8 md:p-10 text-white relative overflow-hidden shadow-2xl">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-[#0D9488]/20 rounded-full blur-[80px] -mr-20 -mt-20" />
-          
-          <div className="relative z-10 flex flex-col md:flex-row gap-8 justify-between items-start md:items-center">
-            <div className="flex gap-5 items-center">
-              <Avatar size="xl" name="Dr. Arjun Mehta" className="ring-4 ring-white/10" />
-              <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-teal-500/20 text-[#99F6E4] text-[10px] font-black uppercase tracking-widest rounded-full mb-2 border border-teal-500/30">
-                  <Activity size={12} className="animate-pulse" /> Live Queue
+      <div className="max-w-5xl mx-auto space-y-8 pb-20">
+        <div>
+          <h1 className="text-4xl font-heading font-black text-navy tracking-tight">Live Token Tracker</h1>
+          <p className="text-[10px] font-black text-navy/40 uppercase tracking-[0.25em] mt-2">
+            Queue position and estimated consultation start
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="h-56 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-[#0D9488]" />
+          </div>
+        ) : trackedAppointments.length === 0 ? (
+          <Card className="p-12 text-center border-gray-100">
+            <Activity size={42} className="mx-auto text-navy/20 mb-4" />
+            <h3 className="text-xl font-black text-navy">No active appointment to track</h3>
+            <p className="text-sm font-bold text-navy/35 mt-2">Booked appointments appear here before consultation.</p>
+          </Card>
+        ) : (
+          <>
+            <div className="bg-white border border-gray-100 rounded-3xl p-2 shadow-sm">
+              <select
+                value={selectedAppointment?._id || ''}
+                onChange={(e) => setSelectedId(e.target.value)}
+                className="w-full rounded-2xl px-5 py-4 text-sm font-bold text-navy outline-none bg-gray-50"
+              >
+                {trackedAppointments.map(item => {
+                  const itemStart = item.slot_id?.start_datetime ? new Date(item.slot_id.start_datetime) : null;
+                  return (
+                    <option key={item._id} value={item._id}>
+                      T-{item.token_number || '-'} • {item.doctor_id?.user?.name || 'Doctor'} • {itemStart ? itemStart.toLocaleString('en-IN') : 'Not scheduled'}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            <div className="bg-navy rounded-[40px] p-8 text-white relative overflow-hidden">
+              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
+                <div className="flex items-center gap-5">
+                  <Avatar src={selectedAppointment?.doctor_id?.user?.image} name={doctorName} size="xl" />
+                  <div>
+                    <Badge className="bg-[#0D9488] text-white border-none text-[10px] mb-3">LIVE QUEUE</Badge>
+                    <h2 className="text-3xl font-heading font-black">{doctorName}</h2>
+                    <p className="text-white/60 text-sm font-bold mt-2 flex items-center gap-2">
+                      <Calendar size={15} /> {start ? start.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not scheduled'}
+                      <Clock size={15} /> {start ? start.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''}
+                    </p>
+                  </div>
                 </div>
-                <h1 className="text-3xl lg:text-4xl font-heading font-extrabold mb-1 tracking-tight">Dr. Arjun Mehta</h1>
-                <p className="text-white/60 flex items-center gap-2 font-medium">
-                  <MapPin size={16} /> Apollo Hospitals, Bangalore
-                </p>
-                <p className="text-white/60 flex items-center gap-2 font-medium mt-1">
-                  <Clock size={16} /> Scheduled: Today, 2:30 PM
-                </p>
+                <div className="text-left md:text-right">
+                  <p className="text-white/45 text-[10px] font-black uppercase tracking-widest mb-1">Your Token</p>
+                  <p className="text-7xl font-heading font-black text-[#99F6E4]">#{queue?.token_number || selectedAppointment?.token_number || '-'}</p>
+                </div>
               </div>
             </div>
 
-            <div className="text-left md:text-right shrink-0">
-               <p className="text-white/50 text-[11px] font-black uppercase tracking-[0.2em] mb-2">Your Token</p>
-               <div className="text-6xl md:text-7xl font-heading font-black text-[#99F6E4] leading-none shrink-0 border-l-4 border-[#0D9488] pl-6 md:border-l-0 md:border-r-4 md:pr-6 md:pl-0">
-                 #{yourToken}
-               </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="p-6 text-center border-gray-100">
+                <Activity size={26} className="mx-auto text-[#0D9488] mb-3" />
+                <p className="text-[10px] font-black uppercase text-navy/35">Serving Now</p>
+                <p className="text-4xl font-black text-navy mt-2">{queue?.current_token ? `#${queue.current_token}` : 'Not started'}</p>
+              </Card>
+              <Card className="p-6 text-center border-gray-100">
+                <Users size={26} className="mx-auto text-orange-500 mb-3" />
+                <p className="text-[10px] font-black uppercase text-navy/35">Tokens Ahead</p>
+                <p className="text-4xl font-black text-navy mt-2">{queue?.tokens_ahead ?? '-'}</p>
+              </Card>
+              <Card className="p-6 text-center border-gray-100 bg-teal-50">
+                <Clock size={26} className="mx-auto text-[#0D9488] mb-3" />
+                <p className="text-[10px] font-black uppercase text-teal-700/55">Estimated Wait</p>
+                <p className="text-4xl font-black text-[#0D9488] mt-2">{isTurn ? 'Now' : `${queue?.estimated_wait_minutes ?? 0}m`}</p>
+              </Card>
             </div>
-          </div>
-        </div>
 
-        {/* Live Status Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="p-6 bg-white border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center">
-             <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mb-4">
-               <UserCheck size={24} />
-             </div>
-             <p className="text-[11px] font-black text-navy/40 uppercase tracking-widest mb-1">Serving Now</p>
-             <h3 className="text-4xl font-heading font-black text-navy">#{currentToken}</h3>
-          </Card>
-          
-          <Card className="p-6 bg-white border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center">
-             <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center mb-4">
-               <Users size={24} />
-             </div>
-             <p className="text-[11px] font-black text-navy/40 uppercase tracking-widest mb-1">Tokens Ahead</p>
-             <h3 className="text-4xl font-heading font-black text-navy">{Math.max(0, remaining - 1)}</h3>
-          </Card>
+            <Card className="p-8 border-gray-100">
+              <div className="flex justify-between items-end mb-4">
+                <div>
+                  <h3 className="text-xl font-black text-navy">Queue Progress</h3>
+                  <p className="text-sm font-bold text-navy/40">Updates every 30 seconds while this page is open.</p>
+                </div>
+                <span className="text-xs font-black text-[#0D9488]">{Math.round(progress)}%</span>
+              </div>
+              <div className="h-5 rounded-full bg-gray-100 overflow-hidden">
+                <div className="h-full bg-[#0D9488] transition-all" style={{ width: `${progress}%` }} />
+              </div>
 
-          <Card className="p-6 bg-teal-50 border border-teal-100 shadow-sm flex flex-col items-center justify-center text-center relative overflow-hidden">
-             {isTurn && <div className="absolute inset-0 bg-[#0D9488] animate-pulse opacity-10" />}
-             <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 relative z-10 transition-colors ${isTurn ? 'bg-[#0D9488] text-white' : 'bg-teal-100 text-[#0D9488]'}`}>
-               {isTurn ? <BellRing size={24} className="animate-wiggle" /> : <Clock size={24} />}
-             </div>
-             <p className={`text-[11px] font-black uppercase tracking-widest mb-1 relative z-10 ${isTurn ? 'text-[#0D9488]' : 'text-teal-700/50'}`}>Est. Wait Time</p>
-             <h3 className={`text-4xl font-heading font-black relative z-10 ${isTurn ? 'text-[#0D9488]' : 'text-teal-900'}`}>
-               {isTurn ? "It's Time!" : `${estimatedWait}m`}
-             </h3>
-          </Card>
-        </div>
+              {isTurn && (
+                <div className="mt-6 flex items-start gap-3 bg-teal-50 border border-teal-100 p-5 rounded-2xl text-[#0D9488]">
+                  <BellRing size={22} className="shrink-0 animate-bounce" />
+                  <p className="text-sm font-black">It is your turn. Please join or proceed to the consultation room.</p>
+                </div>
+              )}
 
-        {/* Live Progress Bar */}
-        <Card className="p-8 border-gray-100 shadow-sm">
-          <div className="flex justify-between items-end mb-4">
-            <div>
-              <h3 className="font-heading font-extrabold text-navy text-xl">Queue Progress</h3>
-              <p className="text-navy/50 text-sm mt-1">Real-time tracker powered by MedCare WebSocket</p>
-            </div>
-            <span className="text-sm font-bold text-[#0D9488]">{Math.round(progressPercent)}% completed</span>
-          </div>
-
-          <div className="h-6 w-full bg-gray-100 rounded-full overflow-hidden relative">
-             <div 
-               className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#0D9488] to-[#2DD4BF] transition-all duration-1000 ease-out flex items-center justify-end pr-2"
-               style={{ width: `${progressPercent}%` }}
-             >
-                {progressPercent > 5 && (
-                  <span className="text-[10px] font-black text-white relative flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 bg-white rounded-full animate-ping block" />
-                    Live
-                  </span>
-                )}
-             </div>
-          </div>
-
-          {/* Alert if almost turn */}
-          {remaining === 1 && !isTurn && (
-             <div className="mt-6 flex items-start gap-3 bg-blue-50 border border-blue-100 p-4 rounded-xl text-blue-800 animate-in fade-in slide-in-from-top-2">
-               <AlertCircle size={20} className="shrink-0 mt-0.5 text-blue-500" />
-               <p className="text-sm font-semibold leading-relaxed">
-                 You are next in line! Please ensure you are present near the consultation room. 
-                 <span className="block mt-1 text-xs opacity-70">Keep this screen open to receive your consultation call notification.</span>
-               </p>
-             </div>
-          )}
-
-          {isTurn && (
-             <div className="mt-6 flex items-start gap-3 bg-teal-50 border border-teal-200 p-4 rounded-xl text-teal-900 animate-in fade-in zoom-in-95">
-               <BellRing size={20} className="shrink-0 mt-0.5 text-[#0D9488] animate-bounce" />
-               <div>
-                 <p className="text-sm font-bold leading-relaxed text-[#0D9488]">
-                   It is your turn right now. Please proceed to Dr. Arjun Mehta's cabin immediately.
-                 </p>
-                 <Button variant="primary" className="mt-3 bg-[#0D9488] hover:bg-[#115E59] border-none shadow-lg text-xs px-6 py-2 rounded-lg font-bold">
-                    Mark as Checked In
-                 </Button>
-               </div>
-             </div>
-          )}
-        </Card>
-
+              {selectedAppointment?.consultation_type === 'online' && (
+                <Button className="mt-6 bg-navy text-white border-none rounded-2xl px-6">
+                  <Video size={16} /> Join Online Session
+                </Button>
+              )}
+            </Card>
+          </>
+        )}
       </div>
     </DashboardLayout>
   );

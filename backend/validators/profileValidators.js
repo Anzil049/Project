@@ -74,6 +74,30 @@ const updateProfileValidator = [
         .isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('Please provide a valid website URL'),
     optionalText('coverImage', 'Cover image URL', 500),
     optionalText('image', 'Image URL', 500),
+    body('facilities')
+        .optional()
+        .isArray().withMessage('Facilities must be an array')
+        .custom((facilities) => {
+            for (let i = 0; i < facilities.length; i++) {
+                const facility = facilities[i];
+                if (!facility.title || typeof facility.title !== 'string' || facility.title.trim() === '') {
+                    throw new Error(`Facility ${i + 1} must have a valid title`);
+                }
+                if (!facility.description || typeof facility.description !== 'string' || facility.description.trim() === '') {
+                    throw new Error(`Facility ${i + 1} must have a valid description`);
+                }
+                if (!facility.images || !Array.isArray(facility.images) || facility.images.length === 0) {
+                    throw new Error(`Facility ${i + 1} must have at least one image`);
+                }
+                for (let j = 0; j < facility.images.length; j++) {
+                    const img = facility.images[j];
+                    if (typeof img !== 'string' || img.trim() === '') {
+                        throw new Error(`Facility ${i + 1} image ${j + 1} must be a valid URL`);
+                    }
+                }
+            }
+            return true;
+        }),
     ...locationValidator,
 ];
 

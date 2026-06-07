@@ -8,6 +8,8 @@ import {
   Clock, MapPin, Sparkles
 } from 'lucide-react';
 import { ROUTES } from '../../constants/routes';
+import appointmentService from '../../services/appointmentService';
+import toast from 'react-hot-toast';
 
 const PatientReviews = () => {
   const { id } = useParams();
@@ -17,16 +19,20 @@ const PatientReviews = () => {
   const [reviewText, setReviewText] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [selectedTags, setSelectedTags] = useState([]);
+  const [appointment, setAppointment] = useState(null);
 
-  // Mock appointment data based on ID
-  const appointment = {
-    id: id,
-    doctor: 'Dr. James Wilson',
-    specialization: 'Orthopedic Surgeon',
-    hospital: 'Fortis Escorts',
-    date: 'Oct 15, 2026',
-    time: '4:15 PM'
-  };
+  useEffect(() => {
+    const loadAppointment = async () => {
+      try {
+        const data = await appointmentService.getAppointmentById(id);
+        setAppointment(data);
+      } catch (error) {
+        toast.error('Failed to load appointment');
+        navigate(ROUTES.PATIENT.MY_BOOKINGS);
+      }
+    };
+    loadAppointment();
+  }, [id, navigate]);
 
   const quickTags = [
     "Punctual", "Professional", "Expert Advice", 
@@ -41,15 +47,22 @@ const PatientReviews = () => {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (rating === 0) return;
-    
-    // Simulate API call
-    setIsSubmitted(true);
-    setTimeout(() => {
-      navigate(ROUTES.PATIENT.APPOINTMENTS);
-    }, 3000);
+
+    try {
+      await appointmentService.submitFeedback(id, {
+        doctor_rating: rating,
+        hospital_rating: appointment?.doctor_id?.hospitalId ? rating : undefined,
+        comment: reviewText,
+        tags: selectedTags,
+      });
+      setIsSubmitted(true);
+      setTimeout(() => navigate(ROUTES.PATIENT.MY_BOOKINGS), 1500);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to submit review');
+    }
   };
 
   if (isSubmitted) {
@@ -63,7 +76,7 @@ const PatientReviews = () => {
               <h2 className="text-3xl font-black text-navy tracking-tight">Review Submitted!</h2>
               <p className="text-navy/40 font-bold max-w-xs mx-auto">Thank you for sharing your experience. Your feedback helps us improve healthcare quality.</p>
            </div>
-           <Button variant="ghost" onClick={() => navigate(ROUTES.PATIENT.APPOINTMENTS)}>
+              <Button variant="ghost" onClick={() => navigate(ROUTES.PATIENT.APPOINTMENTS)}>
               Returning to appointments...
            </Button>
         </div>
@@ -88,20 +101,20 @@ const PatientReviews = () => {
            <div className="absolute top-0 right-0 w-32 h-32 bg-[#0D9488]/5 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-[#0D9488]/10 transition-colors" />
            
            <div className="flex flex-col md:flex-row gap-8 items-center md:items-start relative z-10">
-              <Avatar size="xl" name={appointment.doctor} className="bg-[#0D9488] text-white shadow-2xl shadow-teal-500/20" />
+              <Avatar size="xl" name={appointment?.doctor_id?.user?.name || 'Doctor'} className="bg-[#0D9488] text-white shadow-2xl shadow-teal-500/20" />
               <div className="text-center md:text-left space-y-3">
                  <div>
-                    <h1 className="text-3xl font-black text-navy tracking-tight">{appointment.doctor}</h1>
+                    <h1 className="text-3xl font-black text-navy tracking-tight">{appointment?.doctor_id?.user?.name || 'Doctor'}</h1>
                     <p className="text-[#0D9488] font-black uppercase text-[10px] tracking-widest flex items-center justify-center md:justify-start gap-2 mt-1">
-                      <Sparkles size={14} /> {appointment.specialization}
+                      <Sparkles size={14} /> {appointment?.doctor_id?.specialization || 'Consultation'}
                     </p>
                  </div>
                  <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
                     <div className="flex items-center gap-2 text-navy/40 text-xs font-bold bg-gray-100/50 px-3 py-1.5 rounded-full">
-                       <MapPin size={14} /> {appointment.hospital}
+                       <MapPin size={14} /> {appointment?.doctor_id?.hospitalId?.name || 'Independent clinic'}
                     </div>
                     <div className="flex items-center gap-2 text-navy/40 text-xs font-bold bg-gray-100/50 px-3 py-1.5 rounded-full">
-                       <Clock size={14} /> {appointment.date}
+                       <Clock size={14} /> {appointment?.slot_id?.start_datetime ? new Date(appointment.slot_id.start_datetime).toLocaleDateString('en-IN') : 'Completed'}
                     </div>
                  </div>
               </div>

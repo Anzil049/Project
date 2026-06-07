@@ -21,6 +21,11 @@ const HospitalFacilities = () => {
     images: [] // Array of URLs
   });
 
+  const [beds, setBeds] = useState('');
+  const [isEditingBeds, setIsEditingBeds] = useState(false);
+  const [tempBeds, setTempBeds] = useState('');
+  const [isSavingBeds, setIsSavingBeds] = useState(false);
+
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -32,6 +37,8 @@ const HospitalFacilities = () => {
       setLoading(true);
       const data = await hospitalService.getProfile();
       setFacilities(data.hospitalProfile?.facilities || []);
+      setBeds(data.hospitalProfile?.beds || '');
+      setTempBeds(data.hospitalProfile?.beds || '');
     } catch (error) {
       toast.error('Failed to load facilities');
     } finally {
@@ -72,8 +79,31 @@ const HospitalFacilities = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleSaveBeds = async () => {
+    if (!tempBeds?.trim()) {
+      toast.error('Please enter a valid bed count');
+      return;
+    }
+    try {
+      setIsSavingBeds(true);
+      await hospitalService.updateProfile({
+        beds: tempBeds
+      });
+      setBeds(tempBeds);
+      setIsEditingBeds(false);
+      toast.success('Bed capacity updated successfully');
+    } catch (error) {
+      toast.error('Failed to update bed capacity');
+    } finally {
+      setIsSavingBeds(false);
+    }
+  };
+
   const handleSaveFacility = async () => {
-    if (!newFacility.title) return;
+    if (!newFacility.title?.trim() || !newFacility.description?.trim() || !newFacility.images || newFacility.images.length === 0) {
+      toast.error('Please fill in all fields and upload at least one image');
+      return;
+    }
 
     try {
       setIsSaving(true);
@@ -177,6 +207,65 @@ const HospitalFacilities = () => {
           )}
         </div>
 
+        {/* Total Bed Capacity Control Card */}
+        <Card className="p-6 bg-white border border-[#0D9488]/10 rounded-[30px] shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4 w-full sm:w-auto">
+            <div className="w-12 h-12 bg-[#0D9488]/10 rounded-2xl flex items-center justify-center text-[#0D9488] shrink-0">
+              <Building size={24} />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-[10px] font-black text-navy/40 uppercase tracking-widest">Total Bed Capacity</h3>
+              {isEditingBeds ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="number"
+                    value={tempBeds}
+                    onChange={(e) => setTempBeds(e.target.value)}
+                    className="w-24 text-sm font-bold text-navy bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 focus:outline-none focus:border-[#0D9488]"
+                    placeholder="e.g. 100"
+                    disabled={isSavingBeds}
+                  />
+                  <Button 
+                    size="sm" 
+                    onClick={handleSaveBeds} 
+                    disabled={isSavingBeds || !tempBeds?.trim()}
+                    className="bg-[#0D9488] text-white px-3 py-1.5 text-[10px] font-black rounded-lg border-none"
+                  >
+                    {isSavingBeds ? <Loader2 className="animate-spin" size={12} /> : 'Save'}
+                  </Button>
+                  <button 
+                    onClick={() => {
+                      setIsEditingBeds(false);
+                      setTempBeds(beds);
+                    }}
+                    disabled={isSavingBeds}
+                    className="text-xs font-black text-navy/40 hover:text-navy px-2 py-1 uppercase tracking-wider disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <p className="text-lg font-black text-navy mt-0.5">
+                  {beds || 'Not Configured'}
+                </p>
+              )}
+            </div>
+          </div>
+          {!isEditingBeds && (
+            <Button 
+              onClick={() => {
+                setTempBeds(beds);
+                setIsEditingBeds(true);
+              }} 
+              variant="outline" 
+              size="sm"
+              className="rounded-xl border-gray-200 text-navy font-black text-[10px] px-4 py-2 hover:bg-gray-50 uppercase tracking-wider shrink-0"
+            >
+              Update Bed Capacity
+            </Button>
+          )}
+        </Card>
+
         {/* Add Facility Form */}
         {isAdding && (
           <Card className="p-8 bg-white border border-[#0D9488]/20 rounded-[40px] shadow-2xl shadow-[#0D9488]/10 animate-in slide-in-from-top-4 duration-300">
@@ -208,7 +297,7 @@ const HospitalFacilities = () => {
                    
                    <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase tracking-widest text-navy/60 pl-2">
-                        Description
+                        Description <span className="text-red-500">*</span>
                       </label>
                       <textarea
                          placeholder="Describe the facility's equipment and features..."
@@ -222,7 +311,8 @@ const HospitalFacilities = () => {
                 {/* Photo Upload Area */}
                 <div className="space-y-2">
                    <label className="text-[10px] font-black uppercase tracking-widest text-navy/60 pl-2 flex justify-between">
-                      Facility Photos <span className="text-[#0D9488]">{newFacility.images.length}/5 uploaded</span>
+                      <span>Facility Photos <span className="text-red-500">*</span></span>
+                      <span className="text-[#0D9488]">{newFacility.images.length}/5 uploaded</span>
                    </label>
                    
                    <div 
@@ -275,7 +365,11 @@ const HospitalFacilities = () => {
                 >
                    Cancel
                 </button>
-                <Button onClick={handleSaveFacility} disabled={!newFacility.title || isSaving} className="bg-[#0D9488] text-white rounded-2xl px-10 shadow-xl shadow-[#0D9488]/20 border-none disabled:opacity-50">
+                <Button 
+                   onClick={handleSaveFacility} 
+                   disabled={!newFacility.title?.trim() || !newFacility.description?.trim() || !newFacility.images || newFacility.images.length === 0 || isSaving} 
+                   className="bg-[#0D9488] text-white rounded-2xl px-10 shadow-xl shadow-[#0D9488]/20 border-none disabled:opacity-50"
+                >
                    {isSaving ? <Loader2 className="animate-spin" size={18} /> : (editingIndex !== null ? 'Update Facility' : 'Publish Facility')}
                 </Button>
               </div>

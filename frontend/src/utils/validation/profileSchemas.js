@@ -38,8 +38,8 @@ export const patientProfileSchema = z.object({
   emgName: nameField,
   emgRelation: trimString('Relationship is required', 2, 50),
   emgPhone: phoneField,
-  latitude: requiredCoordinateField('latitude', -90, 90),
-  longitude: requiredCoordinateField('longitude', -180, 180),
+  latitude: optionalCoordinateField('latitude', -90, 90),
+  longitude: optionalCoordinateField('longitude', -180, 180),
 });
 
 export const doctorProfileSchema = z.object({
@@ -61,6 +61,7 @@ export const hospitalProfileSchema = z.object({
   registrationNumber: registrationNumberField,
   phone: phoneField,
   about: trimString('Hospital description is required', 20, 1200),
+  beds: positiveIntField('Bed capacity', 1, 100000),
   address: trimString('Street address is required', 5, 240),
   city: trimString('City is required', 2, 80),
   state: trimString('State is required', 2, 80),

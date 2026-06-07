@@ -26,10 +26,27 @@ const doctorSchema = mongoose.Schema({
         type: Number,
         default: 20,
     },
+    booking_window_days: {
+        type: Number,
+        default: 30,
+        min: 1,
+    },
     onlineConsultation: {
         type: Boolean,
         default: false,
     },
+    unavailability: [{
+        date: {
+            type: Date,
+            required: true,
+        },
+        reason: {
+            type: String,
+            enum: ['leave', 'vacation', 'holiday', 'emergency_closure'],
+            default: 'leave',
+        },
+        note: String,
+    }],
     availableDays: [{
         type: String,
     }],

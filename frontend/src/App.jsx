@@ -24,11 +24,13 @@ import HospitalProfile from './pages/hospital/Profile';
 import DoctorDashboard from './pages/doctor/Dashboard';
 import HospitalDetails from './pages/public/HospitalDetails';
 import FindDoctors from './pages/public/FindDoctors';
+import DoctorDetails from './pages/public/DoctorDetails';
 import FindHospitals from './pages/public/FindHospitals';
 import DoctorAppointments from './pages/doctor/Appointments';
 import DoctorAvailability from './pages/doctor/Availability';
 import DoctorPrescriptions from './pages/doctor/Prescriptions';
 import DoctorProfile from './pages/doctor/Profile';
+import DoctorConsultationPage from './pages/doctor/Consultation';
 import AdminDashboard from './pages/admin/Dashboard';
 import Registrations from './pages/admin/Registrations';
 import AdminHospitals from './pages/admin/Hospitals';
@@ -186,6 +188,7 @@ function App() {
           <Route path={ROUTES.FIND_HOSPITALS} element={<><PublicNavbar /><FindHospitals /></>} />
           <Route path={ROUTES.EMERGENCY} element={<Emergency />} />
           <Route path={ROUTES.PUBLIC_HOSPITAL} element={<HospitalDetails />} />
+          <Route path={ROUTES.PUBLIC_DOCTOR} element={<DoctorDetails />} />
           
           {/* Authentication Routes */}
           <Route path={ROUTES.LOGIN} element={<GuestRoute><Login /></GuestRoute>} />
@@ -244,6 +247,8 @@ function App() {
                 <Route path="availability" element={<DoctorAvailability />} />
                 <Route path="prescriptions" element={<DoctorPrescriptions />} />
                 <Route path="profile" element={<DoctorProfile />} />
+                <Route path="appointments/:id/consult" element={<DoctorConsultationPage />} />
+                <Route path="offline-booking" element={<HospitalOfflineBooking role="doctor" />} />
                 {/* Doctor Consultation Sub-routes */}
                 <Route path="consultation/sessions" element={<DoctorConsultation />} />
                 <Route path="consultation/room/:sessionId" element={<ConsultationRoom />} />
