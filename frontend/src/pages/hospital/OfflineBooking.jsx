@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button, Badge, Avatar } from '../../components/common';
 import { 
-  User, Phone, Calendar, Hash, 
+  User, Phone, Calendar, Hash, Mail,
   Stethoscope, ChevronRight, Activity,
   Printer, CheckCircle2, Clock, 
   Search, Users, AlertCircle, Plus, Sparkles
@@ -11,6 +11,16 @@ import useAuthStore from '../../store/authStore';
 import hospitalService from '../../services/hospitalService';
 import doctorService from '../../services/doctorService';
 import toast from 'react-hot-toast';
+
+
+const getLocalDateString = (dateInput) => {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const HospitalOfflineBooking = ({ role = 'hospital' }) => {
   const { user } = useAuthStore();
@@ -23,10 +33,13 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
   const [formData, setFormData] = useState({
     patientName: '',
     phone: '',
+    email: '',
     age: '',
     gender: 'Male',
+    bloodGroup: 'O+',
+    address: '',
     doctorId: '',
-    date: new Date().toISOString().split('T')[0],
+    date: getLocalDateString(new Date()),
     reason: '',
   });
 
@@ -75,8 +88,11 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
       // Fetch slots
       const slotsData = await doctorService.getDoctorSlots(formData.doctorId, 'offline');
       const daySlots = slotsData.find(s => s.date === formData.date);
-      setAvailableSlots(daySlots ? daySlots.times : []);
-      setSelectedSlot(null);
+      const times = daySlots ? daySlots.times : [];
+      setAvailableSlots(times);
+      
+      const nextAvailableSlot = times.find(s => s.status === 'available');
+      setSelectedSlot(nextAvailableSlot || null);
 
       // Fetch appointments
       let apps = [];
@@ -93,7 +109,7 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
         const isSameDoctor = appDocId?.toString() === formData.doctorId.toString();
         if (!isSameDoctor || !app.slot_id) return false;
 
-        const appDate = new Date(app.slot_id.start_datetime).toISOString().split('T')[0];
+        const appDate = getLocalDateString(app.slot_id.start_datetime);
         return appDate === formData.date;
       });
 
@@ -109,8 +125,8 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.patientName || !formData.phone || !formData.age) {
-      toast.error('Please fill in all patient details');
+    if (!formData.patientName || !formData.phone || !formData.email || !formData.age || !formData.bloodGroup || !formData.address) {
+      toast.error('Please fill in all patient details (including email, blood group, and address)');
       return;
     }
     if (!selectedSlot) {
@@ -125,8 +141,11 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
         start_datetime: selectedSlot.start_datetime,
         patientName: formData.patientName,
         phone: formData.phone,
+        email: formData.email,
         age: formData.age,
         gender: formData.gender,
+        bloodGroup: formData.bloodGroup,
+        address: formData.address,
         reason: formData.reason
       };
 
@@ -144,8 +163,11 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
         ...prev,
         patientName: '',
         phone: '',
+        email: '',
         age: '',
         gender: 'Male',
+        bloodGroup: 'O+',
+        address: '',
         reason: ''
       }));
       setSelectedSlot(null);
@@ -250,40 +272,39 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                       </div>
                    </div>
 
-                   {/* Time Slots Selector */}
-                   <div className="space-y-3">
-                      <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.2em] ml-1">Select Time Slot</label>
-                      {availableSlots.length > 0 ? (
-                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                          {availableSlots.map((slot) => {
-                            const isBooked = slot.status === 'booked';
-                            const isSelected = selectedSlot?.id === slot.id;
-                            return (
-                              <button
-                                key={slot.id}
-                                type="button"
-                                disabled={isBooked}
-                                onClick={() => setSelectedSlot(slot)}
-                                className={`py-3.5 px-2 rounded-2xl text-[10px] font-black uppercase tracking-wider text-center transition-all ${
-                                  isBooked 
-                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-transparent' 
-                                    : isSelected
-                                      ? 'bg-[#0D9488] text-white shadow-lg shadow-[#0D9488]/20 border border-teal-600'
-                                      : 'bg-white border border-gray-200 text-navy hover:border-[#0D9488] hover:text-[#0D9488]'
-                                }`}
-                              >
-                                {slot.time}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="p-6 bg-red-50 text-red-700/80 rounded-[24px] flex items-center gap-3 border border-red-100/50">
-                           <AlertCircle size={18} />
-                           <span className="text-xs font-black uppercase tracking-wide">No slots generated or available on this day.</span>
-                        </div>
-                      )}
-                   </div>
+                    {/* Token & Slot Allocation Info Card */}
+                    <div className="space-y-3">
+                       <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.2em] ml-1">Token & Slot Allocation</label>
+                       {selectedSlot ? (
+                         <div className="bg-slate-50 border border-slate-100 p-6 rounded-[24px] space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm">
+                                  <span className="text-[9px] font-black text-navy/40 uppercase tracking-wider block">Last Booked Token</span>
+                                  <span className="text-xl font-black text-navy">
+                                     {sortedQueue.length > 0 ? `T-${sortedQueue[sortedQueue.length - 1].token_number}` : 'None'}
+                                  </span>
+                               </div>
+                               <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm">
+                                  <span className="text-[9px] font-black text-[#0D9488] uppercase tracking-wider block">Next Token to Book</span>
+                                  <span className="text-xl font-black text-[#0D9488]">
+                                     T-{(sortedQueue[sortedQueue.length - 1]?.token_number || 0) + 1}
+                                  </span>
+                               </div>
+                            </div>
+                            <div className="flex items-center justify-between pt-2">
+                               <span className="text-xs font-bold text-navy/60">Automatically Allocated Slot</span>
+                               <span className="text-sm font-black text-navy bg-white border border-gray-150 px-4 py-2 rounded-xl shadow-sm">
+                                  {selectedSlot.time}
+                               </span>
+                            </div>
+                         </div>
+                       ) : (
+                         <div className="p-6 bg-red-50 text-red-700/80 rounded-[24px] flex items-center gap-3 border border-red-100/50">
+                            <AlertCircle size={18} />
+                            <span className="text-xs font-black uppercase tracking-wide">No slots available on this day.</span>
+                         </div>
+                       )}
+                    </div>
 
                    {/* Patient Info Fields */}
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -303,6 +324,24 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                          </div>
                       </div>
 
+                      {/* Email Address */}
+                      <div className="space-y-3">
+                         <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.2em] ml-1">Patient Email Address *</label>
+                         <div className="relative group">
+                            <Mail size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-[#0D9488]/70 group-focus-within:text-[#0D9488] transition-colors" />
+                            <input 
+                               type="email"
+                               placeholder="e.g. patient@example.com"
+                               value={formData.email}
+                               onChange={(e) => setFormData({...formData, email: e.target.value})}
+                               required
+                               className="w-full pl-14 pr-6 py-5 bg-gray-50/50 border-2 border-transparent focus:border-[#0D9488]/20 focus:bg-white rounded-[24px] text-sm font-bold text-navy outline-none transition-all placeholder:text-navy/40"
+                            />
+                         </div>
+                      </div>
+                   </div>
+
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                       {/* Phone Number */}
                       <div className="space-y-3">
                          <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.2em] ml-1">Contact Phone *</label>
@@ -318,9 +357,7 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                             />
                          </div>
                       </div>
-                   </div>
 
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       {/* Patient Age */}
                       <div className="space-y-3">
                          <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.2em] ml-1">Patient Age (Years) *</label>
@@ -356,7 +393,43 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                             <ChevronRight size={20} className="absolute right-6 top-1/2 -translate-y-1/2 text-navy/60 rotate-90" />
                          </div>
                       </div>
-                   </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                       {/* Blood Group */}
+                       <div className="space-y-3">
+                          <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.2em] ml-1">Blood Group *</label>
+                          <div className="relative group">
+                             <User size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-[#0D9488]" />
+                             <select 
+                                value={formData.bloodGroup}
+                                onChange={(e) => setFormData({...formData, bloodGroup: e.target.value})}
+                                required
+                                className="w-full pl-14 pr-12 py-5 bg-gray-50 border-none rounded-[24px] text-sm font-bold text-navy appearance-none outline-none focus:ring-2 focus:ring-[#0D9488]/10 transition-all cursor-pointer"
+                             >
+                                {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
+                                   <option key={bg} value={bg}>{bg}</option>
+                                ))}
+                             </select>
+                             <ChevronRight size={20} className="absolute right-6 top-1/2 -translate-y-1/2 text-navy/60 rotate-90" />
+                          </div>
+                       </div>
+
+                       {/* Address */}
+                       <div className="space-y-3 md:col-span-2">
+                          <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.2em] ml-1">Home Address *</label>
+                          <div className="relative group">
+                             <input 
+                                type="text"
+                                placeholder="Enter home address"
+                                value={formData.address}
+                                onChange={(e) => setFormData({...formData, address: e.target.value})}
+                                required
+                                className="w-full px-6 py-5 bg-gray-50/50 border-2 border-transparent focus:border-[#0D9488]/20 focus:bg-white rounded-[24px] text-sm font-bold text-navy outline-none transition-all placeholder:text-navy/40"
+                             />
+                          </div>
+                       </div>
+                    </div>
 
                    {/* Reason for Visit */}
                    <div className="space-y-3">
@@ -369,21 +442,6 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                          className="w-full px-6 py-4 bg-gray-50/50 border-2 border-transparent focus:border-[#0D9488]/20 focus:bg-white rounded-[24px] text-sm font-bold text-navy outline-none transition-all placeholder:text-navy/40 resize-none"
                       />
                    </div>
-
-                   {/* Token display section */}
-                   {selectedSlot && (
-                     <div className="p-8 bg-navy rounded-[32px] text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl shadow-navy/20 relative overflow-hidden group">
-                        <div className="absolute inset-0 bg-gradient-to-r from-navy via-navy to-[#0D9488]/20 group-hover:to-[#0D9488]/30 transition-all duration-500" />
-                        <div className="relative z-10 space-y-2 text-center md:text-left">
-                           <h4 className="text-xl font-black tracking-tight">Sequence Allocation</h4>
-                           <p className="text-[10px] text-white/70 font-bold uppercase tracking-[0.25em]">Walk-in schedule sequence</p>
-                        </div>
-                        <div className="relative z-10 w-40 h-20 bg-white/10 backdrop-blur-xl rounded-2xl flex flex-col items-center justify-center border border-white/10">
-                           <span className="text-xs font-black text-[#0D9488] uppercase mb-1">Assigned Time</span>
-                           <span className="text-lg font-heading font-black">{selectedSlot.time}</span>
-                        </div>
-                     </div>
-                   )}
 
                    <Button 
                       type="submit" 

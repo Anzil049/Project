@@ -9,7 +9,11 @@ import toast from 'react-hot-toast';
 
 const isToday = (dateValue) => {
   if (!dateValue) return false;
-  return new Date(dateValue).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
+  const d = new Date(dateValue);
+  const today = new Date();
+  return d.getFullYear() === today.getFullYear() &&
+         d.getMonth() === today.getMonth() &&
+         d.getDate() === today.getDate();
 };
 
 const HospitalDashboard = () => {

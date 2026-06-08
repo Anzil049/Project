@@ -5,15 +5,17 @@ import { Card, Button, Badge } from '../../components/common';
 import { 
   Search, Calendar, Clock, MapPin, Video, Stethoscope, 
   ChevronRight, CheckCircle2, X, BadgeCheck, ShieldCheck, 
-  CreditCard, Building2, Info, Star as LucideStar 
+  CreditCard, Building2, Info, Star as LucideStar, Mail, Phone, User
 } from 'lucide-react';
 import { ROUTES } from '../../constants/routes';
 import doctorService from '../../services/doctorService';
 import { toast } from 'react-hot-toast';
+import useAuthStore from '../../store/authStore';
 
 const UnifiedBookingHub = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, updateUser } = useAuthStore();
   
   const [activeTab, setActiveTab] = useState('clinical'); // 'clinical' | 'online'
   const [search, setSearch] = useState('');
@@ -29,6 +31,28 @@ const UnifiedBookingHub = () => {
   const [showPayment, setShowPayment] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+
+  const [patientDetails, setPatientDetails] = useState({
+     phone: '',
+     email: '',
+     dob: '',
+     gender: 'Male',
+     bloodGroup: 'O+',
+     address: '',
+  });
+
+  useEffect(() => {
+     if (user) {
+        setPatientDetails({
+           phone: user.phone || '',
+           email: user.email || '',
+           dob: user.dob ? new Date(user.dob).toISOString().split('T')[0] : '',
+           gender: user.gender || 'Male',
+           bloodGroup: user.bloodGroup || 'O+',
+           address: user.address || '',
+        });
+     }
+  }, [user]);
 
   // Fetch doctors
   useEffect(() => {
@@ -94,6 +118,18 @@ const UnifiedBookingHub = () => {
     setSelectedSlot(null);
   };
 
+  const handleDateSelect = (slot) => {
+    setSelectedDate(slot.date);
+    const earliestTime = slot.times.find(t => t.status === 'available' && !t.is_reserved);
+    if (earliestTime) {
+      setSelectedTime(earliestTime.time);
+      setSelectedSlot(earliestTime);
+    } else {
+      setSelectedTime(null);
+      setSelectedSlot(null);
+    }
+  };
+
   useEffect(() => {
     const fetchSlots = async () => {
       if (!selectedDoc) {
@@ -117,9 +153,41 @@ const UnifiedBookingHub = () => {
     fetchSlots();
   }, [selectedDoc, activeTab]);
 
+  useEffect(() => {
+    if (availableSlots && availableSlots.length > 0) {
+      let found = null;
+      for (const slot of availableSlots) {
+        const firstAvailableTime = slot.times.find(t => t.status === 'available' && !t.is_reserved);
+        if (firstAvailableTime) {
+          found = { date: slot.date, slot: firstAvailableTime };
+          break;
+        }
+      }
+      
+      if (found) {
+        setSelectedDate(found.date);
+        setSelectedTime(found.slot.time);
+        setSelectedSlot(found.slot);
+      } else {
+        setSelectedDate(null);
+        setSelectedTime(null);
+        setSelectedSlot(null);
+      }
+    } else {
+      setSelectedDate(null);
+      setSelectedTime(null);
+      setSelectedSlot(null);
+    }
+  }, [availableSlots]);
+
   const processPayment = async () => {
     if (!selectedSlot) {
       toast.error('Please select a slot');
+      return;
+    }
+
+    if (!patientDetails.phone || !patientDetails.dob || !patientDetails.gender || !patientDetails.bloodGroup || !patientDetails.address) {
+      toast.error('Please fill in all medical and contact details in the checkout form');
       return;
     }
 
@@ -130,6 +198,22 @@ const UnifiedBookingHub = () => {
         doctor_id: selectedDoc.id,
         consultation_type: consultationType,
         start_datetime: selectedSlot.start_datetime,
+        phone: patientDetails.phone,
+        email: patientDetails.email,
+        dob: patientDetails.dob,
+        gender: patientDetails.gender,
+        bloodGroup: patientDetails.bloodGroup,
+        address: patientDetails.address,
+      });
+
+      // Update frontend user store
+      updateUser({
+        ...user,
+        phone: patientDetails.phone,
+        dob: patientDetails.dob,
+        gender: patientDetails.gender,
+        bloodGroup: patientDetails.bloodGroup,
+        address: patientDetails.address,
       });
 
       setProcessing(false);
@@ -285,7 +369,7 @@ const UnifiedBookingHub = () => {
                                    ) : availableSlots && availableSlots.length > 0 ? availableSlots.map(slot => (
                                       <div key={slot.date} className="space-y-4">
                                          <button 
-                                            onClick={() => { setSelectedDate(slot.date); setSelectedTime(null); setSelectedSlot(null); }}
+                                            onClick={() => handleDateSelect(slot)}
                                             className={`w-full flex items-center justify-between p-5 rounded-[20px] transition-all ${
                                                selectedDate === slot.date ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'bg-[#F8FAFC] text-navy hover:bg-[#EEF2F6]'
                                             }`}
@@ -298,18 +382,38 @@ const UnifiedBookingHub = () => {
                                          </button>
                                          
                                          {selectedDate === slot.date && (
-                                            <div className="flex flex-wrap gap-2 px-1 animate-in fade-in duration-300">
-                                               {slot.times.filter(t => t.status === 'available' && !t.is_reserved).map(t => (
-                                                  <button 
-                                                     key={t.start_datetime}
-                                                     onClick={() => { setSelectedTime(t.time); setSelectedSlot(t); }}
-                                                     className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                                        selectedSlot?.start_datetime === t.start_datetime ? 'bg-navy text-white' : 'bg-white border-2 border-gray-50 text-navy/40 hover:border-primary/30'
-                                                     }`}
-                                                  >
-                                                     {t.time}
-                                                  </button>
-                                               ))}
+                                            <div className="bg-[#0D9488]/5 border border-[#0D9488]/10 rounded-[32px] p-6 text-left space-y-4 animate-in fade-in duration-300">
+                                               {selectedTime && selectedSlot ? (
+                                                  <>
+                                                     <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 rounded-xl bg-[#0D9488]/10 flex items-center justify-center text-[#0D9488]">
+                                                           <Clock size={18} />
+                                                        </div>
+                                                        <div>
+                                                           <p className="text-[9px] font-black uppercase tracking-widest text-navy/40 leading-none mb-1">Time Slot (Sequential Allocation)</p>
+                                                           <p className="text-sm font-black text-[#0D9488] uppercase leading-none">{selectedTime}</p>
+                                                        </div>
+                                                     </div>
+                                                     <div className="flex items-start gap-3 border-t border-[#0D9488]/10 pt-4">
+                                                        <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 mt-0.5 shrink-0">
+                                                           <Info size={18} />
+                                                        </div>
+                                                        <div>
+                                                           <p className="text-[9px] font-black uppercase tracking-widest text-navy/40 leading-none mb-1">Queue & Est. Consultation Start</p>
+                                                           <p className="text-xs font-black text-navy leading-normal">
+                                                              Estimated to start at <span className="text-[#0D9488]">{selectedTime}</span>
+                                                           </p>
+                                                           <p className="text-[10px] font-medium text-navy/40 mt-1 leading-normal">
+                                                              You are patient number <span className="font-bold text-navy">#{selectedSlot.slot_index + 1}</span> for this session. Slots are allocated chronologically on a first-come, first-served basis for this day.
+                                                           </p>
+                                                        </div>
+                                                     </div>
+                                                  </>
+                                               ) : (
+                                                  <div className="py-2 text-center">
+                                                     <p className="text-xs font-bold text-red-500 italic">No slots available on this day.</p>
+                                                  </div>
+                                               )}
                                             </div>
                                          )}
                                       </div>
@@ -364,39 +468,146 @@ const UnifiedBookingHub = () => {
       {showPayment && selectedDoc && (
          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
             <div className="absolute inset-0 bg-navy/60 backdrop-blur-md" onClick={() => !processing && setShowPayment(false)} />
-            <div className="relative w-full max-w-md bg-white rounded-[48px] overflow-hidden shadow-2xl z-10 animate-in zoom-in-95 duration-300">
-               <div className="bg-navy p-10 text-center relative overflow-hidden">
+            <div className="relative w-full max-w-4xl bg-white rounded-[48px] overflow-hidden shadow-2xl z-10 animate-in zoom-in-95 duration-300 grid grid-cols-1 md:grid-cols-12">
+               
+               {/* Left Column - Billing details */}
+               <div className="md:col-span-5 bg-navy p-10 text-center md:text-left flex flex-col justify-between relative overflow-hidden text-white">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 rounded-full -mr-16 -mt-16 blur-2xl" />
-                  <CreditCard size={32} className="text-primary mx-auto mb-6" />
-                  <h3 className="text-xs font-black uppercase tracking-widest text-white/40 mb-2">Secure Settlement</h3>
-                  <p className="text-4xl font-black text-white tracking-tight">₹{activeTab === 'online' ? selectedDoc.fee : Math.round(selectedDoc.fee * 0.3)}</p>
-               </div>
-               <div className="p-10 space-y-8">
-                  <div className="space-y-4">
-                     <div className="flex justify-between items-center text-[11px] font-black uppercase text-navy/40">
-                        <span>Professional Fee</span>
-                        <span className="text-navy">₹{selectedDoc.fee}</span>
-                     </div>
-                     <div className="flex justify-between items-center text-[11px] font-black uppercase text-navy/40">
-                        <span>Service Type</span>
-                        <span className="text-navy">{activeTab === 'online' ? '100% Online' : '30% Deposit'}</span>
+                  <div className="space-y-6 relative z-10">
+                     <CreditCard size={32} className="text-primary mx-auto md:mx-0 mb-6" />
+                     <h3 className="text-xs font-black uppercase tracking-widest text-white/40 mb-2">Secure Settlement</h3>
+                     <p className="text-4xl font-black text-white tracking-tight">₹{activeTab === 'online' ? selectedDoc.fee : Math.round(selectedDoc.fee * 0.3)}</p>
+                     
+                     <div className="space-y-4 pt-6 border-t border-white/10 text-left">
+                        <div className="flex justify-between items-center text-[11px] font-black uppercase text-white/50">
+                           <span>Professional Fee</span>
+                           <span className="text-white">₹{selectedDoc.fee}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px] font-black uppercase text-white/50">
+                           <span>Service Type</span>
+                           <span className="text-white">{activeTab === 'online' ? '100% Online' : '30% Deposit'}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px] font-black uppercase text-white/50">
+                           <span>Doctor</span>
+                           <span className="text-white">{selectedDoc.name}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px] font-black uppercase text-white/50">
+                           <span>Date</span>
+                           <span className="text-white">{fmtDate(selectedDate)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px] font-black uppercase text-white/50">
+                           <span>Time Slot</span>
+                           <span className="text-white">{selectedTime}</span>
+                        </div>
                      </div>
                   </div>
-                  <div className="space-y-3">
+                  <div className="pt-8 text-xs font-bold text-white/35 text-center md:text-left">
+                     Confirming payment establishes clinical queue placement.
+                  </div>
+               </div>
+
+               {/* Right Column - Demographic inputs */}
+               <div className="md:col-span-7 p-10 space-y-6 text-left max-h-[80vh] overflow-y-auto">
+                  <div>
+                     <h2 className="text-2xl font-black text-navy uppercase tracking-tight">Confirm Demographics</h2>
+                     <p className="text-xs text-navy/40 font-bold mt-1">Please confirm your medical and contact profile details before booking.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                     {/* Full Name (Read-only) */}
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-navy/60 uppercase tracking-[0.1em] ml-1">Full Name</label>
+                        <input type="text" value={user?.name || ''} disabled className="w-full px-5 py-4 bg-gray-50 border-none rounded-2xl text-xs font-bold text-navy outline-none cursor-not-allowed opacity-80" />
+                     </div>
+
+                     {/* Email (Read-only) */}
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-navy/60 uppercase tracking-[0.1em] ml-1">Email Address</label>
+                        <input type="text" value={user?.email || ''} disabled className="w-full px-5 py-4 bg-gray-50 border-none rounded-2xl text-xs font-bold text-navy outline-none cursor-not-allowed opacity-80" />
+                     </div>
+
+                     {/* Contact Phone (Required) */}
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.1em] ml-1">Contact Phone *</label>
+                        <input 
+                           type="tel" 
+                           required 
+                           value={patientDetails.phone}
+                           onChange={(e) => setPatientDetails({...patientDetails, phone: e.target.value})}
+                           className="w-full px-5 py-4 bg-[#F8FAFC] border-2 border-transparent focus:border-primary/20 rounded-2xl text-xs font-bold text-navy outline-none transition-all" 
+                        />
+                     </div>
+
+                     {/* Date of Birth (Required) */}
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.1em] ml-1">Date of Birth *</label>
+                        <input 
+                           type="date" 
+                           required 
+                           value={patientDetails.dob}
+                           onChange={(e) => setPatientDetails({...patientDetails, dob: e.target.value})}
+                           className="w-full px-5 py-4 bg-[#F8FAFC] border-2 border-transparent focus:border-primary/20 rounded-2xl text-xs font-bold text-navy outline-none transition-all" 
+                        />
+                     </div>
+
+                     {/* Patient Gender (Required) */}
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.1em] ml-1">Gender *</label>
+                        <select 
+                           value={patientDetails.gender}
+                           onChange={(e) => setPatientDetails({...patientDetails, gender: e.target.value})}
+                           className="w-full px-5 py-4 bg-[#F8FAFC] border-none rounded-2xl text-xs font-bold text-navy outline-none appearance-none cursor-pointer"
+                        >
+                           <option value="Male">Male</option>
+                           <option value="Female">Female</option>
+                           <option value="Other">Other</option>
+                        </select>
+                     </div>
+
+                     {/* Blood Group (Required) */}
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.1em] ml-1">Blood Group *</label>
+                        <select 
+                           value={patientDetails.bloodGroup}
+                           onChange={(e) => setPatientDetails({...patientDetails, bloodGroup: e.target.value})}
+                           className="w-full px-5 py-4 bg-[#F8FAFC] border-none rounded-2xl text-xs font-bold text-navy outline-none appearance-none cursor-pointer"
+                        >
+                           {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
+                              <option key={bg} value={bg}>{bg}</option>
+                           ))}
+                        </select>
+                     </div>
+                  </div>
+
+                  {/* Home Address (Required) */}
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.1em] ml-1">Home Address *</label>
+                     <input 
+                        type="text" 
+                        required 
+                        placeholder="Enter street and house details"
+                        value={patientDetails.address}
+                        onChange={(e) => setPatientDetails({...patientDetails, address: e.target.value})}
+                        className="w-full px-5 py-4 bg-[#F8FAFC] border-2 border-transparent focus:border-primary/20 rounded-2xl text-xs font-bold text-navy outline-none transition-all" 
+                     />
+                  </div>
+
+                  <div className="pt-6 border-t border-gray-50 space-y-3">
                      <Button 
                         disabled={processing}
                         onClick={processPayment}
-                        className="w-full bg-primary text-white hover:bg-navy py-5 rounded-[24px] font-black text-[12px] uppercase border-none shadow-xl shadow-primary/20 transition-all flex items-center justify-center gap-3"
+                        className="w-full bg-[#0C1A2E] text-white hover:bg-primary py-5 rounded-[24px] font-black text-[12px] uppercase border-none shadow-xl shadow-navy/20 transition-all flex items-center justify-center gap-3"
                      >
-                        {processing ? <div className="w-5 h-5 border-4 border-white/30 border-t-white rounded-full animate-spin" /> : 'Swipe to Pay'}
+                        {processing ? <div className="w-5 h-5 border-4 border-white/30 border-t-white rounded-full animate-spin" /> : 'Confirm & Complete Booking'}
                      </Button>
                      {!processing && (
-                        <button onClick={() => setShowPayment(false)} className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-navy/30 hover:text-navy transition-all">
+                        <button onClick={() => setShowPayment(false)} className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-navy/30 hover:text-navy transition-all text-center">
                            Cancel Transaction
                         </button>
                      )}
                   </div>
                </div>
+
             </div>
          </div>
       )}

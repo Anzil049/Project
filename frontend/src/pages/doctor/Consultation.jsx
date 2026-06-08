@@ -155,11 +155,15 @@ const DoctorConsultationPage = () => {
             <Avatar name={patientName} size="xl" className="ring-4 ring-gray-50 shadow-md" />
             <div>
               <h2 className="text-2xl font-black text-navy uppercase tracking-tight mb-1">{patientName}</h2>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3 text-left">
                 <Badge variant="outline" className="text-[10px] font-black border-gray-200">
                   {patientGender} • {patientAge} Years
                 </Badge>
-                <span className="text-xs text-navy/40 font-bold">Contact: {patientPhone}</span>
+                <Badge variant="outline" className="text-[10px] font-black border-gray-200 text-red-500">
+                  Blood: {patient?.bloodGroup || snapshot?.bloodGroup || 'N/A'}
+                </Badge>
+                <span className="text-xs text-navy/60 font-bold">Contact: {patientPhone}</span>
+                <span className="text-xs text-navy/60 font-bold">Address: {patient?.address || snapshot?.address || 'N/A'}</span>
               </div>
             </div>
           </div>

@@ -8,7 +8,8 @@ import {
   MoreVertical, Search, CheckCircle2,
   VideoOff, MessageSquare, AlertCircle,
   FileText, Play, Plus, Trash2, PlusCircle,
-  Heart, Thermometer, Info, User, Stethoscope
+  Heart, Thermometer, Info, User, Stethoscope,
+  Mail, Phone, MapPin, Droplet
 } from 'lucide-react';
 import { Card, Button, Badge, Avatar, Modal, Input } from '../../components/common';
 import doctorService from '../../services/doctorService';
@@ -20,6 +21,15 @@ const calculateAge = (dobString) => {
   const diffMs = Date.now() - dob.getTime();
   const ageDate = new Date(diffMs);
   return Math.abs(ageDate.getUTCFullYear() - 1970);
+};
+
+const getLocalDateString = (dateInput) => {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const DoctorDashboard = () => {
@@ -53,7 +63,7 @@ const DoctorDashboard = () => {
     return new Date(a.slot_id.start_datetime) - new Date(b.slot_id.start_datetime);
   });
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString(new Date());
 
   const processedAppointments = sortedAppointments.map((app, index) => {
     const isOnline = app.consultation_type === 'online';
@@ -69,10 +79,12 @@ const DoctorDashboard = () => {
       ...app,
       id: app._id,
       patient: app.patient_id?.name || app.patient_snapshot?.name || 'Walk-in Patient',
-      email: app.patient_id?.email || '',
+      email: app.patient_id?.email || app.patient_snapshot?.email || '',
       phone: app.patient_id?.phone || app.patient_snapshot?.phone || 'N/A',
       gender: app.patient_id?.gender || app.patient_snapshot?.gender || 'N/A',
       age: app.patient_id?.dob ? calculateAge(app.patient_id.dob) : (app.patient_snapshot?.age || 'N/A'),
+      bloodGroup: app.patient_id?.bloodGroup || app.patient_snapshot?.bloodGroup || 'N/A',
+      address: app.patient_id?.address || app.patient_snapshot?.address || 'N/A',
       date: dateStr,
       time: timeStr,
       token: index + 1,
@@ -83,17 +95,23 @@ const DoctorDashboard = () => {
   // Filter for today's appointments
   const todayAppointments = processedAppointments.filter(app => {
     if (!app.slot_id?.start_datetime) return false;
-    const appDate = new Date(app.slot_id.start_datetime).toISOString().split('T')[0];
+    const appDate = getLocalDateString(app.slot_id.start_datetime);
     return appDate === todayStr;
   });
 
   const isIndependent = !user?.doctorProfile?.hospitalId;
 
+  // Dynamically calculate average rating from real feedback ratings
+  const ratedAppointments = appointments.filter(a => a.feedback?.doctor_rating > 0);
+  const averageRatingStr = ratedAppointments.length > 0
+    ? (ratedAppointments.reduce((sum, a) => sum + a.feedback.doctor_rating, 0) / ratedAppointments.length).toFixed(1)
+    : 'N/A';
+
   const stats = [
     { label: 'Appointments Today', value: todayAppointments.length.toString(), icon: <Calendar size={20} />, color: 'text-blue-600', bg: 'bg-blue-50' },
     ...(isIndependent ? [{ label: 'Online Consultations', value: todayAppointments.filter(a => a.type === 'Online').length.toString().padStart(2, '0'), icon: <Video size={20} />, color: 'text-purple-600', bg: 'bg-purple-50' }] : []),
     { label: 'Completed Today', value: todayAppointments.filter(a => a.status === 'completed').length.toString(), icon: <CheckCircle2 size={20} />, color: 'text-[#0D9488]', bg: 'bg-[#0D9488]/10' },
-    { label: 'Average Rating', value: '4.9', icon: <Star size={20} />, color: 'text-amber-500', bg: 'bg-amber-50' }
+    { label: 'Average Rating', value: averageRatingStr, icon: <Star size={20} />, color: 'text-amber-500', bg: 'bg-amber-50' }
   ];
 
   const getStatusStyle = (status) => {
@@ -173,6 +191,22 @@ const DoctorDashboard = () => {
   // Find next upcoming patient in queue
   const nextPatient = todayAppointments.find(a => a.status === 'booked');
   const activeSession = todayAppointments.find(a => a.status === 'consulting');
+
+  const calculateWaitTime = (appointmentId) => {
+    const uncompleted = todayAppointments.filter(a => ['booked', 'consulting'].includes(a.status));
+    const idx = uncompleted.findIndex(a => a.id === appointmentId);
+    if (idx === -1) return 0;
+    
+    let mins = 0;
+    for (let i = 0; i < idx; i++) {
+      if (uncompleted[i].status === 'consulting') {
+        mins += 10;
+      } else {
+        mins += 15;
+      }
+    }
+    return mins;
+  };
 
   return (
     <>
@@ -387,7 +421,7 @@ const DoctorDashboard = () => {
                            <div className="flex flex-col">
                               <span className="text-[9px] font-black uppercase text-white/80 tracking-widest">Est. Wait Time</span>
                               <span className="text-xs font-black text-white flex items-center gap-2 mt-1">
-                                 <Clock size={14} className="text-[#0D9488]" /> 10 mins
+                                 <Clock size={14} className="text-[#0D9488]" /> {calculateWaitTime(nextPatient.id)} mins
                               </span>
                            </div>
                            <Button 
@@ -453,6 +487,12 @@ const DoctorDashboard = () => {
                          <span className="text-navy/40 uppercase text-[10px] tracking-widest">Preferred Time</span>
                          <span className="text-navy">{selectedAppointment.time}</span>
                       </div>
+                      {selectedAppointment.status === 'booked' && (
+                         <div className="flex justify-between items-center text-sm font-bold">
+                            <span className="text-navy/40 uppercase text-[10px] tracking-widest">Est. Wait Time</span>
+                            <span className="text-navy">{calculateWaitTime(selectedAppointment.id)} mins</span>
+                         </div>
+                      )}
                       <div className="pt-4 border-t border-gray-50">
                          <span className="text-navy/40 uppercase text-[10px] tracking-widest block mb-2">Reason for Visit</span>
                          <p className="text-sm font-bold text-navy leading-relaxed">{selectedAppointment.reason || 'No description provided'}</p>
@@ -462,41 +502,37 @@ const DoctorDashboard = () => {
 
                 <div className="space-y-6 text-left">
                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600"><Activity size={18} /></div>
-                      <h3 className="text-xs font-black text-navy uppercase tracking-widest">Patient Vitals</h3>
+                      <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600"><User size={18} /></div>
+                      <h3 className="text-xs font-black text-navy uppercase tracking-widest">Patient Details</h3>
                    </div>
                    <div className="grid grid-cols-2 gap-4">
                       <div className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm">
                          <div className="flex items-center gap-2 mb-2">
-                            <Heart size={14} className="text-red-500" />
-                            <span className="text-navy/40 uppercase text-[9px] font-black tracking-widest">BP</span>
+                            <Mail size={14} className="text-blue-500" />
+                            <span className="text-navy/40 uppercase text-[9px] font-black tracking-widest">Email</span>
                          </div>
-                         <p className="text-xl font-black text-navy leading-none">120/80</p>
-                         <span className="text-[10px] font-bold text-navy/30">mmHg</span>
+                         <p className="text-xs font-bold text-navy truncate" title={selectedAppointment.email}>{selectedAppointment.email || 'N/A'}</p>
                       </div>
                       <div className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm">
                          <div className="flex items-center gap-2 mb-2">
-                            <Activity size={14} className="text-blue-500" />
-                            <span className="text-navy/40 uppercase text-[9px] font-black tracking-widest">Pulse</span>
+                            <Phone size={14} className="text-green-500" />
+                            <span className="text-navy/40 uppercase text-[9px] font-black tracking-widest">Phone</span>
                          </div>
-                         <p className="text-xl font-black text-navy leading-none">72</p>
-                         <span className="text-[10px] font-bold text-navy/30">bpm</span>
+                         <p className="text-sm font-black text-navy">{selectedAppointment.phone || 'N/A'}</p>
                       </div>
                       <div className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm">
                          <div className="flex items-center gap-2 mb-2">
-                            <Thermometer size={14} className="text-orange-500" />
-                            <span className="text-navy/40 uppercase text-[9px] font-black tracking-widest">Temp</span>
+                            <Droplet size={14} className="text-red-500" />
+                            <span className="text-navy/40 uppercase text-[9px] font-black tracking-widest">Blood Group</span>
                          </div>
-                         <p className="text-xl font-black text-navy leading-none">98.6</p>
-                         <span className="text-[10px] font-bold text-navy/30">Fahrenheit</span>
+                         <p className="text-sm font-black text-navy">{selectedAppointment.bloodGroup || 'N/A'}</p>
                       </div>
                       <div className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm">
                          <div className="flex items-center gap-2 mb-2">
-                            <User size={14} className="text-purple-500" />
-                            <span className="text-navy/40 uppercase text-[9px] font-black tracking-widest">Weight</span>
+                            <MapPin size={14} className="text-orange-500" />
+                            <span className="text-navy/40 uppercase text-[9px] font-black tracking-widest">Address</span>
                          </div>
-                         <p className="text-xl font-black text-navy leading-none">70</p>
-                         <span className="text-[10px] font-bold text-navy/30">Kilograms</span>
+                         <p className="text-xs font-bold text-navy truncate" title={selectedAppointment.address}>{selectedAppointment.address || 'N/A'}</p>
                       </div>
                    </div>
                 </div>

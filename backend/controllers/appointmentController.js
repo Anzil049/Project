@@ -100,7 +100,7 @@ const getDoctorSlots = asyncHandler(async (req, res) => {
     });
 
     const grouped = slots.reduce((acc, slot) => {
-        const date = slot.start_datetime.toISOString().slice(0, 10);
+        const date = normalizeDateKey(slot.start_datetime);
         if (!acc[date]) acc[date] = [];
         acc[date].push(slot);
         return acc;
@@ -127,11 +127,40 @@ const getDoctorSlots = asyncHandler(async (req, res) => {
 });
 
 const bookAppointment = asyncHandler(async (req, res) => {
-    const { doctor_id, consultation_type, start_datetime, reason } = req.body;
+    const { doctor_id, consultation_type, start_datetime, reason, phone, email, dob, gender, bloodGroup, address } = req.body;
     const doctor = await Doctor.findById(doctor_id);
     if (!doctor) {
         res.status(404);
         throw new Error('Doctor not found');
+    }
+
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+
+    const patientPhone = phone || user.phone;
+    const patientEmail = email || user.email;
+    const patientDob = dob || user.dob;
+    const patientGender = gender || user.gender;
+    const patientBloodGroup = bloodGroup || user.bloodGroup;
+    const patientAddress = address || user.address;
+
+    if (!patientPhone || !patientEmail || !patientDob || !patientGender || !patientBloodGroup || !patientAddress) {
+        res.status(400);
+        throw new Error('All patient details (Phone, Email, DOB, Gender, Blood Group, Address) are required to book an appointment');
+    }
+
+    // Update profile if missing
+    let profileUpdated = false;
+    if (phone && user.phone !== phone) { user.phone = phone; profileUpdated = true; }
+    if (dob && (!user.dob || new Date(user.dob).getTime() !== new Date(dob).getTime())) { user.dob = new Date(dob); profileUpdated = true; }
+    if (gender && user.gender !== gender) { user.gender = gender; profileUpdated = true; }
+    if (bloodGroup && user.bloodGroup !== bloodGroup) { user.bloodGroup = bloodGroup; profileUpdated = true; }
+    if (address && user.address !== address) { user.address = address; profileUpdated = true; }
+    if (profileUpdated) {
+        await user.save();
     }
 
     assertConsultationAllowed(doctor, consultation_type);
@@ -139,12 +168,40 @@ const bookAppointment = asyncHandler(async (req, res) => {
 
     const availableSlots = await generateAvailableSlots(doctor_id, consultation_type);
     const requestedStart = new Date(start_datetime).toISOString();
-    const generatedSlot = availableSlots.find(slot => slot.start_datetime.toISOString() === requestedStart);
+    const requestedDateStr = normalizeDateKey(new Date(start_datetime));
 
-    if (!generatedSlot || generatedSlot.status !== 'available') {
+    // Find all slots on this date
+    const dateSlots = availableSlots.filter(s => normalizeDateKey(s.start_datetime) === requestedDateStr);
+    
+    // Find the first available slot on this date
+    const firstAvailable = dateSlots.find(s => s.status === 'available' && !s.is_reserved);
+    if (!firstAvailable) {
         res.status(400);
-        throw new Error('Selected slot is not available');
+        throw new Error('No slots available on the selected date');
     }
+
+    const patientAppointments = await Appointment.find({
+        patient_id: req.user.userId,
+        doctor_id,
+        status: { $in: ['booked', 'consulting', 'completed'] }
+    }).populate('slot_id');
+
+    const alreadyBooked = patientAppointments.some(app => {
+        if (!app.slot_id?.start_datetime) return false;
+        return normalizeDateKey(app.slot_id.start_datetime) === requestedDateStr;
+    });
+
+    if (alreadyBooked) {
+        res.status(400);
+        throw new Error('You already have an active appointment with this doctor on the selected date');
+    }
+
+    if (firstAvailable.start_datetime.toISOString() !== requestedStart) {
+        res.status(400);
+        throw new Error('You must book the earliest available slot on the selected date');
+    }
+
+    const generatedSlot = firstAvailable;
 
     try {
         await AppointmentSlot.updateOne(
@@ -515,11 +572,16 @@ const blockDoctorDate = asyncHandler(async (req, res) => {
 });
 
 const createOfflineAppointment = asyncHandler(async (req, res) => {
-    const { doctor_id, start_datetime, patientName, phone, age, gender, reason } = req.body;
+    const { doctor_id, start_datetime, patientName, phone, email, age, gender, bloodGroup, address, reason } = req.body;
     const doctor = await Doctor.findById(doctor_id);
     if (!doctor) {
         res.status(404);
         throw new Error('Doctor not found');
+    }
+
+    if (!patientName || !phone || !email || !age || !gender || !bloodGroup || !address) {
+        res.status(400);
+        throw new Error('All patient details (Name, Phone, Email, Age, Gender, Blood Group, Address) are required');
     }
 
     if (req.user.role === 'hospital' && doctor.hospitalId?.toString() !== req.user.userId.toString()) {
@@ -539,6 +601,88 @@ const createOfflineAppointment = asyncHandler(async (req, res) => {
     if (!generatedSlot || generatedSlot.status !== 'available') {
         res.status(400);
         throw new Error('Selected offline slot is not available');
+    }
+
+    // Find or register patient user
+    let patient = null;
+    if (email) {
+        patient = await User.findOne({ email: email.toLowerCase(), role: 'patient' });
+    }
+    if (!patient && phone) {
+        patient = await User.findOne({ phone, role: 'patient' });
+    }
+
+    if (!patient) {
+        const emailExists = await User.findOne({ email: email.toLowerCase() });
+        if (emailExists) {
+            res.status(400);
+            throw new Error('This email is already registered to another user account');
+        }
+
+        const defaultPassword = 'Patient123!';
+        patient = await User.create({
+            name: patientName,
+            email: email.toLowerCase(),
+            password: defaultPassword,
+            phone: phone,
+            role: 'patient',
+            isVerified: true,
+            isApproved: true,
+            isFirstLogin: true,
+            gender: gender,
+            bloodGroup: bloodGroup,
+            address: address,
+            dob: new Date(new Date().getFullYear() - Number(age), 0, 1),
+        });
+    } else {
+        let modified = false;
+        if (!patient.phone && phone) {
+            patient.phone = phone;
+            modified = true;
+        }
+        if (!patient.bloodGroup && bloodGroup) {
+            patient.bloodGroup = bloodGroup;
+            modified = true;
+        }
+        if (!patient.address && address) {
+            patient.address = address;
+            modified = true;
+        }
+        if (!patient.gender && gender) {
+            patient.gender = gender;
+            modified = true;
+        }
+        if (modified) {
+            await patient.save();
+        }
+    }
+
+    // Check same-day booking prevention
+    const queryConditions = [
+        { 'patient_snapshot.phone': phone }
+    ];
+    if (patient) {
+        queryConditions.push({ patient_id: patient._id });
+        if (email) {
+            queryConditions.push({ 'patient_snapshot.email': email.toLowerCase() });
+        }
+    }
+
+    const patientAppointments = await Appointment.find({
+        doctor_id,
+        status: { $in: ['booked', 'consulting', 'completed'] },
+        $or: queryConditions
+    }).populate('slot_id');
+
+    const requestedDateStr = normalizeDateKey(generatedSlot.start_datetime);
+    const alreadyBooked = patientAppointments.some(app => {
+        if (!app.slot_id?.start_datetime) return false;
+        return normalizeDateKey(app.slot_id.start_datetime) === requestedDateStr;
+    });
+
+    if (alreadyBooked) {
+        res.status(400);
+        throw new Error('This patient already has an active appointment with this doctor on the selected date');
     }
 
     try {
@@ -578,15 +722,10 @@ const createOfflineAppointment = asyncHandler(async (req, res) => {
         throw new Error('Selected slot is already booked');
     }
 
-    let patient = null;
-    if (phone) {
-        patient = await User.findOne({ phone, role: 'patient' }).select('_id');
-    }
-
     const tokenNumber = await getNextTokenNumber(doctor_id, slot.start_datetime);
     const appointment = await Appointment.create({
-        patient_id: patient?._id,
-        patient_snapshot: { name: patientName, phone, age, gender },
+        patient_id: patient._id,
+        patient_snapshot: { name: patientName, phone, email: email.toLowerCase(), age, gender, bloodGroup, address },
         doctor_id,
         consultation_type: 'offline',
         slot_id: slot._id,

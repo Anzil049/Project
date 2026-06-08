@@ -15,11 +15,20 @@ const statusClass = (status) => {
   }
 };
 
+const getLocalDateString = (dateInput) => {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const HospitalAppointments = () => {
   const [doctors, setDoctors] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [doctorId, setDoctorId] = useState('all');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(getLocalDateString(new Date()));
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -41,7 +50,7 @@ const HospitalAppointments = () => {
 
   const filtered = useMemo(() => appointments.filter(item => {
     const itemDoctorId = item.doctor_id?._id || item.doctor_id;
-    const itemDate = item.slot_id?.start_datetime ? new Date(item.slot_id.start_datetime).toISOString().slice(0, 10) : '';
+    const itemDate = item.slot_id?.start_datetime ? getLocalDateString(item.slot_id.start_datetime) : '';
     const patient = item.patient_id?.name || item.patient_snapshot?.name || '';
     return (doctorId === 'all' || itemDoctorId?.toString() === doctorId)
       && itemDate === date

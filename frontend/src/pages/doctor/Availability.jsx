@@ -114,6 +114,20 @@ const SchedulePanel = ({ title, icon, consultationType, disabled, schedules, onC
                 </select>
               </label>
               <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase text-navy/35">Duration (Minutes)</span>
+                <input
+                  disabled={disabled}
+                  type="number"
+                  min="5"
+                  value={schedule.slot_duration}
+                  onChange={(e) => updateSchedule(index, 'slot_duration', Number(e.target.value))}
+                  className="w-full rounded-2xl bg-white border border-gray-100 px-4 py-3 text-sm font-bold text-navy outline-none"
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="space-y-2">
                 <span className="text-[10px] font-black uppercase text-navy/35">Starts</span>
                 <input
                   disabled={disabled}
@@ -130,32 +144,6 @@ const SchedulePanel = ({ title, icon, consultationType, disabled, schedules, onC
                   type="time"
                   value={schedule.end_time}
                   onChange={(e) => updateSchedule(index, 'end_time', e.target.value)}
-                  className="w-full rounded-2xl bg-white border border-gray-100 px-4 py-3 text-sm font-bold text-navy outline-none"
-                />
-              </label>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <label className="space-y-2">
-                <span className="text-[10px] font-black uppercase text-navy/35">Duration</span>
-                <input
-                  disabled={disabled}
-                  type="number"
-                  min="5"
-                  value={schedule.slot_duration}
-                  onChange={(e) => updateSchedule(index, 'slot_duration', Number(e.target.value))}
-                  className="w-full rounded-2xl bg-white border border-gray-100 px-4 py-3 text-sm font-bold text-navy outline-none"
-                />
-              </label>
-              <label className="space-y-2">
-                <span className="text-[10px] font-black uppercase text-navy/35">Follow-up %</span>
-                <input
-                  disabled={disabled}
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={schedule.follow_up_percentage}
-                  onChange={(e) => updateSchedule(index, 'follow_up_percentage', Number(e.target.value))}
                   className="w-full rounded-2xl bg-white border border-gray-100 px-4 py-3 text-sm font-bold text-navy outline-none"
                 />
               </label>

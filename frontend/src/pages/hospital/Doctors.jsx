@@ -942,7 +942,7 @@ const HospitalDoctors = () => {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 gap-3">
                           <label className="space-y-1">
                             <span className="text-[9px] font-black uppercase text-navy/35">Day</span>
                             <select
@@ -953,6 +953,19 @@ const HospitalDoctors = () => {
                               {allDays.map(day => <option key={day} value={day}>{day}</option>)}
                             </select>
                           </label>
+                          <label className="space-y-1">
+                            <span className="text-[9px] font-black uppercase text-navy/35">Duration (mins)</span>
+                            <input
+                              type="number"
+                              min="5"
+                              value={schedule.slot_duration}
+                              onChange={(e) => handleScheduleRowChange(index, 'slot_duration', Number(e.target.value))}
+                              className="w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 text-xs font-bold text-navy outline-none"
+                            />
+                          </label>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
                           <label className="space-y-1">
                             <span className="text-[9px] font-black uppercase text-navy/35">Starts</span>
                             <input
@@ -968,30 +981,6 @@ const HospitalDoctors = () => {
                               type="time"
                               value={schedule.end_time}
                               onChange={(e) => handleScheduleRowChange(index, 'end_time', e.target.value)}
-                              className="w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 text-xs font-bold text-navy outline-none"
-                            />
-                          </label>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <label className="space-y-1">
-                            <span className="text-[9px] font-black uppercase text-navy/35">Duration (mins)</span>
-                            <input
-                              type="number"
-                              min="5"
-                              value={schedule.slot_duration}
-                              onChange={(e) => handleScheduleRowChange(index, 'slot_duration', Number(e.target.value))}
-                              className="w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 text-xs font-bold text-navy outline-none"
-                            />
-                          </label>
-                          <label className="space-y-1">
-                            <span className="text-[9px] font-black uppercase text-navy/35">Follow-up %</span>
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={schedule.follow_up_percentage}
-                              onChange={(e) => handleScheduleRowChange(index, 'follow_up_percentage', Number(e.target.value))}
                               className="w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 text-xs font-bold text-navy outline-none"
                             />
                           </label>

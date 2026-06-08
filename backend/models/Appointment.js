@@ -8,8 +8,11 @@ const appointmentSchema = mongoose.Schema({
     patient_snapshot: {
         name: String,
         phone: String,
+        email: String,
         age: String,
         gender: String,
+        bloodGroup: String,
+        address: String,
     },
     doctor_id: {
         type: mongoose.Schema.Types.ObjectId,
