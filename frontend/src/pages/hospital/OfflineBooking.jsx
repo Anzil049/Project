@@ -46,6 +46,27 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [isBookingClosed, setIsBookingClosed] = useState(false);
+
+  const handleToggleBooking = async () => {
+    if (!formData.doctorId || !formData.date) return;
+    const action = isBookingClosed ? 'open' : 'close';
+    try {
+      setLoading(true);
+      await doctorService.toggleCloseBooking({
+        doctor_id: formData.doctorId,
+        date: formData.date,
+        action,
+        consultation_type: 'all'
+      });
+      toast.success(`Booking successfully ${action === 'close' ? 'closed/stopped' : 'reopened'}!`);
+      await fetchSlotsAndQueue();
+    } catch (err) {
+      toast.error(err.response?.data?.message || `Failed to ${action} booking`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // 1. Fetch doctors on mount
   useEffect(() => {
@@ -86,13 +107,21 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
     if (!formData.doctorId) return;
     try {
       // Fetch slots
-      const slotsData = await doctorService.getDoctorSlots(formData.doctorId, 'offline');
+      const slotsData = await doctorService.getDoctorSlots(formData.doctorId, 'offline', false, true);
       const daySlots = slotsData.find(s => s.date === formData.date);
-      const times = daySlots ? daySlots.times : [];
+      const allTimes = daySlots ? daySlots.times : [];
+
+      // Client-side guard: filter out slots whose end_datetime has already passed
+      const now = new Date();
+      const times = allTimes.filter(s => {
+        const endTime = s.end_datetime ? new Date(s.end_datetime) : null;
+        // If no end_datetime, assume 15-min duration from start
+        const slotEnd = endTime || new Date(new Date(s.start_datetime).getTime() + 15 * 60 * 1000);
+        return slotEnd > now;
+      });
+
       setAvailableSlots(times);
-      
-      const nextAvailableSlot = times.find(s => s.status === 'available');
-      setSelectedSlot(nextAvailableSlot || null);
+      setIsBookingClosed(daySlots ? !!daySlots.bookingClosed : false);
 
       // Fetch appointments
       let apps = [];
@@ -113,7 +142,46 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
         return appDate === formData.date;
       });
 
-      setAppointmentsList(filtered);
+      // Filter out cancelled bookings on slots that have since been booked/active
+      const activeAndVisible = filtered.filter(app => {
+        if (app.status !== 'cancelled') return true;
+        const slotId = app.slot_id?._id || app.slot_id;
+        const hasActiveBooking = filtered.some(other => {
+          const otherSlotId = other.slot_id?._id || other.slot_id;
+          return otherSlotId?.toString() === slotId?.toString() &&
+                 ['booked', 'consulting', 'completed'].includes(other.status);
+        });
+        return !hasActiveBooking;
+      });
+
+      setAppointmentsList(activeAndVisible);
+
+      // Auto-select next available slot:
+      // Only consider slots that haven't ended yet
+      const nowTime = new Date().getTime();
+      const availableNotExpired = times.filter(
+        s => s.status === 'available' && new Date(s.start_datetime).getTime() >= nowTime - 60000 // allow 1 min grace
+      );
+
+      // Prefer the first available slot after the latest active booking
+      const activeApps = activeAndVisible.filter(app => app.status !== 'cancelled' && app.slot_id?.start_datetime);
+      let nextAvailableSlot = null;
+      if (activeApps.length > 0) {
+        const latestStart = activeApps.reduce((latest, app) => {
+          const appTime = new Date(app.slot_id.start_datetime).getTime();
+          return appTime > latest ? appTime : latest;
+        }, 0);
+        nextAvailableSlot = availableNotExpired.find(
+          s => new Date(s.start_datetime).getTime() > latestStart
+        );
+      }
+
+      // Fallback: first available non-expired slot
+      if (!nextAvailableSlot) {
+        nextAvailableSlot = availableNotExpired[0] || null;
+      }
+
+      setSelectedSlot(nextAvailableSlot || null);
     } catch (err) {
       console.error('Error loading slots/queue:', err);
     }
@@ -264,7 +332,7 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                             <input 
                                type="date"
                                value={formData.date}
-                               min={new Date().toISOString().split('T')[0]}
+                               min={getLocalDateString(new Date())}
                                onChange={(e) => setFormData({...formData, date: e.target.value})}
                                className="w-full pl-14 pr-6 py-5 bg-gray-50 border-none rounded-[24px] text-sm font-bold text-navy outline-none focus:ring-2 focus:ring-[#0D9488]/10 transition-all"
                             />
@@ -272,40 +340,81 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                       </div>
                    </div>
 
-                    {/* Token & Slot Allocation Info Card */}
-                    <div className="space-y-3">
-                       <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.2em] ml-1">Token & Slot Allocation</label>
-                       {selectedSlot ? (
-                         <div className="bg-slate-50 border border-slate-100 p-6 rounded-[24px] space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                               <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm">
-                                  <span className="text-[9px] font-black text-navy/40 uppercase tracking-wider block">Last Booked Token</span>
-                                  <span className="text-xl font-black text-navy">
-                                     {sortedQueue.length > 0 ? `T-${sortedQueue[sortedQueue.length - 1].token_number}` : 'None'}
-                                  </span>
-                               </div>
-                               <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm">
-                                  <span className="text-[9px] font-black text-[#0D9488] uppercase tracking-wider block">Next Token to Book</span>
-                                  <span className="text-xl font-black text-[#0D9488]">
-                                     T-{(sortedQueue[sortedQueue.length - 1]?.token_number || 0) + 1}
-                                  </span>
-                               </div>
-                            </div>
-                            <div className="flex items-center justify-between pt-2">
-                               <span className="text-xs font-bold text-navy/60">Automatically Allocated Slot</span>
-                               <span className="text-sm font-black text-navy bg-white border border-gray-150 px-4 py-2 rounded-xl shadow-sm">
-                                  {selectedSlot.time}
-                               </span>
-                            </div>
-                         </div>
-                       ) : (
-                         <div className="p-6 bg-red-50 text-red-700/80 rounded-[24px] flex items-center gap-3 border border-red-100/50">
-                            <AlertCircle size={18} />
-                            <span className="text-xs font-black uppercase tracking-wide">No slots available on this day.</span>
-                         </div>
-                       )}
-                    </div>
+                     {/* Token & Slot Allocation Info Card */}
+                     <div className="space-y-3">
+                        <div className="flex items-center justify-between ml-1">
+                           <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.2em]">Token & Slot Allocation</label>
+                           {formData.doctorId && formData.date && (
+                              <button
+                                 type="button"
+                                 onClick={handleToggleBooking}
+                                 className={`text-[10px] font-black uppercase tracking-wider px-4 py-1.5 rounded-full transition-all border ${
+                                    isBookingClosed
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                    : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                                 }`}
+                              >
+                                 {isBookingClosed ? 'Open Booking' : 'Close Booking'}
+                              </button>
+                           )}
+                        </div>
+                        {isBookingClosed ? (
+                          <div className="p-6 bg-red-50 text-red-700 border border-red-100/80 rounded-[24px] flex flex-col gap-2">
+                             <div className="flex items-center gap-3">
+                                <AlertCircle size={18} className="text-red-500" />
+                                <span className="text-xs font-black uppercase tracking-wide">Booking Has Been Stopped</span>
+                             </div>
+                             <p className="text-[10px] font-medium text-red-600/70 leading-normal uppercase">
+                                Registration has been closed manually by receptionist or provider. No slots can be booked.
+                             </p>
+                          </div>
+                        ) : selectedSlot ? (() => {
+                           // Compute correct token: position of selectedSlot in full sorted slot list
+                           const allSortedSlots = [...availableSlots].sort(
+                             (a, b) => new Date(a.start_datetime) - new Date(b.start_datetime)
+                           );
+                           const slotPosition = allSortedSlots.findIndex(
+                             s => new Date(s.start_datetime).getTime() === new Date(selectedSlot.start_datetime).getTime()
+                           );
+                           // nextToken is the 1-indexed position of the selected slot in today's slot list
+                           const nextToken = slotPosition !== -1 ? slotPosition + 1 : '?';
+                           // Last booked token: max token_number among appointments for today
+                           const lastToken = appointmentsList.length > 0
+                             ? Math.max(...appointmentsList.map(a => a.token_number || 0))
+                             : 0;
+                           return (
+                          <div className="bg-slate-50 border border-slate-100 p-6 rounded-[24px] space-y-4">
+                             <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm">
+                                   <span className="text-[9px] font-black text-navy/40 uppercase tracking-wider block">Last Booked Token</span>
+                                   <span className="text-xl font-black text-navy">
+                                      {lastToken > 0 ? `T-${lastToken}` : 'None'}
+                                   </span>
+                                </div>
+                                <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm">
+                                   <span className="text-[9px] font-black text-[#0D9488] uppercase tracking-wider block">Next Token to Book</span>
+                                   <span className="text-xl font-black text-[#0D9488]">
+                                      T-{nextToken}
+                                   </span>
+                                </div>
+                             </div>
+                             <div className="flex items-center justify-between pt-2">
+                                <span className="text-xs font-bold text-navy/60">Automatically Allocated Slot</span>
+                                <span className="text-sm font-black text-navy bg-white border border-gray-150 px-4 py-2 rounded-xl shadow-sm">
+                                   {selectedSlot.time}
+                                </span>
+                             </div>
+                          </div>
+                           );
+                        })() : (
+                          <div className="p-6 bg-red-50 text-red-700/80 rounded-[24px] flex items-center gap-3 border border-red-100/50">
+                             <AlertCircle size={18} />
+                             <span className="text-xs font-black uppercase tracking-wide">No slots available on this day.</span>
+                          </div>
+                        )}
+                     </div>
 
+                     <fieldset disabled={isBookingClosed} className="space-y-8 p-0 m-0 border-none">
                    {/* Patient Info Fields */}
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       {/* Patient Name */}
@@ -443,22 +552,26 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                       />
                    </div>
 
-                   <Button 
-                      type="submit" 
-                      loading={submitting}
-                      className={`w-full py-6 rounded-[24px] text-sm font-black uppercase tracking-[0.2em] shadow-2xl transition-all duration-500 ${
-                         bookingSuccess 
-                         ? 'bg-green-500 hover:bg-green-600 scale-[0.98]' 
-                         : 'bg-[#0D9488] hover:bg-[#0D9488]/90 shadow-[#0D9488]/20 hover:-translate-y-1'
-                      }`}
-                   >
-                     {bookingSuccess ? (
-                        <span className="flex items-center gap-3"><CheckCircle2 size={24} /> Walk-in Registered</span>
-                     ) : (
-                        <span className="flex items-center gap-3"><Activity size={20} /> Register Walk-In Booking</span>
-                     )}
-                   </Button>
-                </form>
+                    <Button 
+                       type="submit" 
+                       loading={submitting}
+                       disabled={isBookingClosed}
+                       className={`w-full py-6 rounded-[24px] text-sm font-black uppercase tracking-[0.2em] shadow-2xl transition-all duration-500 ${
+                          isBookingClosed
+                          ? 'bg-gray-300 text-gray-400 cursor-not-allowed shadow-none'
+                          : bookingSuccess 
+                          ? 'bg-green-500 hover:bg-green-600 scale-[0.98]' 
+                          : 'bg-[#0D9488] hover:bg-[#0D9488]/90 shadow-[#0D9488]/20 hover:-translate-y-1'
+                       }`}
+                    >
+                      {bookingSuccess ? (
+                         <span className="flex items-center gap-3"><CheckCircle2 size={24} /> Walk-in Registered</span>
+                      ) : (
+                         <span className="flex items-center gap-3"><Activity size={20} /> Register Walk-In Booking</span>
+                      )}
+                    </Button>
+                     </fieldset>
+                 </form>
              </Card>
 
              {/* Guidance info */}
@@ -512,7 +625,7 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                                      isConsulting ? 'bg-[#0D9488] text-white' : 'bg-navy text-white'
                                   }`}>
                                      <span className="text-[7px] text-white/50 leading-none">Token</span>
-                                     T-{idx + 1}
+                                     T-{app.token_number || '-'}
                                   </div>
                                   <div>
                                      <p className="font-bold text-navy text-xs leading-tight">

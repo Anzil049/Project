@@ -58,7 +58,18 @@ const DoctorDashboard = () => {
     fetchDashboardData();
   }, []);
 
-  const sortedAppointments = [...appointments].sort((a, b) => {
+  const activeAndVisibleAppointments = appointments.filter(app => {
+    if (app.status !== 'cancelled') return true;
+    const slotId = app.slot_id?._id || app.slot_id;
+    const hasActiveBooking = appointments.some(other => {
+      const otherSlotId = other.slot_id?._id || other.slot_id;
+      return otherSlotId?.toString() === slotId?.toString() &&
+             ['booked', 'consulting', 'completed'].includes(other.status);
+    });
+    return !hasActiveBooking;
+  });
+
+  const sortedAppointments = [...activeAndVisibleAppointments].sort((a, b) => {
     if (!a.slot_id?.start_datetime || !b.slot_id?.start_datetime) return 0;
     return new Date(a.slot_id.start_datetime) - new Date(b.slot_id.start_datetime);
   });
@@ -87,7 +98,7 @@ const DoctorDashboard = () => {
       address: app.patient_id?.address || app.patient_snapshot?.address || 'N/A',
       date: dateStr,
       time: timeStr,
-      token: index + 1,
+      token: app.token_number,
       type: isOnline ? 'Online' : 'Physical'
     };
   });
@@ -108,8 +119,8 @@ const DoctorDashboard = () => {
     : 'N/A';
 
   const stats = [
-    { label: 'Appointments Today', value: todayAppointments.length.toString(), icon: <Calendar size={20} />, color: 'text-blue-600', bg: 'bg-blue-50' },
-    ...(isIndependent ? [{ label: 'Online Consultations', value: todayAppointments.filter(a => a.type === 'Online').length.toString().padStart(2, '0'), icon: <Video size={20} />, color: 'text-purple-600', bg: 'bg-purple-50' }] : []),
+    { label: 'Appointments Today', value: todayAppointments.filter(a => a.status !== 'cancelled').length.toString(), icon: <Calendar size={20} />, color: 'text-blue-600', bg: 'bg-blue-50' },
+    ...(isIndependent ? [{ label: 'Online Consultations', value: todayAppointments.filter(a => a.type === 'Online' && a.status !== 'cancelled').length.toString().padStart(2, '0'), icon: <Video size={20} />, color: 'text-purple-600', bg: 'bg-purple-50' }] : []),
     { label: 'Completed Today', value: todayAppointments.filter(a => a.status === 'completed').length.toString(), icon: <CheckCircle2 size={20} />, color: 'text-[#0D9488]', bg: 'bg-[#0D9488]/10' },
     { label: 'Average Rating', value: averageRatingStr, icon: <Star size={20} />, color: 'text-amber-500', bg: 'bg-amber-50' }
   ];

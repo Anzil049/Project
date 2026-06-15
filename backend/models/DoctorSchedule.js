@@ -13,8 +13,12 @@ const doctorScheduleSchema = mongoose.Schema({
     },
     day_of_week: {
         type: String,
-        required: true,
-        enum: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        required: false,
+        enum: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', null],
+    },
+    custom_date: {
+        type: String,
+        default: null,
     },
     start_time: {
         type: String,
@@ -34,17 +38,13 @@ const doctorScheduleSchema = mongoose.Schema({
         default: 1,
         min: 1,
     },
-    follow_up_percentage: {
-        type: Number,
-        default: 0,
-        min: 0,
-        max: 100,
-    },
+
 }, {
     timestamps: true,
 });
 
 doctorScheduleSchema.index({ doctor_id: 1, consultation_type: 1, day_of_week: 1 });
+doctorScheduleSchema.index({ doctor_id: 1, consultation_type: 1, custom_date: 1 });
 
 const DoctorSchedule = mongoose.models.DoctorSchedule || mongoose.model('DoctorSchedule', doctorScheduleSchema);
 

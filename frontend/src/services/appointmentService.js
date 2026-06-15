@@ -60,6 +60,10 @@ const appointmentService = {
     const response = await api.post('/appointments/block-date', payload);
     return response.data;
   },
+  toggleCloseBooking: async (payload) => {
+    const response = await api.post('/appointments/toggle-close-booking', payload);
+    return response.data;
+  },
 };
 
 export default appointmentService;

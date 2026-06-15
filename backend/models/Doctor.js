@@ -78,6 +78,21 @@ const doctorSchema = mongoose.Schema({
     qualifications: {
         type: String,
     },
+    custom_date_mode: {
+        type: Boolean,
+        default: false,
+    },
+    closed_bookings: [{
+        date: {
+            type: String,
+            required: true,
+        },
+        consultation_type: {
+            type: String,
+            enum: ['online', 'offline', 'all'],
+            default: 'all',
+        }
+    }],
 }, {
     timestamps: true,
 });
@@ -91,6 +106,50 @@ doctorSchema.pre('save', async function() {
         if (this.onlineConsultation === undefined || this.onlineConsultation === null) {
             this.onlineConsultation = true;
         }
+    }
+});
+
+// Centralized helper to cascade delete related entities when doctor(s) are deleted
+async function cascadeDeleteDoctors(doctorIds) {
+    if (!doctorIds || doctorIds.length === 0) return;
+
+    try {
+        const DoctorSchedule = mongoose.model('DoctorSchedule');
+        const AppointmentSlot = mongoose.model('AppointmentSlot');
+        const Appointment = mongoose.model('Appointment');
+
+        // Delete schedules
+        await DoctorSchedule.deleteMany({ doctor_id: { $in: doctorIds } });
+
+        // Delete slots
+        await AppointmentSlot.deleteMany({ doctor_id: { $in: doctorIds } });
+
+        // Delete appointments
+        await Appointment.deleteMany({ doctor_id: { $in: doctorIds } });
+    } catch (err) {
+        console.error('Error in cascadeDeleteDoctors helper:', err);
+    }
+}
+
+// Automatically delete doctor-related collections (schedules, slots, appointments) when a doctor is deleted
+doctorSchema.pre(['findOneAndDelete', 'deleteOne', 'deleteMany'], { document: false, query: true }, async function() {
+    try {
+        const filter = this.getQuery();
+        const doctors = await this.model.find(filter);
+        const doctorIds = doctors.map(d => d._id);
+        if (doctorIds.length > 0) {
+            await cascadeDeleteDoctors(doctorIds);
+        }
+    } catch (err) {
+        console.error('Error in Doctor query delete pre-hook:', err);
+    }
+});
+
+doctorSchema.pre('deleteOne', { document: true, query: false }, async function() {
+    try {
+        await cascadeDeleteDoctors([this._id]);
+    } catch (err) {
+        console.error('Error in Doctor document deleteOne pre-hook:', err);
     }
 });
 

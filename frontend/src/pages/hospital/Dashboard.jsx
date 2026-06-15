@@ -41,13 +41,26 @@ const HospitalDashboard = () => {
     load();
   }, []);
 
-  const todayAppointments = useMemo(() => appointments.filter(item => isToday(item.slot_id?.start_datetime)), [appointments]);
-  const revenueToday = todayAppointments.reduce((sum, item) => sum + Number(item.payment?.paid_amount || 0), 0);
+  const activeAndVisibleAppointments = useMemo(() => {
+    return appointments.filter(app => {
+      if (app.status !== 'cancelled') return true;
+      const slotId = app.slot_id?._id || app.slot_id;
+      const hasActiveBooking = appointments.some(other => {
+        const otherSlotId = other.slot_id?._id || other.slot_id;
+        return otherSlotId?.toString() === slotId?.toString() &&
+               ['booked', 'consulting', 'completed'].includes(other.status);
+      });
+      return !hasActiveBooking;
+    });
+  }, [appointments]);
+
+  const todayAppointments = useMemo(() => activeAndVisibleAppointments.filter(item => isToday(item.slot_id?.start_datetime)), [activeAndVisibleAppointments]);
+  const revenueToday = todayAppointments.filter(item => item.status !== 'cancelled').reduce((sum, item) => sum + Number(item.payment?.paid_amount || 0), 0);
   const activePatients = todayAppointments.filter(item => ['booked', 'consulting'].includes(item.status)).length;
 
   const stats = [
     { label: 'Doctors', value: doctors.length, icon: Stethoscope, color: 'text-blue-600 bg-blue-50' },
-    { label: "Today's Appointments", value: todayAppointments.length, icon: Calendar, color: 'text-[#0D9488] bg-teal-50' },
+    { label: "Today's Appointments", value: todayAppointments.filter(item => item.status !== 'cancelled').length, icon: Calendar, color: 'text-[#0D9488] bg-teal-50' },
     { label: 'Active Queue', value: activePatients, icon: Users, color: 'text-orange-600 bg-orange-50' },
     { label: 'Booking Fees Today', value: `Rs ${revenueToday}`, icon: IndianRupee, color: 'text-purple-600 bg-purple-50' },
   ];
@@ -98,7 +111,12 @@ const HospitalDashboard = () => {
           ) : (
             <div className="divide-y divide-gray-100">
               {todayAppointments
-                .sort((a, b) => (a.token_number || 0) - (b.token_number || 0))
+                .sort((a, b) => {
+                  const timeA = a.slot_id?.start_datetime ? new Date(a.slot_id.start_datetime).getTime() : 0;
+                  const timeB = b.slot_id?.start_datetime ? new Date(b.slot_id.start_datetime).getTime() : 0;
+                  if (timeA !== timeB) return timeA - timeB;
+                  return (a.token_number || 0) - (b.token_number || 0);
+                })
                 .slice(0, 8)
                 .map(item => {
                   const doctorName = item.doctor_id?.user?.name || 'Doctor';

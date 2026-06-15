@@ -31,6 +31,7 @@ const UnifiedBookingHub = () => {
   const [showPayment, setShowPayment] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [bookedAppointment, setBookedAppointment] = useState(null);
 
   const [patientDetails, setPatientDetails] = useState({
      phone: '',
@@ -66,7 +67,7 @@ const UnifiedBookingHub = () => {
         const transformed = data.map(d => ({
           id: d._id || d.id,
           name: d.user?.name || 'Dr. Specialist',
-          specialization: d.specialization,
+          specialization: d.specialization || '',
           fee: d.fee || 500,
           rating: 4.8,
           experience: d.experience,
@@ -107,8 +108,8 @@ const UnifiedBookingHub = () => {
   }, [location.state]);
 
   const filteredDoctors = doctors.filter(d => 
-    d.name.toLowerCase().includes(search.toLowerCase()) || 
-    d.specialization.toLowerCase().includes(search.toLowerCase())
+    (d.name || '').toLowerCase().includes(search.toLowerCase()) || 
+    (d.specialization || '').toLowerCase().includes(search.toLowerCase())
   );
 
   const selectDoctor = (doc) => {
@@ -120,7 +121,12 @@ const UnifiedBookingHub = () => {
 
   const handleDateSelect = (slot) => {
     setSelectedDate(slot.date);
-    const earliestTime = slot.times.find(t => t.status === 'available' && !t.is_reserved);
+    if (slot.bookingClosed) {
+      setSelectedTime(null);
+      setSelectedSlot(null);
+      return;
+    }
+    const earliestTime = slot.times?.find(t => t.status === 'available' && !t.is_reserved);
     if (earliestTime) {
       setSelectedTime(earliestTime.time);
       setSelectedSlot(earliestTime);
@@ -157,7 +163,8 @@ const UnifiedBookingHub = () => {
     if (availableSlots && availableSlots.length > 0) {
       let found = null;
       for (const slot of availableSlots) {
-        const firstAvailableTime = slot.times.find(t => t.status === 'available' && !t.is_reserved);
+        if (slot.bookingClosed) continue;
+        const firstAvailableTime = slot.times?.find(t => t.status === 'available' && !t.is_reserved);
         if (firstAvailableTime) {
           found = { date: slot.date, slot: firstAvailableTime };
           break;
@@ -194,7 +201,7 @@ const UnifiedBookingHub = () => {
     setProcessing(true);
     try {
       const consultationType = activeTab === 'online' ? 'online' : 'offline';
-      await doctorService.bookAppointment({
+      const res = await doctorService.bookAppointment({
         doctor_id: selectedDoc.id,
         consultation_type: consultationType,
         start_datetime: selectedSlot.start_datetime,
@@ -205,6 +212,8 @@ const UnifiedBookingHub = () => {
         bloodGroup: patientDetails.bloodGroup,
         address: patientDetails.address,
       });
+
+      setBookedAppointment(res.appointment);
 
       // Update frontend user store
       updateUser({
@@ -225,7 +234,12 @@ const UnifiedBookingHub = () => {
     }
   };
 
-  const fmtDate = (ds) => new Date(ds).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  const fmtDate = (ds) => {
+    if (!ds) return '';
+    const date = new Date(ds);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  };
 
   return (
     <DashboardLayout title="Booking Hub" role="patient">
@@ -256,6 +270,10 @@ const UnifiedBookingHub = () => {
                     <div className="flex justify-between text-[10px] font-black uppercase text-navy/40">
                        <span>Reference ID</span>
                        <span className="text-navy">{Math.random().toString(36).substr(2, 9).toUpperCase()}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-black uppercase text-navy/40">
+                       <span>Token Number</span>
+                       <span className="text-navy font-bold text-[#0D9488]">T-{bookedAppointment?.token_number || '-'}</span>
                     </div>
                     <div className="flex justify-between text-[10px] font-black uppercase text-navy/40">
                        <span>Service Type</span>
@@ -357,10 +375,11 @@ const UnifiedBookingHub = () => {
                  <div className="lg:col-span-12 xl:col-span-5 relative">
                     <div className="sticky top-32 space-y-6">
                        {selectedDoc ? (
-                          <div className="bg-white rounded-[40px] p-8 shadow-sm border border-gray-100 space-y-8 animate-in fade-in duration-500">
-                             <div>
-                                <h3 className="text-xs font-black uppercase tracking-widest text-navy/30 mb-6">Schedule Selection</h3>
-                                <div className="space-y-3">
+                          <div className="bg-white rounded-[40px] p-8 shadow-sm border border-gray-100 flex flex-col max-h-[650px] animate-in fade-in duration-500">
+                             <div className="flex-1 overflow-y-auto pr-1 scroller-hidden space-y-6">
+                                <div>
+                                   <h3 className="text-xs font-black uppercase tracking-widest text-navy/30 mb-6">Schedule Selection</h3>
+                                   <div className="space-y-3">
                                    {slotsLoading ? (
                                      <div className="py-10 text-center bg-gray-50 rounded-2xl">
                                         <div className="animate-spin rounded-full h-7 w-7 border-t-4 border-primary mx-auto mb-4"></div>
@@ -382,40 +401,141 @@ const UnifiedBookingHub = () => {
                                          </button>
                                          
                                          {selectedDate === slot.date && (
-                                            <div className="bg-[#0D9488]/5 border border-[#0D9488]/10 rounded-[32px] p-6 text-left space-y-4 animate-in fade-in duration-300">
-                                               {selectedTime && selectedSlot ? (
-                                                  <>
-                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-10 h-10 rounded-xl bg-[#0D9488]/10 flex items-center justify-center text-[#0D9488]">
-                                                           <Clock size={18} />
-                                                        </div>
-                                                        <div>
-                                                           <p className="text-[9px] font-black uppercase tracking-widest text-navy/40 leading-none mb-1">Time Slot (Sequential Allocation)</p>
-                                                           <p className="text-sm font-black text-[#0D9488] uppercase leading-none">{selectedTime}</p>
-                                                        </div>
-                                                     </div>
-                                                     <div className="flex items-start gap-3 border-t border-[#0D9488]/10 pt-4">
-                                                        <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 mt-0.5 shrink-0">
-                                                           <Info size={18} />
-                                                        </div>
-                                                        <div>
-                                                           <p className="text-[9px] font-black uppercase tracking-widest text-navy/40 leading-none mb-1">Queue & Est. Consultation Start</p>
-                                                           <p className="text-xs font-black text-navy leading-normal">
-                                                              Estimated to start at <span className="text-[#0D9488]">{selectedTime}</span>
-                                                           </p>
-                                                           <p className="text-[10px] font-medium text-navy/40 mt-1 leading-normal">
-                                                              You are patient number <span className="font-bold text-navy">#{selectedSlot.slot_index + 1}</span> for this session. Slots are allocated chronologically on a first-come, first-served basis for this day.
-                                                           </p>
-                                                        </div>
-                                                     </div>
-                                                  </>
-                                               ) : (
-                                                  <div className="py-2 text-center">
-                                                     <p className="text-xs font-bold text-red-500 italic">No slots available on this day.</p>
-                                                  </div>
-                                               )}
-                                            </div>
-                                         )}
+                                              <div className="bg-[#0D9488]/5 border border-[#0D9488]/10 rounded-[32px] p-6 text-left space-y-5 animate-in fade-in duration-300">
+                                                 {/* Alert banners */}
+                                                 {slot.bookingClosed && (
+                                                    <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-start gap-3 text-red-900 animate-in fade-in duration-300">
+                                                       <X className="text-red-500 shrink-0 mt-0.5" size={16} />
+                                                       <div>
+                                                          <h4 className="text-[10px] font-black uppercase tracking-wider text-red-800">Booking Stopped</h4>
+                                                          <p className="text-[9px] font-bold text-red-600/80 mt-0.5 leading-normal uppercase">
+                                                             Slot booking has been stopped for this date. No further appointments are being accepted.
+                                                          </p>
+                                                       </div>
+                                                    </div>
+                                                 )}
+                                                 {!slot.bookingClosed && slot.times?.some(t => t.status === 'direct_visit') && (
+                                                    <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-start gap-3 text-amber-900 animate-in fade-in duration-300">
+                                                       <Info className="text-amber-500 shrink-0 mt-0.5" size={16} />
+                                                       <div>
+                                                          <h4 className="text-[10px] font-black uppercase tracking-wider text-amber-800">Direct Visit Ticket Required</h4>
+                                                          <p className="text-[9px] font-bold text-amber-700/80 mt-0.5 leading-normal uppercase">
+                                                             Online booking is closed. Please visit the hospital directly for walk-in slots.
+                                                          </p>
+                                                       </div>
+                                                    </div>
+                                                 )}
+                                                 {!slot.bookingClosed && slot.times?.length > 0 && slot.times?.every(t => t.status === 'booked') && (
+                                                    <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-start gap-3 text-red-900 animate-in fade-in duration-300">
+                                                       <X className="text-red-500 shrink-0 mt-0.5" size={16} />
+                                                       <div>
+                                                          <h4 className="text-[10px] font-black uppercase tracking-wider text-red-800">All Sessions Fully Booked</h4>
+                                                          <p className="text-[9px] font-bold text-red-600/80 mt-0.5 leading-normal uppercase">
+                                                             No slots are available for booking on this date.
+                                                          </p>
+                                                       </div>
+                                                    </div>
+                                                 )}
+ 
+                                                 {!slot.bookingClosed && (
+                                                    <>
+                                                       <div>
+                                                          <p className="text-[10px] font-black uppercase tracking-widest text-navy/40 mb-3 ml-1">Select Available Time Range</p>
+                                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                             {(slot.times || []).map(t => {
+                                                                const isBooked = t.status !== 'available';
+                                                                const isSelected = selectedTime === t.time;
+                                                                return (
+                                                                   <button
+                                                                      key={t.id}
+                                                                      type="button"
+                                                                      disabled={isBooked}
+                                                                      onClick={() => {
+                                                                         setSelectedTime(t.time);
+                                                                         setSelectedSlot(t);
+                                                                      }}
+                                                                      className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between ${
+                                                                         isSelected
+                                                                            ? 'bg-[#0D9488] text-white border-transparent shadow-lg shadow-[#0D9488]/20'
+                                                                            : isBooked
+                                                                            ? 'bg-gray-50 text-navy/30 border-gray-100 cursor-not-allowed opacity-75'
+                                                                            : 'bg-white text-navy border-gray-150 hover:border-[#0D9488] hover:bg-[#0D9488]/5'
+                                                                      }`}
+                                                                   >
+                                                                      <div className="flex items-center justify-between w-full">
+                                                                         <span className="text-xs font-black uppercase tracking-wider">{t.time}</span>
+                                                                         {t.status === 'direct_visit' && (
+                                                                            <span className="text-[8px] font-black uppercase bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md">
+                                                                               Direct Visit
+                                                                            </span>
+                                                                         )}
+                                                                         {t.status === 'booked' && (
+                                                                            <span className="text-[8px] font-black uppercase bg-red-100 text-red-800 px-2 py-0.5 rounded-md">
+                                                                               Full
+                                                                            </span>
+                                                                         )}
+                                                                         {t.status === 'available' && (
+                                                                            <span className="text-[8px] font-black uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
+                                                                               Available
+                                                                            </span>
+                                                                         )}
+                                                                      </div>
+                                                                      {t.status === 'direct_visit' && (
+                                                                         <p className="text-[9px] font-bold text-amber-600 mt-2 leading-none">
+                                                                            Visit hospital directly to book
+                                                                         </p>
+                                                                      )}
+                                                                      {t.status === 'booked' && (
+                                                                         <p className="text-[9px] font-bold text-red-500 mt-2 leading-none">
+                                                                            All slots full
+                                                                         </p>
+                                                                      )}
+                                                                      {t.status === 'available' && (
+                                                                         <p className={`text-[9px] font-bold mt-2 leading-none ${isSelected ? 'text-white/80' : 'text-navy/40'}`}>
+                                                                            Online booking open
+                                                                         </p>
+                                                                      )}
+                                                                   </button>
+                                                                );
+                                                             })}
+                                                          </div>
+                                                       </div>
+ 
+                                                       {selectedTime && selectedSlot ? (
+                                                          <div className="border-t border-[#0D9488]/10 pt-4 space-y-4">
+                                                             <div className="flex items-center gap-3">
+                                                                <div className="w-10 h-10 rounded-xl bg-[#0D9488]/10 flex items-center justify-center text-[#0D9488]">
+                                                                   <Clock size={18} />
+                                                                </div>
+                                                                <div>
+                                                                   <p className="text-[9px] font-black uppercase tracking-widest text-navy/40 leading-none mb-1">Selected Session Slot</p>
+                                                                   <p className="text-sm font-black text-[#0D9488] uppercase leading-none">{selectedTime}</p>
+                                                                </div>
+                                                             </div>
+                                                             <div className="flex items-start gap-3 border-t border-[#0D9488]/10 pt-4">
+                                                                <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 mt-0.5 shrink-0">
+                                                                   <Info size={18} />
+                                                                </div>
+                                                                <div>
+                                                                   <p className="text-[9px] font-black uppercase tracking-widest text-navy/40 leading-none mb-1">Queue & Est. Consultation Start</p>
+                                                                   <p className="text-xs font-black text-navy leading-normal">
+                                                                      Estimated to start at <span className="text-[#0D9488]">{selectedSlot.start_datetime ? new Date(selectedSlot.start_datetime).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : selectedTime}</span>
+                                                                   </p>
+                                                                   <p className="text-[10px] font-medium text-navy/40 mt-1 leading-normal">
+                                                                      You are booking slot <span className="font-bold text-navy">#{selectedSlot.slot_index + 1}</span> ({selectedTime}) for this session. A sequential token number will be assigned upon confirmation.
+                                                                   </p>
+                                                                </div>
+                                                             </div>
+                                                          </div>
+                                                       ) : (
+                                                          <div className="py-2 text-center border-t border-[#0D9488]/10 pt-4">
+                                                             <p className="text-xs font-bold text-red-500 italic">No slot selected or available.</p>
+                                                          </div>
+                                                       )}
+                                                    </>
+                                                 )}
+                                              </div>
+                                           )}
                                       </div>
                                    )) : (
                                      <div className="py-10 text-center bg-gray-50 rounded-2xl">
@@ -423,9 +543,10 @@ const UnifiedBookingHub = () => {
                                      </div>
                                    )}
                                 </div>
+                                </div>
                              </div>
 
-                             <div className="border-t border-gray-50 pt-8 space-y-6">
+                             <div className="border-t border-gray-50 pt-6 mt-4 space-y-6 shrink-0 bg-white">
                                 <div className="flex flex-col gap-4">
                                    <div className="flex justify-between items-center bg-[#F8FAFC] p-5 rounded-[24px]">
                                       <div>

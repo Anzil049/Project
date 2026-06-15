@@ -106,8 +106,71 @@ const appointmentSchema = mongoose.Schema({
 
 appointmentSchema.index({ patient_id: 1, createdAt: -1 });
 appointmentSchema.index({ doctor_id: 1, consultation_type: 1 });
-appointmentSchema.index({ doctor_id: 1, slot_id: 1 }, { unique: true });
+appointmentSchema.index(
+    { doctor_id: 1, slot_id: 1 },
+    { 
+        unique: true, 
+        partialFilterExpression: { status: 'booked' } 
+    }
+);
+
+// Centralized helper to revert slot status when appointment(s) are deleted or cancelled
+async function revertSlots(slotIds) {
+    if (!slotIds || slotIds.length === 0) return;
+
+    try {
+        const AppointmentSlot = mongoose.model('AppointmentSlot');
+        await AppointmentSlot.updateMany(
+            { _id: { $in: slotIds } },
+            { status: 'available', booked_count: 0 }
+        );
+    } catch (err) {
+        console.error('Error in revertSlots helper:', err);
+    }
+}
+
+// Automatically revert slot status if an appointment is deleted within Mongoose
+appointmentSchema.pre(['findOneAndDelete', 'deleteOne', 'deleteMany'], { document: false, query: true }, async function() {
+    try {
+        const filter = this.getQuery();
+        const appointments = await this.model.find(filter);
+        const slotIds = appointments.map(a => a.slot_id).filter(Boolean);
+        if (slotIds.length > 0) {
+            await revertSlots(slotIds);
+        }
+    } catch (err) {
+        console.error('Error in Appointment query delete pre-hook:', err);
+    }
+});
+
+appointmentSchema.pre('deleteOne', { document: true, query: false }, async function() {
+    try {
+        if (this.slot_id) {
+            const slotIdStr = this.slot_id._id ? this.slot_id._id.toString() : this.slot_id.toString();
+            await revertSlots([slotIdStr]);
+        }
+    } catch (err) {
+        console.error('Error in Appointment document deleteOne pre-hook:', err);
+    }
+});
+
+// Automatically revert slot status if an appointment is cancelled (status set to 'cancelled')
+appointmentSchema.pre('save', async function() {
+    if (this.isModified('status') && this.status === 'cancelled') {
+        if (this.slot_id) {
+            const slotIdStr = this.slot_id._id ? this.slot_id._id.toString() : this.slot_id.toString();
+            await revertSlots([slotIdStr]);
+        }
+    }
+});
 
 const Appointment = mongoose.models.Appointment || mongoose.model('Appointment', appointmentSchema);
+
+// Drop the old full unique index so MongoDB can recreate it as a partial index
+if (Appointment.collection) {
+    Appointment.collection.dropIndex('doctor_id_1_slot_id_1').catch(err => {
+        // Ignore error if index does not exist or has already been dropped
+    });
+}
 
 module.exports = Appointment;

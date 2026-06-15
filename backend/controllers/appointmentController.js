@@ -9,6 +9,7 @@ const {
     assertConsultationAllowed,
     assertInsideBookingWindow,
     normalizeDateKey,
+    getSessionRangeForSlot,
 } = require('../utils/schedulingUtils');
 
 const OFFLINE_BOOKING_PERCENTAGE = 30;
@@ -55,7 +56,10 @@ const calculateRefund = (appointment, slot, reason = 'cancelled') => {
     };
 };
 
-const getNextTokenNumber = async (doctorId, slotDateTime) => {
+const getNextTokenNumber = async (doctorId, slotDateTime, consultationType = 'offline') => {
+    // Primary: query ALL persisted slots for this day sorted chronologically.
+    // Using DB directly ensures correct global daily position even when
+    // past-time slots are filtered out of generateAvailableSlots.
     const slotDate = new Date(slotDateTime);
     const dayStart = new Date(slotDate);
     dayStart.setHours(0, 0, 0, 0);
@@ -64,9 +68,30 @@ const getNextTokenNumber = async (doctorId, slotDateTime) => {
 
     const sameDaySlots = await AppointmentSlot.find({
         doctor_id: doctorId,
+        consultation_type: consultationType,
         start_datetime: { $gte: dayStart, $lte: dayEnd },
-    }).select('_id');
+    }).select('_id start_datetime').sort({ start_datetime: 1 });
 
+    const targetTime = new Date(slotDateTime).getTime();
+    const dbPosition = sameDaySlots.findIndex(s => new Date(s.start_datetime).getTime() === targetTime);
+    if (dbPosition !== -1) {
+        return dbPosition + 1;
+    }
+
+    // Fallback: slot not yet persisted — compute position from generated slots
+    try {
+        const slots = await generateAvailableSlots(doctorId, consultationType, { isOfflineBooking: true, includeReserved: true });
+        const targetDateStr = normalizeDateKey(new Date(slotDateTime));
+        const daySlots = slots.filter(s => normalizeDateKey(s.start_datetime) === targetDateStr);
+        daySlots.sort((a, b) => new Date(a.start_datetime) - new Date(b.start_datetime));
+        const targetIso = new Date(slotDateTime).toISOString();
+        const pos = daySlots.findIndex(s => new Date(s.start_datetime).toISOString() === targetIso);
+        if (pos !== -1) return pos + 1;
+    } catch (err) {
+        console.error('Error in getNextTokenNumber generateAvailableSlots fallback:', err);
+    }
+
+    // Last resort: next after highest existing token for the day
     const last = await Appointment.find({
         doctor_id: doctorId,
         slot_id: { $in: sameDaySlots.map(slot => slot._id) },
@@ -93,11 +118,24 @@ const assertCanManageAppointment = async (req, appointment) => {
     throw error;
 };
 
+const formatTime12 = (timeStr) => {
+    if (!timeStr) return '';
+    const [hourStr, minuteStr] = timeStr.split(':');
+    const hour = parseInt(hourStr, 10);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour % 12 || 12;
+    return `${String(hour12).padStart(2, '0')}:${minuteStr} ${ampm}`;
+};
+
 const getDoctorSlots = asyncHandler(async (req, res) => {
-    const { consultationType = 'offline', includeReserved = 'false' } = req.query;
+    const { consultationType = 'offline', includeReserved = 'false', isOfflineBooking = 'false' } = req.query;
     const slots = await generateAvailableSlots(req.params.id, consultationType, {
         includeReserved: includeReserved === 'true',
+        isOfflineBooking: isOfflineBooking === 'true',
     });
+
+    const doctor = await Doctor.findById(req.params.id).select('closed_bookings');
+    const closedBookings = doctor?.closed_bookings || [];
 
     const grouped = slots.reduce((acc, slot) => {
         const date = normalizeDateKey(slot.start_datetime);
@@ -106,24 +144,108 @@ const getDoctorSlots = asyncHandler(async (req, res) => {
         return acc;
     }, {});
 
-    res.json(Object.entries(grouped).map(([date, dateSlots]) => ({
-        date,
-        times: dateSlots.map(slot => ({
-            id: slot.id,
-            start_datetime: slot.start_datetime,
-            end_datetime: slot.end_datetime,
-            time: slot.start_datetime.toLocaleTimeString('en-IN', {
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: true,
-            }),
-            status: slot.status,
-            is_reserved: slot.is_reserved,
-            reserved_for: slot.reserved_for,
-            booked_count: slot.booked_count,
-            booking_limit: slot.booking_limit,
-        })),
-    })));
+    const result = [];
+    for (const [date, dateSlots] of Object.entries(grouped)) {
+        const isClosed = closedBookings.some(
+            entry => entry.date === date && (entry.consultation_type === consultationType || entry.consultation_type === 'all')
+        );
+
+        if (isOfflineBooking === 'true') {
+            // For offline booking, return individual slots
+            result.push({
+                date,
+                bookingClosed: isClosed,
+                times: dateSlots.map(slot => ({
+                    id: slot.id,
+                    start_datetime: slot.start_datetime,
+                    end_datetime: slot.end_datetime,
+                    time: slot.start_datetime.toLocaleTimeString('en-IN', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                    }),
+                    status: slot.status,
+                    booked_count: slot.booked_count,
+                    booking_limit: slot.booking_limit,
+                    slot_index: slot.slot_index,
+                })),
+            });
+        } else {
+            // For online booking, group slots by session range
+            const sessionsMap = new Map();
+            for (const slot of dateSlots) {
+                const sessionKey = `${slot.session_start_time}-${slot.session_end_time}`;
+                if (!sessionsMap.has(sessionKey)) {
+                    sessionsMap.set(sessionKey, {
+                        session_start_time: slot.session_start_time,
+                        session_end_time: slot.session_end_time,
+                        slots: [],
+                    });
+                }
+                sessionsMap.get(sessionKey).slots.push(slot);
+            }
+
+            const times = [];
+            const now = new Date();
+            for (const [sessionKey, sessionData] of sessionsMap.entries()) {
+                const { session_start_time, session_end_time, slots: sSlots } = sessionData;
+                
+                // Parse session start/end as Date objects on this specific date
+                const [sHour, sMin] = session_start_time.split(':').map(Number);
+                const [eHour, eMin] = session_end_time.split(':').map(Number);
+                const sessionStart = new Date(date);
+                sessionStart.setHours(sHour, sMin, 0, 0);
+                const sessionEnd = new Date(date);
+                sessionEnd.setHours(eHour, eMin, 0, 0);
+
+                // Find the earliest available slot in this session
+                const earliestAvailable = sSlots.find(s => s.status === 'available');
+                
+                // Determine status of the session
+                let sessionStatus = 'booked';
+                if (now < sessionStart) {
+                    if (earliestAvailable) {
+                        sessionStatus = 'available';
+                    } else {
+                        sessionStatus = 'booked';
+                    }
+                } else {
+                    // Consultation has started (now >= sessionStart)
+                    // If there is any available slot left in the future (slotStart > now)
+                    const futureAvailable = sSlots.find(s => s.status === 'available' && s.start_datetime > now);
+                    if (futureAvailable) {
+                        sessionStatus = 'direct_visit';
+                    } else {
+                        sessionStatus = 'booked';
+                    }
+                }
+
+                // Representative slot properties
+                const repSlot = earliestAvailable || sSlots.find(s => s.start_datetime > now) || sSlots[0];
+
+                if (repSlot) {
+                    times.push({
+                        id: repSlot.id,
+                        start_datetime: repSlot.start_datetime,
+                        end_datetime: repSlot.end_datetime,
+                        time: `${formatTime12(session_start_time)} - ${formatTime12(session_end_time)}`,
+                        status: sessionStatus,
+                        booked_count: repSlot.booked_count,
+                        booking_limit: repSlot.booking_limit,
+                        slot_index: repSlot.slot_index,
+                    });
+                }
+            }
+
+            result.push({
+                date,
+                bookingClosed: isClosed,
+                times,
+            });
+        }
+    }
+
+    res.json(result);
 });
 
 const bookAppointment = asyncHandler(async (req, res) => {
@@ -132,6 +254,15 @@ const bookAppointment = asyncHandler(async (req, res) => {
     if (!doctor) {
         res.status(404);
         throw new Error('Doctor not found');
+    }
+
+    const dateKey = normalizeDateKey(new Date(start_datetime));
+    const isClosed = (doctor.closed_bookings || []).some(
+        entry => entry.date === dateKey && (entry.consultation_type === consultation_type || entry.consultation_type === 'all')
+    );
+    if (isClosed) {
+        res.status(400);
+        throw new Error('Booking has been stopped/closed for this date');
     }
 
     const user = await User.findById(req.user.userId);
@@ -164,20 +295,35 @@ const bookAppointment = asyncHandler(async (req, res) => {
     }
 
     assertConsultationAllowed(doctor, consultation_type);
-    assertInsideBookingWindow(doctor, start_datetime);
+    await assertInsideBookingWindow(doctor, start_datetime, consultation_type, false);
 
     const availableSlots = await generateAvailableSlots(doctor_id, consultation_type);
     const requestedStart = new Date(start_datetime).toISOString();
     const requestedDateStr = normalizeDateKey(new Date(start_datetime));
 
+    // Find the session range for the requested slot
+    const sessionRange = await getSessionRangeForSlot(doctor_id, consultation_type, start_datetime);
+    if (!sessionRange) {
+        res.status(400);
+        throw new Error('Invalid slot time: no matching schedule session found');
+    }
+
     // Find all slots on this date
     const dateSlots = availableSlots.filter(s => normalizeDateKey(s.start_datetime) === requestedDateStr);
-    
-    // Find the first available slot on this date
-    const firstAvailable = dateSlots.find(s => s.status === 'available' && !s.is_reserved);
-    if (!firstAvailable) {
+
+    // Find the slots that belong to this session
+    const sessionSlots = dateSlots.filter(s => {
+        const slotMinutes = s.start_datetime.getHours() * 60 + s.start_datetime.getMinutes();
+        const sMin = sessionRange.sessionStart.getHours() * 60 + sessionRange.sessionStart.getMinutes();
+        const eMin = sessionRange.sessionEnd.getHours() * 60 + sessionRange.sessionEnd.getMinutes();
+        return slotMinutes >= sMin && slotMinutes < eMin;
+    });
+
+    // Find the first available slot in this session
+    const firstAvailableInSession = sessionSlots.find(s => s.status === 'available');
+    if (!firstAvailableInSession) {
         res.status(400);
-        throw new Error('No slots available on the selected date');
+        throw new Error('No slots available in the selected session');
     }
 
     const patientAppointments = await Appointment.find({
@@ -196,12 +342,12 @@ const bookAppointment = asyncHandler(async (req, res) => {
         throw new Error('You already have an active appointment with this doctor on the selected date');
     }
 
-    if (firstAvailable.start_datetime.toISOString() !== requestedStart) {
+    if (firstAvailableInSession.start_datetime.toISOString() !== requestedStart) {
         res.status(400);
-        throw new Error('You must book the earliest available slot on the selected date');
+        throw new Error('You must book the earliest available slot in the selected session');
     }
 
-    const generatedSlot = firstAvailable;
+    const generatedSlot = firstAvailableInSession;
 
     try {
         await AppointmentSlot.updateOne(
@@ -248,7 +394,7 @@ const bookAppointment = asyncHandler(async (req, res) => {
         throw new Error('Selected slot is already booked');
     }
 
-    const tokenNumber = await getNextTokenNumber(doctor_id, slot.start_datetime);
+    const tokenNumber = await getNextTokenNumber(doctor_id, slot.start_datetime, consultation_type);
     const appointment = await Appointment.create({
         patient_id: req.user.userId,
         doctor_id,
@@ -404,7 +550,14 @@ const getQueuePreview = asyncHandler(async (req, res) => {
         doctor_id: appointment.doctor_id,
         slot_id: { $in: slots.map(slot => slot._id) },
         status: { $in: ['booked', 'consulting', 'completed'] },
-    })).sort({ token_number: 1, createdAt: 1 });
+    }));
+
+    queue.sort((a, b) => {
+        const timeA = a.slot_id?.start_datetime ? new Date(a.slot_id.start_datetime).getTime() : 0;
+        const timeB = b.slot_id?.start_datetime ? new Date(b.slot_id.start_datetime).getTime() : 0;
+        if (timeA !== timeB) return timeA - timeB;
+        return (a.token_number || 0) - (b.token_number || 0);
+    });
 
     const current = queue.find(item => item.status === 'consulting');
     const currentIndex = current ? queue.findIndex(item => item._id.toString() === current._id.toString()) : -1;
@@ -571,12 +724,80 @@ const blockDoctorDate = asyncHandler(async (req, res) => {
     });
 });
 
+const toggleCloseBooking = asyncHandler(async (req, res) => {
+    const { doctor_id, date, action, consultation_type = 'all' } = req.body;
+    
+    if (!doctor_id || !date || !action) {
+        res.status(400);
+        throw new Error('Doctor ID, date, and action are required');
+    }
+
+    const doctor = await Doctor.findById(doctor_id);
+    if (!doctor) {
+        res.status(404);
+        throw new Error('Doctor not found');
+    }
+
+    // Authorization checks
+    if (req.user.role === 'doctor') {
+        if (doctor.user.toString() !== req.user.userId.toString()) {
+            res.status(403);
+            throw new Error('You can only modify booking status for your own schedule');
+        }
+    } else if (req.user.role === 'hospital') {
+        if (doctor.hospitalId?.toString() !== req.user.userId.toString()) {
+            res.status(403);
+            throw new Error('You can only modify booking status for doctors in your hospital');
+        }
+    } else if (req.user.role !== 'admin') {
+        res.status(403);
+        throw new Error('Not authorized to modify booking status');
+    }
+
+    const dateKey = normalizeDateKey(date);
+
+    if (action === 'close') {
+        const alreadyClosed = (doctor.closed_bookings || []).some(
+            item => item.date === dateKey && item.consultation_type === consultation_type
+        );
+        if (!alreadyClosed) {
+            if (!doctor.closed_bookings) doctor.closed_bookings = [];
+            doctor.closed_bookings.push({ date: dateKey, consultation_type });
+            await doctor.save();
+        }
+    } else if (action === 'open') {
+        if (doctor.closed_bookings) {
+            doctor.closed_bookings = doctor.closed_bookings.filter(
+                item => !(item.date === dateKey && item.consultation_type === consultation_type)
+            );
+            await doctor.save();
+        }
+    } else {
+        res.status(400);
+        throw new Error('Invalid action. Use close or open');
+    }
+
+    res.json({
+        message: `Booking successfully ${action === 'close' ? 'closed' : 'reopened'} for ${dateKey}`,
+        closed_bookings: doctor.closed_bookings,
+    });
+});
+
 const createOfflineAppointment = asyncHandler(async (req, res) => {
     const { doctor_id, start_datetime, patientName, phone, email, age, gender, bloodGroup, address, reason } = req.body;
     const doctor = await Doctor.findById(doctor_id);
     if (!doctor) {
         res.status(404);
         throw new Error('Doctor not found');
+    }
+
+    const dateKey = normalizeDateKey(new Date(start_datetime));
+    const isClosed = (doctor.closed_bookings || []).some(
+        entry => entry.date === dateKey && (entry.consultation_type === 'offline' || entry.consultation_type === 'all')
+    );
+    if (isClosed) {
+        res.status(400);
+        throw new Error('Booking has been stopped/closed for this date');
     }
 
     if (!patientName || !phone || !email || !age || !gender || !bloodGroup || !address) {
@@ -594,8 +815,8 @@ const createOfflineAppointment = asyncHandler(async (req, res) => {
     }
 
     assertConsultationAllowed(doctor, 'offline');
-    assertInsideBookingWindow(doctor, start_datetime);
-    const availableSlots = await generateAvailableSlots(doctor_id, 'offline', { includeReserved: true });
+    await assertInsideBookingWindow(doctor, start_datetime, 'offline', true);
+    const availableSlots = await generateAvailableSlots(doctor_id, 'offline', { includeReserved: true, isOfflineBooking: true });
     const requestedStart = new Date(start_datetime).toISOString();
     const generatedSlot = availableSlots.find(slot => slot.start_datetime.toISOString() === requestedStart);
     if (!generatedSlot || generatedSlot.status !== 'available') {
@@ -626,7 +847,7 @@ const createOfflineAppointment = asyncHandler(async (req, res) => {
             password: defaultPassword,
             phone: phone,
             role: 'patient',
-            isVerified: true,
+            isVerified: false,
             isApproved: true,
             isFirstLogin: true,
             gender: gender,
@@ -722,7 +943,7 @@ const createOfflineAppointment = asyncHandler(async (req, res) => {
         throw new Error('Selected slot is already booked');
     }
 
-    const tokenNumber = await getNextTokenNumber(doctor_id, slot.start_datetime);
+    const tokenNumber = await getNextTokenNumber(doctor_id, slot.start_datetime, 'offline');
     const appointment = await Appointment.create({
         patient_id: patient._id,
         patient_snapshot: { name: patientName, phone, email: email.toLowerCase(), age, gender, bloodGroup, address },
@@ -762,4 +983,5 @@ module.exports = {
     markParticipantJoined,
     submitFeedback,
     blockDoctorDate,
+    toggleCloseBooking,
 };

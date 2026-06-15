@@ -110,6 +110,14 @@ const authService = {
       },
     });
     return response.data.url;
+  },
+
+  /**
+   * Resolve a Google Maps location link to extract coordinates
+   */
+  resolveMapLink: async (url) => {
+    const response = await api.post('/auth/resolve-map-link', { url });
+    return response.data;
   }
 };
 

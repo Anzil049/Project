@@ -136,6 +136,7 @@ const registerUser = asyncHandler(async (req, res) => {
             user.bloodGroup = role === 'patient' ? bloodGroup : null;
             user.certificate = req.file ? req.file.path : null;
             user.isApproved = role === 'patient'; // Patients are auto-approved
+            user.isFirstLogin = false;
             
             if (latitude && longitude) {
                 user.location = {
@@ -163,6 +164,7 @@ const registerUser = asyncHandler(async (req, res) => {
             bloodGroup: role === 'patient' ? bloodGroup : null,
             certificate: req.file ? req.file.path : null,
             isApproved: role === 'patient', // Patients are auto-approved
+            isFirstLogin: false,
             location: locationData
         });
     }

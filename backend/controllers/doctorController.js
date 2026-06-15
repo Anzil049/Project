@@ -207,6 +207,9 @@ const updateMySchedules = asyncHandler(async (req, res) => {
     doctor.isAcceptingAppointments = req.body.isAcceptingAppointments !== undefined
         ? req.body.isAcceptingAppointments
         : doctor.isAcceptingAppointments;
+    doctor.custom_date_mode = req.body.custom_date_mode !== undefined
+        ? req.body.custom_date_mode
+        : doctor.custom_date_mode;
     doctor.onlineConsultation = req.body.onlineConsultation !== undefined
         ? req.body.onlineConsultation
         : doctor.onlineConsultation;
@@ -233,6 +236,7 @@ const getMySchedules = asyncHandler(async (req, res) => {
 
     const schedules = await DoctorSchedule.find({ doctor_id: doctor._id }).sort({
         consultation_type: 1,
+        custom_date: 1,
         day_of_week: 1,
         start_time: 1,
     });

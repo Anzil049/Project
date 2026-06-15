@@ -31,9 +31,9 @@ const doctorService = {
     return response.data;
   },
 
-  getDoctorSlots: async (id, consultationType, includeReserved = false) => {
+  getDoctorSlots: async (id, consultationType, includeReserved = false, isOfflineBooking = false) => {
     const response = await api.get(`/doctors/${id}/slots`, {
-      params: { consultationType, includeReserved }
+      params: { consultationType, includeReserved, isOfflineBooking }
     });
     return response.data;
   },
@@ -73,6 +73,8 @@ const doctorService = {
   notifyParticipant: appointmentService.notifyParticipant,
 
   blockDoctorDate: appointmentService.blockDoctorDate,
+
+  toggleCloseBooking: appointmentService.toggleCloseBooking,
 
   getProfile: async () => {
     const response = await api.get('/auth/me');

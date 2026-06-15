@@ -9,7 +9,11 @@ const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 
 dotenv.config();
 
-connectDB();
+connectDB().then(() => {
+    const { cleanOldAvailableSlots, syncOrphanedSlots } = require('./utils/schedulingUtils');
+    cleanOldAvailableSlots();
+    syncOrphanedSlots();
+});
 
 const app = express();
 

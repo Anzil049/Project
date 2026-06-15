@@ -31,6 +31,8 @@ const getLocalDateString = (dateInput) => {
 const DoctorAppointments = () => {
   const navigate = useNavigate();
   const [appointmentTab, setAppointmentTab] = useState('Upcoming'); // 'Upcoming', 'Completed', 'Cancelled'
+  const [dateFilter, setDateFilter] = useState('all'); // 'all', 'today', 'yesterday', 'tomorrow', 'custom'
+  const [customDate, setCustomDate] = useState(getLocalDateString(new Date()));
   
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -53,8 +55,25 @@ const DoctorAppointments = () => {
     fetchAppointments();
   }, []);
 
+  // Helper to check if a cancelled slot was rebooked by someone else
+  const isSlotRebooked = (app) => {
+    if (app.status !== 'cancelled') return false;
+    const slotId = app.slot_id?._id || app.slot_id;
+    return appointments.some(other => {
+      const otherSlotId = other.slot_id?._id || other.slot_id;
+      return otherSlotId?.toString() === slotId?.toString() &&
+             ['booked', 'consulting', 'completed'].includes(other.status);
+    });
+  };
+
+  // For Upcoming/queue logic: hide cancelled appointments if slot was rebooked
+  const activeAndVisibleAppointments = appointments.filter(app => {
+    if (app.status !== 'cancelled') return true;
+    return !isSlotRebooked(app); // Only hide in non-cancelled contexts
+  });
+
   // Compute tokens and details dynamically
-  const sortedAppointments = [...appointments].sort((a, b) => {
+  const sortedAppointments = [...activeAndVisibleAppointments].sort((a, b) => {
     if (!a.slot_id?.start_datetime || !b.slot_id?.start_datetime) return 0;
     return new Date(a.slot_id.start_datetime) - new Date(b.slot_id.start_datetime);
   });
@@ -81,10 +100,96 @@ const DoctorAppointments = () => {
       address: app.patient_id?.address || app.patient_snapshot?.address || 'N/A',
       date: dateStr,
       time: timeStr,
-      token: index + 1,
-      type: isOnline ? 'Online' : 'Physical'
+      token: app.token_number,
+      type: isOnline ? 'Online' : 'Physical',
+      wasRebooked: isSlotRebooked(app),
     };
   });
+
+  // For the Cancelled tab: show ALL cancelled appointments (including those whose slot was rebooked)
+  const allCancelledProcessed = appointments
+    .filter(app => app.status === 'cancelled')
+    .sort((a, b) => {
+      if (!a.slot_id?.start_datetime || !b.slot_id?.start_datetime) return 0;
+      return new Date(a.slot_id.start_datetime) - new Date(b.slot_id.start_datetime);
+    })
+    .map(app => {
+      const isOnline = app.consultation_type === 'online';
+      const start = app.slot_id?.start_datetime;
+      const dateStr = start 
+        ? new Date(start).toLocaleDateString('en-IN', { month: 'long', day: 'numeric', year: 'numeric' })
+        : 'N/A';
+      const timeStr = start
+        ? new Date(start).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
+        : 'N/A';
+      return {
+        ...app,
+        id: app._id,
+        patient: app.patient_id?.name || app.patient_snapshot?.name || 'Walk-in Patient',
+        email: app.patient_id?.email || app.patient_snapshot?.email || '',
+        phone: app.patient_id?.phone || app.patient_snapshot?.phone || 'N/A',
+        gender: app.patient_id?.gender || app.patient_snapshot?.gender || 'N/A',
+        age: app.patient_id?.dob ? calculateAge(app.patient_id.dob) : (app.patient_snapshot?.age || 'N/A'),
+        bloodGroup: app.patient_id?.bloodGroup || app.patient_snapshot?.bloodGroup || 'N/A',
+        address: app.patient_id?.address || app.patient_snapshot?.address || 'N/A',
+        date: dateStr,
+        time: timeStr,
+        token: app.token_number,
+        type: isOnline ? 'Online' : 'Physical',
+        wasRebooked: isSlotRebooked(app),
+      };
+    });
+
+
+  const getFilterDateStr = (filterType) => {
+    const today = new Date();
+    if (filterType === 'today') {
+      return getLocalDateString(today);
+    } else if (filterType === 'yesterday') {
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      return getLocalDateString(yesterday);
+    } else if (filterType === 'tomorrow') {
+      const tomorrow = new Date(today);
+      tomorrow.setDate(today.getDate() + 1);
+      return getLocalDateString(tomorrow);
+    } else if (filterType === 'custom') {
+      return customDate;
+    }
+    return null;
+  };
+
+  const getTabCount = (tabName) => {
+    if (tabName === 'Cancelled') {
+      // Count ALL cancelled appointments (including rebooked slots)
+      return allCancelledProcessed.filter(app => {
+        if (dateFilter !== 'all') {
+          if (!app.slot_id?.start_datetime) return false;
+          const appDate = getLocalDateString(app.slot_id.start_datetime);
+          const targetDate = getFilterDateStr(dateFilter);
+          if (appDate !== targetDate) return false;
+        }
+        return true;
+      }).length;
+    }
+    return processedAppointments.filter(app => {
+      let matchesTab = false;
+      if (tabName === 'Upcoming') {
+        matchesTab = ['booked', 'consulting'].includes(app.status);
+      } else if (tabName === 'Completed') {
+        matchesTab = app.status === 'completed';
+      }
+      if (!matchesTab) return false;
+
+      if (dateFilter !== 'all') {
+        if (!app.slot_id?.start_datetime) return false;
+        const appDate = getLocalDateString(app.slot_id.start_datetime);
+        const targetDate = getFilterDateStr(dateFilter);
+        if (appDate !== targetDate) return false;
+      }
+      return true;
+    }).length;
+  };
 
   const todayStr = getLocalDateString(new Date());
   const todayAppointments = processedAppointments.filter(app => {
@@ -109,16 +214,34 @@ const DoctorAppointments = () => {
     return mins;
   };
 
-  const filteredAppointments = processedAppointments.filter(app => {
-    if (appointmentTab === 'Upcoming') {
-      return ['booked', 'consulting'].includes(app.status);
-    } else if (appointmentTab === 'Completed') {
-      return app.status === 'completed';
-    } else if (appointmentTab === 'Cancelled') {
-      return app.status === 'cancelled';
-    }
-    return false;
-  });
+  const filteredAppointments = appointmentTab === 'Cancelled'
+    ? allCancelledProcessed.filter(app => {
+        if (dateFilter !== 'all') {
+          if (!app.slot_id?.start_datetime) return false;
+          const appDate = getLocalDateString(app.slot_id.start_datetime);
+          const targetDate = getFilterDateStr(dateFilter);
+          if (appDate !== targetDate) return false;
+        }
+        return true;
+      })
+    : processedAppointments.filter(app => {
+        let matchesTab = false;
+        if (appointmentTab === 'Upcoming') {
+          matchesTab = ['booked', 'consulting'].includes(app.status);
+        } else if (appointmentTab === 'Completed') {
+          matchesTab = app.status === 'completed';
+        }
+        if (!matchesTab) return false;
+
+        if (dateFilter !== 'all') {
+          if (!app.slot_id?.start_datetime) return false;
+          const appDate = getLocalDateString(app.slot_id.start_datetime);
+          const targetDate = getFilterDateStr(dateFilter);
+          if (appDate !== targetDate) return false;
+        }
+        return true;
+      });
+
 
   const getStatusStyle = (status) => {
     switch (status) {
@@ -164,8 +287,36 @@ const DoctorAppointments = () => {
               Consultation <span className="text-[#0D9488]">Queue</span>
             </h1>
             <p className="text-[10px] font-black text-navy/40 uppercase tracking-[0.25em] flex items-center gap-2">
-              <Calendar size={14} className="text-[#0D9488]" /> Manage your daily schedule and patient encounters
+              <Calendar size={14} className="text-[#0D9488]" /> Manage your schedule and patient encounters
             </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+             <div className="flex bg-[#EEF2F6] p-1 rounded-2xl border border-gray-150">
+                {['all', 'today', 'yesterday', 'tomorrow', 'custom'].map(filterType => (
+                   <button
+                      key={filterType}
+                      onClick={() => setDateFilter(filterType)}
+                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                         dateFilter === filterType 
+                            ? 'bg-white text-navy shadow-md' 
+                            : 'text-navy/50 hover:text-navy'
+                      }`}
+                   >
+                      {filterType}
+                   </button>
+                ))}
+             </div>
+             {dateFilter === 'custom' && (
+                <div className="relative animate-in slide-in-from-left-2 duration-200">
+                   <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0D9488]" />
+                   <input
+                      type="date"
+                      value={customDate}
+                      onChange={(e) => setCustomDate(e.target.value)}
+                      className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-[11px] font-bold text-navy outline-none"
+                   />
+                </div>
+             )}
           </div>
         </div>
 
@@ -177,7 +328,7 @@ const DoctorAppointments = () => {
               onClick={() => setAppointmentTab(tab)}
               className={`px-8 py-4 text-sm font-black transition-all border-b-2 ${appointmentTab === tab ? 'border-[#0D9488] text-[#0D9488]' : 'border-transparent text-navy/40 hover:text-navy hover:bg-gray-50/50'}`}
             >
-              {tab.toUpperCase()}
+              {tab.toUpperCase()} ({getTabCount(tab)})
             </button>
           ))}
         </div>
@@ -197,28 +348,41 @@ const DoctorAppointments = () => {
                 </div>
              ) : (
                 filteredAppointments.map(app => (
-                   <Card key={app.id} className={`p-6 bg-white border ${app.status === 'consulting' ? 'border-[#0D9488] shadow-lg shadow-[#0D9488]/5 ring-1 ring-[#0D9488]/10' : 'border-gray-100'} rounded-[32px] hover:-translate-y-1 transition-all duration-300 group`}>
+                   <Card key={app.id} className={`p-6 bg-white border ${app.status === 'consulting' ? 'border-[#0D9488] shadow-lg shadow-[#0D9488]/5 ring-1 ring-[#0D9488]/10' : app.status === 'cancelled' ? 'border-red-100' : 'border-gray-100'} rounded-[32px] hover:-translate-y-1 transition-all duration-300 group`}>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                          
                          <div className="flex items-center gap-5">
                             <div className="relative">
-                               <Avatar name={app.patient} size="lg" className={`${app.status === 'consulting' ? 'ring-4 ring-[#0D9488]/20' : ''}`} />
+                               <Avatar name={app.patient} size="lg" className={`${app.status === 'consulting' ? 'ring-4 ring-[#0D9488]/20' : app.status === 'cancelled' ? 'opacity-60' : ''}`} />
                                <div className="absolute -bottom-2 -right-2 bg-white rounded-full p-1 border border-gray-100 shadow-sm">
-                                  <Stethoscope size={14} className="text-[#0D9488]" />
+                                  <Stethoscope size={14} className={app.status === 'cancelled' ? 'text-red-400' : 'text-[#0D9488]'} />
                                </div>
                             </div>
                             <div>
-                               <h3 className="text-base font-black text-navy leading-none mb-1">{app.patient}</h3>
+                               <h3 className={`text-base font-black leading-none mb-1 ${app.status === 'cancelled' ? 'text-navy/50' : 'text-navy'}`}>{app.patient}</h3>
                                <p className="text-[10px] font-black tracking-widest uppercase text-navy/40 flex items-center gap-2 mt-1">
                                   {app.date} • {app.time} • Token T-{app.token} • <span className="text-teal-600 font-bold">{app.type}</span>
                                </p>
+                               {app.status === 'cancelled' && app.wasRebooked && (
+                                  <p className="text-[9px] font-black tracking-widest uppercase text-orange-500 mt-1">⟳ Slot was rebooked by another patient</p>
+                               )}
+                               {app.status === 'cancelled' && app.cancellation_reason && (
+                                  <p className="text-[9px] font-black text-red-400 mt-0.5 uppercase tracking-wider">Reason: {app.cancellation_reason}</p>
+                               )}
                             </div>
                          </div>
 
                          <div className="flex flex-col sm:items-end gap-3">
-                            <Badge className={`text-[9px] px-4 py-1.5 ${getStatusStyle(app.status)}`}>
-                               {app.status === 'booked' ? 'SCHEDULED' : app.status.toUpperCase()}
-                            </Badge>
+                            <div className="flex items-center gap-2 flex-wrap justify-end">
+                               <Badge className={`text-[9px] px-4 py-1.5 ${getStatusStyle(app.status)}`}>
+                                  {app.status === 'booked' ? 'SCHEDULED' : app.status.toUpperCase()}
+                               </Badge>
+                               {app.status === 'cancelled' && app.wasRebooked && (
+                                  <Badge className="text-[9px] px-3 py-1.5 bg-orange-50 text-orange-600 border border-orange-200 font-bold">
+                                     SLOT REBOOKED
+                                  </Badge>
+                               )}
+                            </div>
                             
                             <div className="flex items-center gap-2">
                                <Button 

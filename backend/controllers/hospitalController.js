@@ -114,7 +114,7 @@ const getDoctors = asyncHandler(async (req, res) => {
     const doctors = await Doctor.find({ hospitalId }).populate('user', '-password').lean();
     const scheduleGroups = await DoctorSchedule.find({
         doctor_id: { $in: doctors.map(doctor => doctor._id) }
-    }).lean();
+    }).sort({ consultation_type: 1, custom_date: 1, day_of_week: 1, start_time: 1 }).lean();
 
     const schedulesByDoctor = scheduleGroups.reduce((acc, schedule) => {
         const key = schedule.doctor_id.toString();
@@ -207,6 +207,7 @@ const updateDoctor = asyncHandler(async (req, res) => {
     doctor.onlineConsultation = false;
     doctor.isAcceptingAppointments = isAcceptingAppointments !== undefined ? isAcceptingAppointments : doctor.isAcceptingAppointments;
     doctor.booking_window_days = booking_window_days !== undefined ? booking_window_days : doctor.booking_window_days;
+    doctor.custom_date_mode = req.body.custom_date_mode !== undefined ? req.body.custom_date_mode : doctor.custom_date_mode;
     if (Array.isArray(unavailability)) doctor.unavailability = unavailability;
     doctor.licenseNumber = licenseNumber || doctor.licenseNumber;
     doctor.experience = experience || doctor.experience;

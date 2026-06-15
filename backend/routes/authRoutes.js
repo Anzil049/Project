@@ -13,7 +13,7 @@ const {
     refreshAccessToken,
     getUserProfile,
 } = require('../controllers/authController');
-const { getCurrentUser, getFeaturedData, updateUserProfile } = require('../controllers/userController');
+const { getCurrentUser, getFeaturedData, updateUserProfile, resolveMapLink } = require('../controllers/userController');
 const { protect } = require('../middleware/authMiddleware');
 const validate = require('../middleware/validatorMiddleware');
 const {
@@ -60,6 +60,7 @@ router.get('/admin/profile', protect('admin'), getUserProfile);
 
 // Unified profile update route
 router.put('/profile', protect('any'), updateProfileValidator, validate, updateUserProfile);
+router.post('/resolve-map-link', protect('any'), resolveMapLink);
 
 // Upload route
 router.post('/upload', protect('any'), (req, res, next) => {

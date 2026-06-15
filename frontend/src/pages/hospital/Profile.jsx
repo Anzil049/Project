@@ -81,6 +81,8 @@ const HospitalProfile = () => {
 
   const [showMap, setShowMap] = useState(false);
   const locationPickerRef = useRef(null);
+  const [mapLink, setMapLink] = useState('');
+  const [isResolvingLink, setIsResolvingLink] = useState(false);
 
   const [securityData, setSecurityData] = useState({
     currentPassword: '',
@@ -122,6 +124,37 @@ const HospitalProfile = () => {
     }
     setErrors(newErrors);
     return newErrors;
+  };
+
+  const handleResolveMapLink = async () => {
+    if (!mapLink.trim()) return;
+    setIsResolvingLink(true);
+    try {
+      const result = await authService.resolveMapLink(mapLink.trim());
+      if (result && result.latitude && result.longitude) {
+        setProfile(prev => ({
+          ...prev,
+          latitude: result.latitude,
+          longitude: result.longitude
+        }));
+        if (errors.location) {
+          setErrors(prev => {
+            const copy = { ...prev };
+            delete copy.location;
+            return copy;
+          });
+        }
+        toast.success(`Resolved location to coordinates: ${result.latitude.toFixed(6)}, ${result.longitude.toFixed(6)}`);
+        setMapLink('');
+      } else {
+        toast.error('Failed to extract coordinates from URL');
+      }
+    } catch (error) {
+      const msg = error.response?.data?.message || 'Error resolving Google Maps URL';
+      toast.error(msg);
+    } finally {
+      setIsResolvingLink(false);
+    }
   };
 
   const handleSave = async () => {
@@ -370,6 +403,32 @@ const HospitalProfile = () => {
                     </div>
                     {errors.location && <p className="text-[10px] text-red-500 font-bold uppercase">{errors.location}</p>}
                   </div>
+
+                  {isEditing && (
+                     <div className="bg-gray-50 border border-gray-100 p-4 rounded-[20px] space-y-3">
+                        <label className="text-[10px] font-black uppercase text-navy/60 pl-2">Import Location from Google Maps Link</label>
+                        <div className="flex gap-2">
+                           <input
+                              type="text"
+                              placeholder="Paste Google Maps link (short maps.app.goo.gl or full URL)"
+                              value={mapLink}
+                              onChange={(e) => setMapLink(e.target.value)}
+                              className="flex-1 text-sm font-bold text-navy bg-white border border-gray-100 rounded-[15px] px-4 py-2.5 focus:border-[#0D9488] outline-none"
+                           />
+                           <button
+                              type="button"
+                              onClick={handleResolveMapLink}
+                              disabled={isResolvingLink || !mapLink.trim()}
+                              className="bg-[#0D9488] text-white px-5 py-2.5 rounded-[15px] text-[10px] font-black uppercase tracking-widest hover:bg-teal-700 transition-all disabled:opacity-50 shrink-0"
+                           >
+                              {isResolvingLink ? 'Resolving...' : 'Resolve'}
+                           </button>
+                        </div>
+                        <p className="text-[10px] font-bold text-navy/40 pl-2 leading-relaxed">
+                           Supports standard coordinates URLs and shortened application links. Resolving will automatically populate latitude and longitude.
+                        </p>
+                     </div>
+                  )}
 
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                      <button

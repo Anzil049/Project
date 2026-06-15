@@ -75,6 +75,7 @@ const HospitalDoctors = () => {
         booking_window_days: doc.booking_window_days || 30,
         unavailability: doc.unavailability || [],
         isAcceptingAppointments: doc.isAcceptingAppointments ?? true,
+        custom_date_mode: doc.custom_date_mode ?? false,
         appointmentsToday: 0, // Mock for now
         status: doc.user?.status || 'active'
       }));
@@ -96,6 +97,7 @@ const HospitalDoctors = () => {
   const [tempSchedules, setTempSchedules] = useState([]);
   const [bookingWindow, setBookingWindow] = useState(30);
   const [isAccepting, setIsAccepting] = useState(true);
+  const [customDateMode, setCustomDateMode] = useState(false);
   const [unavailability, setUnavailability] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
 
@@ -172,15 +174,22 @@ const HospitalDoctors = () => {
 
   const handleOpenScheduleModal = (doctor) => {
     setScheduleDoctor(doctor);
+    const mode = doctor.custom_date_mode ?? false;
+    setCustomDateMode(mode);
     setTempSchedules(doctor.schedules && doctor.schedules.length > 0 
       ? doctor.schedules.map(s => ({
           day_of_week: s.day_of_week,
+          custom_date: s.custom_date,
           start_time: s.start_time,
           end_time: s.end_time,
           slot_duration: s.slot_duration || 15,
           follow_up_percentage: s.follow_up_percentage || 0,
         }))
-      : [{ day_of_week: 'Mon', start_time: '10:00', end_time: '13:00', slot_duration: 15, follow_up_percentage: 0 }]
+      : [
+          mode 
+            ? { custom_date: new Date().toISOString().slice(0, 10), start_time: '10:00', end_time: '13:00', slot_duration: 15, follow_up_percentage: 0 }
+            : { day_of_week: 'Mon', start_time: '10:00', end_time: '13:00', slot_duration: 15, follow_up_percentage: 0 }
+        ]
     );
     setBookingWindow(doctor.booking_window_days || 30);
     setIsAccepting(doctor.isAcceptingAppointments ?? true);
@@ -191,12 +200,33 @@ const HospitalDoctors = () => {
   const handleAddScheduleRow = () => {
     setTempSchedules(prev => [
       ...prev,
-      { day_of_week: 'Mon', start_time: '10:00', end_time: '13:00', slot_duration: 15, follow_up_percentage: 0 }
+      customDateMode 
+        ? { custom_date: new Date().toISOString().slice(0, 10), start_time: '10:00', end_time: '13:00', slot_duration: 15, follow_up_percentage: 0 }
+        : { day_of_week: 'Mon', start_time: '10:00', end_time: '13:00', slot_duration: 15, follow_up_percentage: 0 }
     ]);
   };
 
   const handleRemoveScheduleRow = (index) => {
     setTempSchedules(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleToggleCustomDateMode = (enabled) => {
+    setCustomDateMode(enabled);
+    setTempSchedules(prev => prev.map(s => {
+      if (enabled) {
+        return {
+          ...s,
+          custom_date: s.custom_date || new Date().toISOString().slice(0, 10),
+          day_of_week: undefined,
+        };
+      } else {
+        return {
+          ...s,
+          day_of_week: s.day_of_week || 'Mon',
+          custom_date: undefined,
+        };
+      }
+    }));
   };
 
   const handleScheduleRowChange = (index, field, value) => {
@@ -242,6 +272,7 @@ const HospitalDoctors = () => {
       const response = await hospitalService.updateDoctor(scheduleDoctor.id, {
         isAcceptingAppointments: isAccepting,
         booking_window_days: Number(bookingWindow),
+        custom_date_mode: customDateMode,
         schedules: tempSchedules,
         unavailability: unavailability
       });
@@ -469,7 +500,7 @@ const HospitalDoctors = () => {
                               )}
                               {doctor.schedules && doctor.schedules.length > 0 ? doctor.schedules.map((schedule, i) => (
                                  <div key={i} className="inline-flex items-center self-start gap-2 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-wider border border-blue-100/50">
-                                    <Clock size={10} /> {schedule.day_of_week}: {schedule.start_time} - {schedule.end_time} ({schedule.slot_duration}m)
+                                    <Clock size={10} /> {schedule.custom_date ? new Date(schedule.custom_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}) : schedule.day_of_week}: {schedule.start_time} - {schedule.end_time} ({schedule.slot_duration}m)
                                  </div>
                               )) : (
                                  <p className="text-[10px] font-bold text-navy/20 italic">No schedules defined</p>
@@ -557,7 +588,7 @@ const HospitalDoctors = () => {
                          <div className="flex flex-wrap gap-2">
                             {doctor.schedules && doctor.schedules.length > 0 ? doctor.schedules.map((schedule, i) => (
                               <p key={i} className="text-[9px] font-bold text-navy/70 flex items-center gap-1.5 uppercase bg-white px-2 py-1 rounded-md shadow-sm border border-gray-100">
-                                 <Clock size={10} className="text-[#0D9488]" /> {schedule.day_of_week}: {schedule.start_time} - {schedule.end_time}
+                                 <Clock size={10} className="text-[#0D9488]" /> {schedule.custom_date ? new Date(schedule.custom_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}) : schedule.day_of_week}: {schedule.start_time} - {schedule.end_time}
                               </p>
                             )) : (
                               <p className="text-[10px] font-bold text-navy/20 italic">No schedules defined</p>
@@ -654,7 +685,7 @@ const HospitalDoctors = () => {
                     <div className="space-y-2">
                        {viewingDoctor.schedules && viewingDoctor.schedules.length > 0 ? viewingDoctor.schedules.map((schedule, i) => (
                          <div key={i} className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-gray-100 shadow-sm group-hover:border-[#0D9488]/30 transition-all">
-                            <span className="text-[10px] font-black text-navy/30 uppercase tracking-widest italic">{schedule.day_of_week} ({schedule.slot_duration}m)</span>
+                            <span className="text-[10px] font-black text-navy/30 uppercase tracking-widest italic">{schedule.custom_date ? new Date(schedule.custom_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}) : schedule.day_of_week} ({schedule.slot_duration}m)</span>
                             <span className="text-[10px] font-black text-[#0D9488]">{schedule.start_time} - {schedule.end_time}</span>
                          </div>
                        )) : (
@@ -879,6 +910,26 @@ const HospitalDoctors = () => {
                </button>
             </div>
 
+             {/* Availability Mode Toggle */}
+             <div className="flex items-center justify-between p-6 bg-teal-50/50 rounded-[32px] border border-teal-100/50">
+                <div className="flex items-center gap-3">
+                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${customDateMode ? 'bg-teal-100 text-teal-600' : 'bg-gray-200 text-gray-400'}`}>
+                      <CalendarCheck size={20} />
+                   </div>
+                   <div className="text-left">
+                      <p className="text-sm font-black text-navy uppercase tracking-tight">Specific Dates Mode</p>
+                      <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest">Enable to schedule on specific calendar dates</p>
+                   </div>
+                </div>
+                <button 
+                   type="button"
+                   onClick={() => handleToggleCustomDateMode(!customDateMode)}
+                   className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors outline-none ${customDateMode ? 'bg-[#0D9488]' : 'bg-gray-300'}`}
+                >
+                   <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${customDateMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+             </div>
+
             {/* Booking Window Inputs */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-6 bg-[#F8FAFC] rounded-[24px] border border-gray-100">
               <label className="space-y-2 text-left">
@@ -944,14 +995,23 @@ const HospitalDoctors = () => {
 
                         <div className="grid grid-cols-2 gap-3">
                           <label className="space-y-1">
-                            <span className="text-[9px] font-black uppercase text-navy/35">Day</span>
-                            <select
-                              value={schedule.day_of_week}
-                              onChange={(e) => handleScheduleRowChange(index, 'day_of_week', e.target.value)}
-                              className="w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 text-xs font-bold text-navy outline-none"
-                            >
-                              {allDays.map(day => <option key={day} value={day}>{day}</option>)}
-                            </select>
+                            <span className="text-[9px] font-black uppercase text-navy/35">{customDateMode ? 'Date' : 'Day'}</span>
+                            {customDateMode ? (
+                              <input
+                                type="date"
+                                value={schedule.custom_date ? String(schedule.custom_date).slice(0, 10) : ''}
+                                onChange={(e) => handleScheduleRowChange(index, 'custom_date', e.target.value)}
+                                className="w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 text-xs font-bold text-navy outline-none"
+                              />
+                            ) : (
+                              <select
+                                value={schedule.day_of_week || 'Mon'}
+                                onChange={(e) => handleScheduleRowChange(index, 'day_of_week', e.target.value)}
+                                className="w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 text-xs font-bold text-navy outline-none"
+                              >
+                                {allDays.map(day => <option key={day} value={day}>{day}</option>)}
+                              </select>
+                            )}
                           </label>
                           <label className="space-y-1">
                             <span className="text-[9px] font-black uppercase text-navy/35">Duration (mins)</span>

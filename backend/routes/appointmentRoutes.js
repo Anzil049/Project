@@ -15,6 +15,7 @@ const {
     markParticipantJoined,
     submitFeedback,
     blockDoctorDate,
+    toggleCloseBooking,
 } = require('../controllers/appointmentController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -22,6 +23,7 @@ router.get('/my', protect('patient'), getMyAppointments);
 router.get('/doctor', protect('doctor'), getDoctorAppointments);
 router.get('/hospital', protect('hospital'), getHospitalAppointments);
 router.post('/block-date', protect('any'), blockDoctorDate);
+router.post('/toggle-close-booking', protect('any'), toggleCloseBooking);
 router.get('/:id', protect('any'), getAppointmentById);
 router.get('/:id/queue', protect('any'), getQueuePreview);
 router.post('/', protect('patient'), bookAppointment);

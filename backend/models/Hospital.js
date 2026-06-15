@@ -79,6 +79,54 @@ const hospitalSchema = mongoose.Schema({
     timestamps: true,
 });
 
+// Centralized helper to cascade delete related entities when hospital(s) are deleted
+async function cascadeDeleteHospitals(hospitalUserIds) {
+    if (!hospitalUserIds || hospitalUserIds.length === 0) return;
+
+    try {
+        const User = mongoose.model('User');
+        const Doctor = mongoose.model('Doctor');
+
+        // Find doctors affiliated with these hospital User IDs (hospitalId matches the hospital User ID)
+        const doctors = await Doctor.find({ hospitalId: { $in: hospitalUserIds } });
+        const doctorUserIds = doctors.map(d => d.user).filter(Boolean);
+        const doctorIds = doctors.map(d => d._id);
+
+        if (doctorUserIds.length > 0) {
+            await User.deleteMany({ _id: { $in: doctorUserIds } });
+        }
+        if (doctorIds.length > 0) {
+            await Doctor.deleteMany({ _id: { $in: doctorIds } });
+        }
+    } catch (err) {
+        console.error('Error in cascadeDeleteHospitals helper:', err);
+    }
+}
+
+// Automatically delete hospital-related doctors when a hospital profile is deleted
+hospitalSchema.pre(['findOneAndDelete', 'deleteOne', 'deleteMany'], { document: false, query: true }, async function() {
+    try {
+        const filter = this.getQuery();
+        const hospitals = await this.model.find(filter);
+        const hospitalUserIds = hospitals.map(h => h.user).filter(Boolean);
+        if (hospitalUserIds.length > 0) {
+            await cascadeDeleteHospitals(hospitalUserIds);
+        }
+    } catch (err) {
+        console.error('Error in Hospital query delete pre-hook:', err);
+    }
+});
+
+hospitalSchema.pre('deleteOne', { document: true, query: false }, async function() {
+    try {
+        if (this.user) {
+            await cascadeDeleteHospitals([this.user]);
+        }
+    } catch (err) {
+        console.error('Error in Hospital document deleteOne pre-hook:', err);
+    }
+});
+
 const Hospital = mongoose.models.Hospital || mongoose.model('Hospital', hospitalSchema);
 
 module.exports = Hospital;

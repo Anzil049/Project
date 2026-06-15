@@ -39,7 +39,7 @@ export const isProfileComplete = (user) => {
         // If affiliated with a hospital, we don't strictly require they set their own location/address
         if (dp.hospitalId) return true;
 
-        // Independent doctors must have address and location
+        // Independent doctors must have address and location coordinates
         return !!(
             dp.address &&
             user.location?.coordinates?.[0] !== 0 &&

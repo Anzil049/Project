@@ -271,4 +271,130 @@ const updateUserProfile = async (req, res, next) => {
     }
 };
 
-module.exports = { getCurrentUser, getFeaturedData, updateUserProfile };
+// @desc    Resolve a Google Maps link to extract coordinates
+// @route   POST /api/auth/resolve-map-link
+// @access  Private
+const resolveMapLink = async (req, res, next) => {
+    try {
+        const { url } = req.body;
+        if (!url) {
+            return res.status(400).json({ message: 'URL is required' });
+        }
+
+        let currentUrl = url.trim();
+
+        // 1. SSRF check / domain verification
+        try {
+            const urlObj = new URL(currentUrl);
+            const hostname = urlObj.hostname.toLowerCase();
+            const isGoogleDomain = hostname === 'goo.gl' || 
+                                   hostname === 'maps.app.goo.gl' || 
+                                   hostname.endsWith('.google.com') || 
+                                   hostname === 'google.com' ||
+                                   /\.google\.[a-z]{2,3}(\.[a-z]{2})?$/.test(hostname);
+            if (!isGoogleDomain) {
+                return res.status(400).json({ message: 'Only valid Google Maps URLs are allowed' });
+            }
+        } catch (err) {
+            return res.status(400).json({ message: 'Invalid URL format' });
+        }
+
+        // 2. If it's a short link or redirect link, resolve it
+        const axios = require('axios');
+        let finalUrl = currentUrl;
+        
+        try {
+            const response = await axios.get(currentUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                },
+                maxRedirects: 5,
+                timeout: 7000
+            });
+            
+            finalUrl = response.request.res.responseUrl || response.request.responseURL || currentUrl;
+        } catch (error) {
+            console.error('Redirect resolution failed, attempting parsing on original URL:', error.message);
+        }
+
+        // Validate final resolved URL hostname too (SSRF prevention)
+        try {
+            const finalUrlObj = new URL(finalUrl);
+            const finalHostname = finalUrlObj.hostname.toLowerCase();
+            const isFinalGoogleDomain = finalHostname.endsWith('.google.com') || 
+                                        finalHostname === 'google.com' ||
+                                        /\.google\.[a-z]{2,3}(\.[a-z]{2})?$/.test(finalHostname);
+            if (!isFinalGoogleDomain) {
+                return res.status(400).json({ message: 'Resolved destination is not a Google domain' });
+            }
+        } catch (err) {
+            // ignore if URL parsing fails on redirect fallback
+        }
+
+        // 3. Extract coordinates using regex patterns
+        let latitude = null;
+        let longitude = null;
+
+        // Pattern 1: @latitude,longitude (e.g. .../@12.9716,77.5946,17z...)
+        const atMatch = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+        if (atMatch) {
+            latitude = parseFloat(atMatch[1]);
+            longitude = parseFloat(atMatch[2]);
+        }
+
+        // Pattern 2: !3dlatitude!4dlongitude (common in Google Maps place URLs)
+        if (latitude === null || longitude === null) {
+            const dataMatch = finalUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+            if (dataMatch) {
+                latitude = parseFloat(dataMatch[1]);
+                longitude = parseFloat(dataMatch[2]);
+            }
+        }
+
+        // Pattern 3: Query parameters q=lat,lng or ll=lat,lng
+        if (latitude === null || longitude === null) {
+            try {
+                const parsedUrl = new URL(finalUrl);
+                const q = parsedUrl.searchParams.get('q') || parsedUrl.searchParams.get('query') || parsedUrl.searchParams.get('ll');
+                if (q) {
+                    const parts = q.split(',');
+                    if (parts.length === 2) {
+                        const lat = parseFloat(parts[0]);
+                        const lng = parseFloat(parts[1]);
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            latitude = lat;
+                            longitude = lng;
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // Pattern 4: direct path segment comma values in the original or final URL (e.g. /maps/12.9716,77.5946)
+        if (latitude === null || longitude === null) {
+            const pathParts = finalUrl.split('/');
+            for (const part of pathParts) {
+                const commaParts = part.split(',');
+                if (commaParts.length === 2) {
+                    const lat = parseFloat(commaParts[0]);
+                    const lng = parseFloat(commaParts[1]);
+                    if (!isNaN(lat) && lat >= -90 && lat <= 90 && !isNaN(lng) && lng >= -180 && lng <= 180) {
+                        latitude = lat;
+                        longitude = lng;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (latitude === null || longitude === null || isNaN(latitude) || isNaN(longitude)) {
+            return res.status(400).json({ message: 'Could not extract latitude and longitude from the provided Google Maps link' });
+        }
+
+        res.json({ latitude, longitude });
+    } catch (error) {
+        next(error);
+    }
+};
+
+module.exports = { getCurrentUser, getFeaturedData, updateUserProfile, resolveMapLink };

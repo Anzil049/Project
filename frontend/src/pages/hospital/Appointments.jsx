@@ -48,14 +48,32 @@ const HospitalAppointments = () => {
     load();
   }, []);
 
-  const filtered = useMemo(() => appointments.filter(item => {
+  const activeAndVisibleAppointments = useMemo(() => {
+    return appointments.filter(app => {
+      if (app.status !== 'cancelled') return true;
+      const slotId = app.slot_id?._id || app.slot_id;
+      const hasActiveBooking = appointments.some(other => {
+        const otherSlotId = other.slot_id?._id || other.slot_id;
+        return otherSlotId?.toString() === slotId?.toString() &&
+               ['booked', 'consulting', 'completed'].includes(other.status);
+      });
+      return !hasActiveBooking;
+    });
+  }, [appointments]);
+
+  const filtered = useMemo(() => activeAndVisibleAppointments.filter(item => {
     const itemDoctorId = item.doctor_id?._id || item.doctor_id;
     const itemDate = item.slot_id?.start_datetime ? getLocalDateString(item.slot_id.start_datetime) : '';
     const patient = item.patient_id?.name || item.patient_snapshot?.name || '';
     return (doctorId === 'all' || itemDoctorId?.toString() === doctorId)
       && itemDate === date
       && patient.toLowerCase().includes(search.toLowerCase());
-  }).sort((a, b) => (a.token_number || 0) - (b.token_number || 0)), [appointments, doctorId, date, search]);
+  }).sort((a, b) => {
+    const timeA = a.slot_id?.start_datetime ? new Date(a.slot_id.start_datetime).getTime() : 0;
+    const timeB = b.slot_id?.start_datetime ? new Date(b.slot_id.start_datetime).getTime() : 0;
+    if (timeA !== timeB) return timeA - timeB;
+    return (a.token_number || 0) - (b.token_number || 0);
+  }), [activeAndVisibleAppointments, doctorId, date, search]);
 
   const grouped = filtered.reduce((acc, item) => {
     const id = item.doctor_id?._id || item.doctor_id;
