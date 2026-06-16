@@ -38,7 +38,6 @@ const DashboardSidebar = ({ role = ROLES.PATIENT }) => {
       ...(user?.doctorProfile && !user?.doctorProfile?.hospitalId ? [
         { name: 'Offline Booking', icon: <Plus size={22} />, path: '/doctor/offline-booking' }
       ] : []),
-      { name: 'Consultation', icon: <Video size={22} />, path: '/doctor/consultation/sessions' },
       ...(user?.doctorProfile && !user?.doctorProfile?.hospitalId ? [
         { name: 'Availability', icon: <Activity size={22} />, path: '/doctor/availability' }
       ] : []),

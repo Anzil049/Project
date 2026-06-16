@@ -30,6 +30,7 @@ const getLocalDateString = (dateInput) => {
 
 const DoctorAppointments = () => {
   const navigate = useNavigate();
+  const [consultType, setConsultType] = useState('offline'); // 'offline' | 'online'
   const [appointmentTab, setAppointmentTab] = useState('Upcoming'); // 'Upcoming', 'Completed', 'Cancelled'
   const [dateFilter, setDateFilter] = useState('all'); // 'all', 'today', 'yesterday', 'tomorrow', 'custom'
   const [customDate, setCustomDate] = useState(getLocalDateString(new Date()));
@@ -38,6 +39,13 @@ const DoctorAppointments = () => {
   const [loading, setLoading] = useState(true);
   const [isDetailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
+  const [now, setNow] = useState(new Date());
+
+  // Refresh current time every 30 seconds so the START CONSULTATION button appears on time
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const fetchAppointments = async () => {
     try {
@@ -72,8 +80,13 @@ const DoctorAppointments = () => {
     return !isSlotRebooked(app); // Only hide in non-cancelled contexts
   });
 
+  // Filter by consultation type first, then apply status/date filters
+  const byTypeAppointments = activeAndVisibleAppointments.filter(
+    app => app.consultation_type === consultType
+  );
+
   // Compute tokens and details dynamically
-  const sortedAppointments = [...activeAndVisibleAppointments].sort((a, b) => {
+  const sortedAppointments = [...byTypeAppointments].sort((a, b) => {
     if (!a.slot_id?.start_datetime || !b.slot_id?.start_datetime) return 0;
     return new Date(a.slot_id.start_datetime) - new Date(b.slot_id.start_datetime);
   });
@@ -106,9 +119,9 @@ const DoctorAppointments = () => {
     };
   });
 
-  // For the Cancelled tab: show ALL cancelled appointments (including those whose slot was rebooked)
+  // For the Cancelled tab: ALL cancelled of current type
   const allCancelledProcessed = appointments
-    .filter(app => app.status === 'cancelled')
+    .filter(app => app.status === 'cancelled' && app.consultation_type === consultType)
     .sort((a, b) => {
       if (!a.slot_id?.start_datetime || !b.slot_id?.start_datetime) return 0;
       return new Date(a.slot_id.start_datetime) - new Date(b.slot_id.start_datetime);
@@ -280,43 +293,66 @@ const DoctorAppointments = () => {
     <DashboardLayout title="Appointments & Consultations" role="doctor">
       <div className="max-w-7xl mx-auto space-y-8 pb-20 font-body animate-in fade-in duration-700">
         
-        {/* Header Actions */}
+        {/* Consultation Type Switcher */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
             <h1 className="text-4xl font-heading font-black text-navy tracking-tight">
-              Consultation <span className="text-[#0D9488]">Queue</span>
+              {consultType === 'offline' ? 'Offline' : <span className="text-[#0D9488]">Online</span>}{' '}
+              <span className={consultType === 'offline' ? 'text-[#0D9488]' : 'text-navy'}>Appointments</span>
             </h1>
             <p className="text-[10px] font-black text-navy/40 uppercase tracking-[0.25em] flex items-center gap-2">
               <Calendar size={14} className="text-[#0D9488]" /> Manage your schedule and patient encounters
             </p>
           </div>
+
+          {/* Type Switch + Date Filter row */}
           <div className="flex flex-wrap items-center gap-3">
-             <div className="flex bg-[#EEF2F6] p-1 rounded-2xl border border-gray-150">
-                {['all', 'today', 'yesterday', 'tomorrow', 'custom'].map(filterType => (
-                   <button
-                      key={filterType}
-                      onClick={() => setDateFilter(filterType)}
-                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
-                         dateFilter === filterType 
-                            ? 'bg-white text-navy shadow-md' 
-                            : 'text-navy/50 hover:text-navy'
-                      }`}
-                   >
-                      {filterType}
-                   </button>
-                ))}
-             </div>
-             {dateFilter === 'custom' && (
-                <div className="relative animate-in slide-in-from-left-2 duration-200">
-                   <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0D9488]" />
-                   <input
-                      type="date"
-                      value={customDate}
-                      onChange={(e) => setCustomDate(e.target.value)}
-                      className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-[11px] font-bold text-navy outline-none"
-                   />
-                </div>
-             )}
+            {/* Offline / Online pill switcher */}
+            <div className="flex bg-navy p-1 rounded-2xl">
+              {[['offline', 'Offline'], ['online', 'Online']].map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => { setConsultType(val); setAppointmentTab('Upcoming'); }}
+                  className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                    consultType === val
+                      ? val === 'online'
+                        ? 'bg-[#0D9488] text-white shadow-md'
+                        : 'bg-white text-navy shadow-md'
+                      : 'text-white/50 hover:text-white'
+                  }`}
+                >
+                  {val === 'online' ? <span className="flex items-center gap-1"><Video size={11}/>{label}</span> : label}
+                </button>
+              ))}
+            </div>
+
+            {/* Date filter */}
+            <div className="flex bg-[#EEF2F6] p-1 rounded-2xl border border-gray-150">
+              {['all', 'today', 'yesterday', 'tomorrow', 'custom'].map(filterType => (
+                <button
+                  key={filterType}
+                  onClick={() => setDateFilter(filterType)}
+                  className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                    dateFilter === filterType 
+                      ? 'bg-white text-navy shadow-md' 
+                      : 'text-navy/50 hover:text-navy'
+                  }`}
+                >
+                  {filterType}
+                </button>
+              ))}
+            </div>
+            {dateFilter === 'custom' && (
+              <div className="relative animate-in slide-in-from-left-2 duration-200">
+                <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0D9488]" />
+                <input
+                  type="date"
+                  value={customDate}
+                  onChange={(e) => setCustomDate(e.target.value)}
+                  className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-[11px] font-bold text-navy outline-none"
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -403,13 +439,18 @@ const DoctorAppointments = () => {
                                     OPEN DETAILS
                                   </Button>
                                ) : app.status === 'booked' ? (
-                                  <Button 
-                                    size="sm" 
-                                    onClick={() => handleStartConsultation(app.id)} 
-                                    className="bg-navy text-white rounded-xl text-[10px] px-4 py-2 font-black hover:bg-[#0D9488] transition-colors"
-                                  >
-                                    START CONSULTATION
-                                  </Button>
+                                  // Only show START CONSULTATION once the slot start time is reached
+                                  now >= new Date(app.slot_id?.start_datetime)
+                                    ? (
+                                      <Button 
+                                        size="sm" 
+                                        onClick={() => handleStartConsultation(app.id)} 
+                                        className="bg-[#0D9488] text-white border-none shadow-lg shadow-[#0D9488]/20 rounded-xl text-[10px] px-4 py-2 font-black animate-pulse"
+                                      >
+                                        START CONSULTATION
+                                      </Button>
+                                    )
+                                    : null  // before start time: only show SCHEDULED badge + DETAILS
                                ) : app.status === 'completed' ? (
                                   <Button 
                                     size="sm" 
@@ -442,10 +483,10 @@ const DoctorAppointments = () => {
                       <span className="text-sm font-bold opacity-90">Completed</span>
                       <span className="text-xl font-black">{processedAppointments.filter(a => a.status === 'completed').length}</span>
                    </div>
-                   <div className="flex items-center justify-between pb-2">
-                      <span className="text-sm font-bold opacity-90 flex items-center gap-2"><Stethoscope size={14}/> Physical Visits</span>
-                      <span className="text-xl font-black">{processedAppointments.filter(a => a.type === 'Physical').length}</span>
-                   </div>
+                    <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                       <span className="text-sm font-bold opacity-90 flex items-center gap-2"><Stethoscope size={14}/> {consultType === 'offline' ? 'Physical Visits' : 'Online Sessions'}</span>
+                       <span className="text-xl font-black">{processedAppointments.filter(a => a.type.toLowerCase() === consultType).length}</span>
+                    </div>
                 </div>
              </div>
 

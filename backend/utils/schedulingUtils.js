@@ -117,7 +117,9 @@ const validateSchedulePayload = (doctor, schedules) => {
         throw new Error('Schedules must be an array');
     }
 
-    const byTypeAndKey = new Map();
+    // Key by day/date only (NOT by consultation_type) so cross-type overlaps are caught
+    const byDayKey = new Map();
+
     for (const schedule of schedules) {
         assertConsultationAllowed(doctor, schedule.consultation_type);
 
@@ -127,7 +129,7 @@ const validateSchedulePayload = (doctor, schedules) => {
             throw new Error('Schedule start time must be before end time');
         }
 
-        let key;
+        let dayKey;
         if (doctor.custom_date_mode) {
             if (!schedule.custom_date) {
                 throw new Error('Custom date is required for custom date schedules');
@@ -137,30 +139,34 @@ const validateSchedulePayload = (doctor, schedules) => {
             if (!dateRegex.test(normalizedDateStr)) {
                 throw new Error('Invalid custom date format. Use YYYY-MM-DD');
             }
-            key = `${schedule.consultation_type}:${normalizedDateStr}`;
+            dayKey = normalizedDateStr;
         } else {
             if (!DAYS.includes(schedule.day_of_week)) {
                 throw new Error('Invalid day of week');
             }
-            key = `${schedule.consultation_type}:${schedule.day_of_week}`;
+            dayKey = schedule.day_of_week;
         }
 
         if (!schedule.slot_duration || schedule.slot_duration < 5) {
             throw new Error('Slot duration must be at least 5 minutes');
         }
 
-        const existing = byTypeAndKey.get(key) || [];
+        // Check overlap against ALL schedules on the same day (online AND offline)
+        const existing = byDayKey.get(dayKey) || [];
         for (const range of existing) {
             if (start < range.end && range.start < end) {
+                const isCrossType = range.consultation_type !== schedule.consultation_type;
                 throw new Error(
-                    doctor.custom_date_mode
-                        ? 'Overlapping schedules are not allowed on the same date within the same consultation type'
-                        : 'Overlapping schedules are not allowed within the same consultation type'
+                    isCrossType
+                        ? `Online and offline sessions cannot overlap. ${schedule.start_time}–${schedule.end_time} (${schedule.consultation_type}) clashes with an existing ${range.consultation_type} session (${range.start_time}–${range.end_time}) on the same ${doctor.custom_date_mode ? 'date' : 'day'}.`
+                        : doctor.custom_date_mode
+                            ? 'Overlapping schedules are not allowed on the same date within the same consultation type'
+                            : 'Overlapping schedules are not allowed within the same consultation type'
                 );
             }
         }
-        existing.push({ start, end });
-        byTypeAndKey.set(key, existing);
+        existing.push({ start, end, start_time: schedule.start_time, end_time: schedule.end_time, consultation_type: schedule.consultation_type });
+        byDayKey.set(dayKey, existing);
     }
 };
 

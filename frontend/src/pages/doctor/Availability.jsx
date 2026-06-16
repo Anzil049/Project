@@ -390,6 +390,45 @@ const getDayOfWeekFromDate = (dateStr) => {
         return false;
       }
     }
+
+    // Cross-type (online vs offline) overlap check on the same day/date
+    const minsFromTime = (t) => { const [h, m] = (t || '00:00').split(':').map(Number); return h * 60 + m; };
+    const byDay = {};
+    for (const s of schedules) {
+      const dayKey = customDateMode
+        ? (s.custom_date ? String(s.custom_date).slice(0, 10) : '')
+        : (s.day_of_week || '');
+      if (!dayKey) continue;
+      if (!byDay[dayKey]) byDay[dayKey] = [];
+      byDay[dayKey].push(s);
+    }
+    for (const [day, daySched] of Object.entries(byDay)) {
+      for (let i = 0; i < daySched.length; i++) {
+        for (let j = i + 1; j < daySched.length; j++) {
+          const a = daySched[i], b = daySched[j];
+          const aS = minsFromTime(a.start_time), aE = minsFromTime(a.end_time);
+          const bS = minsFromTime(b.start_time), bE = minsFromTime(b.end_time);
+          if (aS < bE && bS < aE) {
+            const label = customDateMode ? `on ${day}` : `every ${day}`;
+            if (a.consultation_type !== b.consultation_type) {
+              toast.error(
+                `Online and offline sessions cannot overlap ${label}. ` +
+                `${a.consultation_type} (${a.start_time}–${a.end_time}) clashes with ` +
+                `${b.consultation_type} (${b.start_time}–${b.end_time}).`,
+                { duration: 5000 }
+              );
+            } else {
+              toast.error(
+                `Overlapping ${a.consultation_type} sessions ${label}: ` +
+                `${a.start_time}–${a.end_time} and ${b.start_time}–${b.end_time}.`
+              );
+            }
+            return false;
+          }
+        }
+      }
+    }
+
     return true;
   };
 

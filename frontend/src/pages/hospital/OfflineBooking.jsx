@@ -376,27 +376,14 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                            const slotPosition = allSortedSlots.findIndex(
                              s => new Date(s.start_datetime).getTime() === new Date(selectedSlot.start_datetime).getTime()
                            );
-                           // nextToken is the 1-indexed position of the selected slot in today's slot list
                            const nextToken = slotPosition !== -1 ? slotPosition + 1 : '?';
-                           // Last booked token: max token_number among appointments for today
-                           const lastToken = appointmentsList.length > 0
-                             ? Math.max(...appointmentsList.map(a => a.token_number || 0))
-                             : 0;
                            return (
                           <div className="bg-slate-50 border border-slate-100 p-6 rounded-[24px] space-y-4">
-                             <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm">
-                                   <span className="text-[9px] font-black text-navy/40 uppercase tracking-wider block">Last Booked Token</span>
-                                   <span className="text-xl font-black text-navy">
-                                      {lastToken > 0 ? `T-${lastToken}` : 'None'}
-                                   </span>
-                                </div>
-                                <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm">
-                                   <span className="text-[9px] font-black text-[#0D9488] uppercase tracking-wider block">Next Token to Book</span>
-                                   <span className="text-xl font-black text-[#0D9488]">
-                                      T-{nextToken}
-                                   </span>
-                                </div>
+                             <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm">
+                                <span className="text-[9px] font-black text-[#0D9488] uppercase tracking-wider block">Next Token to Book</span>
+                                <span className="text-xl font-black text-[#0D9488]">
+                                   T-{nextToken}
+                                </span>
                              </div>
                              <div className="flex items-center justify-between pt-2">
                                 <span className="text-xs font-bold text-navy/60">Automatically Allocated Slot</span>
