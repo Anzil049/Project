@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button, Avatar, Badge, Modal } from '../../components/common';
-import { Calendar, Eye, FileText, History, Search } from 'lucide-react';
+import { Calendar, Download, Eye, FileText, History, Search } from 'lucide-react';
 import doctorService from '../../services/doctorService';
+import { generatePrescriptionPDF } from '../../utils/pdfGenerator';
 import toast from 'react-hot-toast';
 
 const DoctorPrescriptions = () => {
   const [appointments, setAppointments] = useState([]);
   const [search, setSearch] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
   const [selected, setSelected] = useState(null);
 
   useEffect(() => {
@@ -24,9 +26,16 @@ const DoctorPrescriptions = () => {
   const prescriptions = useMemo(() => appointments
     .filter(item => item.status === 'completed' && item.prescription?.diagnosis)
     .filter(item => {
+      if (!dateFilter) return true;
+      const apptDateStr = item.slot_id?.start_datetime
+        ? new Date(item.slot_id.start_datetime).toISOString().split('T')[0]
+        : '';
+      return apptDateStr === dateFilter;
+    })
+    .filter(item => {
       const patient = item.patient_id?.name || item.patient_snapshot?.name || '';
       return `${patient} ${item.prescription?.diagnosis || ''}`.toLowerCase().includes(search.toLowerCase());
-    }), [appointments, search]);
+    }), [appointments, search, dateFilter]);
 
   return (
     <DashboardLayout title="Prescription Management" role="doctor">
@@ -40,14 +49,33 @@ const DoctorPrescriptions = () => {
           </p>
         </div>
 
-        <div className="flex items-center bg-white p-4 rounded-[28px] border border-gray-100 shadow-sm gap-4">
-          <Search className="text-navy/30 ml-2" size={20} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by patient name or diagnosis"
-            className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-navy"
-          />
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-grow flex items-center bg-white p-4 rounded-[28px] border border-gray-100 shadow-sm gap-4">
+            <Search className="text-navy/30 ml-2 pointer-events-none" size={20} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by patient name or diagnosis"
+              className="flex-grow bg-transparent border-none outline-none text-sm font-bold text-navy"
+            />
+          </div>
+          <div className="relative flex items-center bg-white px-4 py-2.5 rounded-[28px] border border-gray-100 shadow-sm gap-2">
+            <Calendar className="text-navy/30 ml-1 pointer-events-none" size={18} />
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="bg-transparent border-none outline-none text-sm font-bold text-navy w-full sm:w-[160px]"
+            />
+            {dateFilter && (
+              <button
+                onClick={() => setDateFilter('')}
+                className="text-navy/40 hover:text-navy text-xs font-bold bg-transparent border-none cursor-pointer pr-1"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
 
         {prescriptions.length === 0 ? (
@@ -79,9 +107,14 @@ const DoctorPrescriptions = () => {
                   <p className="text-[11px] font-bold text-navy/55 mb-6">
                     {item.prescription.medicines?.length || 0} medicines prescribed
                   </p>
-                  <Button onClick={() => setSelected(item)} className="w-full bg-navy text-white border-none rounded-2xl text-[10px]">
-                    <Eye size={14} /> View Prescription
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button onClick={() => setSelected(item)} className="flex-1 bg-navy text-white border-none rounded-2xl text-[10px]">
+                      <Eye size={14} /> View Prescription
+                    </Button>
+                    <Button onClick={() => generatePrescriptionPDF(item)} className="bg-[#0D9488] text-white border-none rounded-2xl text-[10px] flex items-center justify-center px-4" title="Download PDF">
+                      <Download size={14} />
+                    </Button>
+                  </div>
                 </Card>
               );
             })}
@@ -110,14 +143,34 @@ const DoctorPrescriptions = () => {
             </div>
             <div className="space-y-3">
               <p className="text-[10px] font-black text-navy/35 uppercase tracking-widest">Medicines</p>
-              {(selected.prescription?.medicines || []).map((medicine, index) => (
-                <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-3 rounded-2xl bg-gray-50 p-4 text-sm font-bold text-navy">
-                  <span>{medicine.name}</span>
-                  <span>{medicine.dosage}</span>
-                  <span>{medicine.frequency}</span>
-                  <span>{medicine.duration}</span>
-                </div>
-              ))}
+              <div className="hidden md:grid grid-cols-4 gap-3 px-4 mb-2 text-[10px] font-black text-navy/40 uppercase tracking-widest">
+                <span>Drug Name</span>
+                <span>Dosage</span>
+                <span>Frequency</span>
+                <span>Duration</span>
+              </div>
+              <div className="space-y-3">
+                {(selected.prescription?.medicines || []).map((medicine, index) => (
+                  <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-3 rounded-2xl bg-gray-50 p-4 text-sm font-bold text-navy">
+                    <span className="flex flex-col md:block">
+                      <span className="text-[9px] font-black text-navy/30 uppercase tracking-widest md:hidden mb-1">Drug Name</span>
+                      {medicine.name}
+                    </span>
+                    <span className="flex flex-col md:block">
+                      <span className="text-[9px] font-black text-navy/30 uppercase tracking-widest md:hidden mb-1">Dosage</span>
+                      {medicine.dosage || '-'}
+                    </span>
+                    <span className="flex flex-col md:block">
+                      <span className="text-[9px] font-black text-navy/30 uppercase tracking-widest md:hidden mb-1">Frequency</span>
+                      {medicine.frequency || '-'}
+                    </span>
+                    <span className="flex flex-col md:block">
+                      <span className="text-[9px] font-black text-navy/30 uppercase tracking-widest md:hidden mb-1">Duration</span>
+                      {medicine.duration || '-'}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
             {selected.consultation_notes && (
               <div>
@@ -125,6 +178,15 @@ const DoctorPrescriptions = () => {
                 <p className="text-sm font-bold text-navy/65">{selected.consultation_notes}</p>
               </div>
             )}
+
+            <div className="pt-6 border-t border-gray-100 flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setSelected(null)} className="rounded-xl text-[10px]">
+                Close
+              </Button>
+              <Button onClick={() => generatePrescriptionPDF(selected)} className="bg-[#0D9488] text-white border-none rounded-xl text-[10px] flex items-center gap-1.5">
+                <Download size={13} /> Download PDF
+              </Button>
+            </div>
           </div>
         )}
       </Modal>

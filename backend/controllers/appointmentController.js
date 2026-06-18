@@ -20,8 +20,8 @@ const populateAppointmentQuery = (query) => query
     .populate({
         path: 'doctor_id',
         populate: [
-            { path: 'user', select: 'name image phone' },
-            { path: 'hospitalId', select: 'name image phone' },
+            { path: 'user', select: 'name image phone email address city state zip' },
+            { path: 'hospitalId', select: 'name image phone email address city state zip' },
         ],
     })
     .populate('slot_id')
@@ -1086,7 +1086,7 @@ const getMyAppointments = asyncHandler(async (req, res) => {
     const appointments = await populateAppointmentQuery(Appointment.find({ patient_id: req.user.userId }))
         .sort({ createdAt: -1 });
 
-    res.json(appointments);
+    res.json(appointments.map(formatAppointmentResponse));
 });
 
 module.exports = {

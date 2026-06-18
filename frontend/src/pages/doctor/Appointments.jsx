@@ -6,9 +6,10 @@ import {
   Users, Calendar, Video, Activity, Clock, 
   Search, CheckCircle2, ChevronRight, VideoOff,
   Stethoscope, FileText, Plus, Heart, Thermometer, User, PlusCircle, Trash2,
-  Mail, Phone, MapPin, Droplet
+  Mail, Phone, MapPin, Droplet, Download
 } from 'lucide-react';
 import doctorService from '../../services/doctorService';
+import { generatePrescriptionPDF } from '../../utils/pdfGenerator';
 import toast from 'react-hot-toast';
 
 const calculateAge = (dobString) => {
@@ -38,7 +39,9 @@ const DoctorAppointments = () => {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isDetailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [isPrescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
+  const [selectedPrescriptionApp, setSelectedPrescriptionApp] = useState(null);
   const [now, setNow] = useState(new Date());
 
   // Refresh current time every 30 seconds so the START CONSULTATION button appears on time
@@ -505,6 +508,15 @@ const DoctorAppointments = () => {
                                  >
                                    Details
                                 </Button>
+                                {app.displayStatus === 'completed' && (
+                                   <Button 
+                                      size="sm" 
+                                      onClick={() => { setSelectedPrescriptionApp(app); setPrescriptionModalOpen(true); }}
+                                      className="rounded-xl bg-[#0D9488] hover:bg-[#0D9488]/90 text-white text-[10px] px-6 py-2.5 font-black uppercase tracking-wider border-none shadow-sm"
+                                    >
+                                      View Rx
+                                   </Button>
+                                )}
                              </div>
                          </div>
 
@@ -665,6 +677,146 @@ const DoctorAppointments = () => {
                     Close
                  </Button>
              </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Prescription Preview Modal */}
+      <Modal 
+        isOpen={isPrescriptionModalOpen} 
+        onClose={() => setPrescriptionModalOpen(false)}
+        title="Prescription Details"
+        size="lg"
+      >
+        {selectedPrescriptionApp && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Header / Demographics info */}
+            <div className="bg-slate-50 p-6 rounded-[32px] border border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 text-left">
+              <div>
+                <span className="text-[9px] font-black text-navy/40 uppercase tracking-widest block">Patient Name</span>
+                <h3 className="text-xl font-black text-navy">{selectedPrescriptionApp.patient}</h3>
+                <p className="text-[10px] font-black text-[#0D9488] uppercase tracking-wider mt-0.5">
+                  Token T-{selectedPrescriptionApp.token} • {selectedPrescriptionApp.date} • {selectedPrescriptionApp.time}
+                </p>
+              </div>
+              <Badge className="bg-navy text-white text-[9px] px-4 py-1.5 uppercase font-black tracking-widest border-none">
+                Completed Visit
+              </Badge>
+            </div>
+
+            {/* Vitals & Bio-markers Grid */}
+            <div className="space-y-3 text-left">
+              <span className="text-[10px] font-black text-navy/40 uppercase tracking-widest pl-1">Recorded Vitals</span>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-gray-50/50 border border-gray-100 rounded-2xl p-4">
+                  <span className="text-[8px] font-black text-navy/40 uppercase tracking-widest block mb-1">Blood Pressure</span>
+                  <span className="text-sm font-black text-navy">{selectedPrescriptionApp.vitals?.bp || 'N/A'}</span>
+                </div>
+                <div className="bg-gray-50/50 border border-gray-100 rounded-2xl p-4">
+                  <span className="text-[8px] font-black text-navy/40 uppercase tracking-widest block mb-1">Pulse (bpm)</span>
+                  <span className="text-sm font-black text-navy">{selectedPrescriptionApp.vitals?.pulse || 'N/A'}</span>
+                </div>
+                <div className="bg-gray-50/50 border border-gray-100 rounded-2xl p-4">
+                  <span className="text-[8px] font-black text-navy/40 uppercase tracking-widest block mb-1">Temp (°F)</span>
+                  <span className="text-sm font-black text-navy">{selectedPrescriptionApp.vitals?.temperature || 'N/A'}</span>
+                </div>
+                <div className="bg-gray-50/50 border border-gray-100 rounded-2xl p-4">
+                  <span className="text-[8px] font-black text-navy/40 uppercase tracking-widest block mb-1">Weight (kg)</span>
+                  <span className="text-sm font-black text-navy">{selectedPrescriptionApp.vitals?.weight || 'N/A'}</span>
+                </div>
+              </div>
+
+              {selectedPrescriptionApp.custom_vitals && selectedPrescriptionApp.custom_vitals.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-3">
+                  {selectedPrescriptionApp.custom_vitals.map((cv, idx) => (
+                    <div key={idx} className="bg-teal-50/20 border border-teal-100/50 rounded-2xl p-4">
+                      <span className="text-[8px] font-black text-teal-700/60 uppercase tracking-widest block mb-1 truncate" title={cv.name}>{cv.name}</span>
+                      <span className="text-xs font-black text-teal-900">{cv.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Assessment & Clinical Notes */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 text-left">
+              <div className="md:col-span-4 bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-2">
+                <span className="text-[9px] font-black text-navy/40 uppercase tracking-widest block">Primary Diagnosis</span>
+                <p className="text-sm font-black text-navy leading-snug">{selectedPrescriptionApp.prescription?.diagnosis || 'N/A'}</p>
+              </div>
+              <div className="md:col-span-8 bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-2">
+                <span className="text-[9px] font-black text-navy/40 uppercase tracking-widest block">Lifestyle advice / Clinical notes</span>
+                <p className="text-xs font-bold text-navy/70 leading-relaxed whitespace-pre-line">{selectedPrescriptionApp.prescription?.notes || 'No lifestyle advice or clinical notes provided.'}</p>
+              </div>
+            </div>
+
+            {/* Medication Schedule Table */}
+            <div className="space-y-3 text-left">
+              <span className="text-[10px] font-black text-navy/40 uppercase tracking-widest pl-1">Medication Schedule</span>
+              <div className="bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm">
+                <table className="min-w-full divide-y divide-gray-150">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-5 py-3 text-left text-[9px] font-black text-navy/40 uppercase tracking-widest">Drug Name</th>
+                      <th className="px-5 py-3 text-left text-[9px] font-black text-navy/40 uppercase tracking-widest">Dosage</th>
+                      <th className="px-5 py-3 text-left text-[9px] font-black text-navy/40 uppercase tracking-widest">Frequency</th>
+                      <th className="px-5 py-3 text-left text-[9px] font-black text-navy/40 uppercase tracking-widest">Duration</th>
+                      <th className="px-5 py-3 text-left text-[9px] font-black text-navy/40 uppercase tracking-widest">Instructions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {selectedPrescriptionApp.prescription?.medicines && selectedPrescriptionApp.prescription.medicines.length > 0 ? (
+                      selectedPrescriptionApp.prescription.medicines.map((med, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-5 py-3 text-xs font-black text-navy">{med.name || '-'}</td>
+                          <td className="px-5 py-3 text-xs font-bold text-navy/70">{med.dosage || '-'}</td>
+                          <td className="px-5 py-3 text-xs font-bold text-navy/70">{med.frequency || '-'}</td>
+                          <td className="px-5 py-3 text-xs font-bold text-navy/70">{med.duration || '-'}</td>
+                          <td className="px-5 py-3 text-[11px] font-bold text-navy/50">{med.instruction || '-'}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="5" className="px-5 py-6 text-center text-xs font-bold text-navy/35 italic">No medications prescribed.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Footer actions */}
+            <div className="pt-6 border-t border-gray-100 flex items-center justify-between gap-4">
+              <Button
+                type="button"
+                onClick={() => {
+                  generatePrescriptionPDF({
+                    ...selectedPrescriptionApp,
+                    patient_id: selectedPrescriptionApp.patient_id || {
+                      name: selectedPrescriptionApp.patient,
+                      gender: selectedPrescriptionApp.gender,
+                      dob: selectedPrescriptionApp.patient_id?.dob,
+                      bloodGroup: selectedPrescriptionApp.bloodGroup,
+                      address: selectedPrescriptionApp.address,
+                      phone: selectedPrescriptionApp.phone,
+                      email: selectedPrescriptionApp.email
+                    }
+                  });
+                }}
+                className="bg-[#0D9488] hover:bg-[#0D9488]/90 text-white rounded-2xl px-6 py-2.5 font-black text-[10px] uppercase tracking-widest border-none shadow-md flex items-center gap-2"
+              >
+                <Download size={14} /> Download PDF
+              </Button>
+
+              <Button 
+                type="button"
+                variant="outline" 
+                onClick={() => setPrescriptionModalOpen(false)}
+                className="rounded-2xl px-8 border-gray-200 uppercase tracking-widest font-black text-[10px]"
+              >
+                Close
+              </Button>
+            </div>
           </div>
         )}
       </Modal>
