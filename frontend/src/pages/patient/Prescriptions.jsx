@@ -3,6 +3,7 @@ import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button, Avatar, Modal } from '../../components/common';
 import { Calendar, Download, Eye, FileText, Search, Stethoscope, Video } from 'lucide-react';
 import appointmentService from '../../services/appointmentService';
+import { generatePrescriptionPDF } from '../../utils/pdfGenerator';
 import toast from 'react-hot-toast';
 
 const PatientPrescriptions = () => {
@@ -95,8 +96,8 @@ const PatientPrescriptions = () => {
                   <Button variant="outline" onClick={() => setSelectedPrescription(item)} className="rounded-xl text-[10px]">
                     <Eye size={14} /> Preview
                   </Button>
-                  <Button onClick={() => window.print()} className="bg-[#0D9488] text-white border-none rounded-xl text-[10px]">
-                    <Download size={14} /> Print
+                  <Button onClick={() => generatePrescriptionPDF(item)} className="bg-[#0D9488] text-white border-none rounded-xl text-[10px] flex items-center gap-1">
+                    <Download size={14} /> Download PDF
                   </Button>
                 </div>
               </Card>
@@ -132,12 +133,60 @@ const PatientPrescriptions = () => {
                 ))}
               </div>
             </div>
+            {/* Vitals block in Patient Preview */}
+            {((selectedPrescription.vitals && (selectedPrescription.vitals.bp || selectedPrescription.vitals.pulse || selectedPrescription.vitals.temperature || selectedPrescription.vitals.weight)) || (selectedPrescription.custom_vitals && selectedPrescription.custom_vitals.length > 0)) && (
+              <div className="space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-navy/35">Vitals & Measurements</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {selectedPrescription.vitals?.bp && (
+                    <div className="bg-gray-50 rounded-xl p-3 text-left">
+                      <span className="text-navy/40 uppercase text-[7px] font-black tracking-widest block">BP</span>
+                      <span className="text-xs font-black text-navy">{selectedPrescription.vitals.bp}</span>
+                    </div>
+                  )}
+                  {selectedPrescription.vitals?.pulse && (
+                    <div className="bg-gray-50 rounded-xl p-3 text-left">
+                      <span className="text-navy/40 uppercase text-[7px] font-black tracking-widest block">Pulse</span>
+                      <span className="text-xs font-black text-navy">{selectedPrescription.vitals.pulse} bpm</span>
+                    </div>
+                  )}
+                  {selectedPrescription.vitals?.temperature && (
+                    <div className="bg-gray-50 rounded-xl p-3 text-left">
+                      <span className="text-navy/40 uppercase text-[7px] font-black tracking-widest block">Temp</span>
+                      <span className="text-xs font-black text-navy">{selectedPrescription.vitals.temperature} °F</span>
+                    </div>
+                  )}
+                  {selectedPrescription.vitals?.weight && (
+                    <div className="bg-gray-50 rounded-xl p-3 text-left">
+                      <span className="text-navy/40 uppercase text-[7px] font-black tracking-widest block">Weight</span>
+                      <span className="text-xs font-black text-navy">{selectedPrescription.vitals.weight} kg</span>
+                    </div>
+                  )}
+                  {selectedPrescription.custom_vitals?.map((cv, idx) => (
+                    <div key={idx} className="bg-gray-50 rounded-xl p-3 text-left">
+                      <span className="text-navy/40 uppercase text-[7px] font-black tracking-widest block">{cv.name}</span>
+                      <span className="text-xs font-black text-navy">{cv.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {selectedPrescription.consultation_notes && (
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-navy/35 mb-2">Notes</p>
-                <p className="text-sm font-bold text-navy/70">{selectedPrescription.consultation_notes}</p>
+                <p className="text-sm font-bold text-navy/70 whitespace-pre-line">{selectedPrescription.consultation_notes}</p>
               </div>
             )}
+
+            <div className="pt-6 border-t border-gray-100 flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setSelectedPrescription(null)} className="rounded-xl text-[10px]">
+                Close
+              </Button>
+              <Button onClick={() => generatePrescriptionPDF(selectedPrescription)} className="bg-[#0D9488] text-white border-none rounded-xl text-[10px] flex items-center gap-1.5">
+                <Download size={13} /> Download PDF
+              </Button>
+            </div>
           </div>
         )}
       </Modal>

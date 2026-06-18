@@ -10,6 +10,7 @@ const {
     completeAppointment,
     createOfflineAppointment,
     cancelAppointment,
+    noShowAppointment,
     getQueuePreview,
     notifyParticipant,
     markParticipantJoined,
@@ -31,6 +32,7 @@ router.post('/offline', protect('any'), createOfflineAppointment);
 router.patch('/:id/start', protect('any'), startAppointment);
 router.patch('/:id/complete', protect('any'), completeAppointment);
 router.patch('/:id/cancel', protect('any'), cancelAppointment);
+router.patch('/:id/no-show', protect('any'), noShowAppointment);
 router.patch('/:id/notify', protect('any'), notifyParticipant);
 router.patch('/:id/join', protect('any'), markParticipantJoined);
 router.post('/:id/feedback', protect('patient'), submitFeedback);

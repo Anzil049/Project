@@ -3,6 +3,7 @@ const Appointment = require('../models/Appointment');
 const AppointmentSlot = require('../models/AppointmentSlot');
 const Doctor = require('../models/Doctor');
 const User = require('../models/User');
+const Prescription = require('../models/Prescription');
 const {
     BOOKING_CLOSE_MINUTES,
     generateAvailableSlots,
@@ -23,7 +24,25 @@ const populateAppointmentQuery = (query) => query
             { path: 'hospitalId', select: 'name image phone' },
         ],
     })
-    .populate('slot_id');
+    .populate('slot_id')
+    .populate('prescription_id');
+
+const formatAppointmentResponse = (appointment) => {
+    if (!appointment) return null;
+    const obj = appointment.toObject ? appointment.toObject() : appointment;
+    if (obj.prescription_id) {
+        obj.prescription = {
+            diagnosis: obj.prescription_id.diagnosis,
+            notes: obj.prescription_id.notes,
+            follow_up_date: obj.prescription_id.follow_up_date,
+            medicines: obj.prescription_id.medicines || []
+        };
+        obj.vitals = obj.prescription_id.vitals || {};
+        obj.custom_vitals = obj.prescription_id.custom_vitals || [];
+        obj.consultation_notes = obj.prescription_id.notes;
+    }
+    return obj;
+};
 
 const calculatePayment = (doctor, consultationType, mode = 'online_gateway') => {
     const amount = Number(doctor.fee || 0);
@@ -426,7 +445,7 @@ const getDoctorAppointments = asyncHandler(async (req, res) => {
     const appointments = await populateAppointmentQuery(Appointment.find({ doctor_id: doctor._id }))
         .sort({ token_number: 1, createdAt: 1 });
 
-    res.json(appointments);
+    res.json(appointments.map(formatAppointmentResponse));
 });
 
 const getHospitalAppointments = asyncHandler(async (req, res) => {
@@ -435,7 +454,7 @@ const getHospitalAppointments = asyncHandler(async (req, res) => {
     const appointments = await populateAppointmentQuery(Appointment.find({ doctor_id: { $in: doctorIds } }))
         .sort({ createdAt: -1 });
 
-    res.json({ doctors, appointments });
+    res.json({ doctors, appointments: appointments.map(formatAppointmentResponse) });
 });
 
 const getAppointmentById = asyncHandler(async (req, res) => {
@@ -449,18 +468,29 @@ const getAppointmentById = asyncHandler(async (req, res) => {
     await assertCanManageAppointment(req, appointment);
 
     const previousPrescriptions = appointment.patient_id?._id
-        ? await Appointment.find({
-            _id: { $ne: appointment._id },
+        ? await Prescription.find({
             patient_id: appointment.patient_id._id,
             doctor_id: appointment.doctor_id._id,
-            status: 'completed',
-            'prescription.diagnosis': { $exists: true, $ne: '' },
-        }).populate('slot_id').sort({ createdAt: -1 }).limit(5)
+        }).sort({ createdAt: -1 }).limit(5)
         : [];
 
+    const formattedPrevPrescriptions = previousPrescriptions.map(p => ({
+        _id: p._id,
+        createdAt: p.createdAt,
+        prescription: {
+            diagnosis: p.diagnosis,
+            notes: p.notes,
+            follow_up_date: p.follow_up_date,
+            medicines: p.medicines || []
+        },
+        vitals: p.vitals || {},
+        custom_vitals: p.custom_vitals || [],
+        consultation_notes: p.notes
+    }));
+
     res.json({
-        ...appointment.toObject(),
-        previous_prescriptions: previousPrescriptions,
+        ...formatAppointmentResponse(appointment),
+        previous_prescriptions: formattedPrevPrescriptions,
     });
 });
 
@@ -486,13 +516,103 @@ const completeAppointment = asyncHandler(async (req, res) => {
     }
 
     await assertCanManageAppointment(req, appointment);
+
+    // Vitals validation
+    if (req.body.vitals) {
+        const { bp, pulse, temperature, weight } = req.body.vitals;
+        if (bp && (typeof bp !== 'string' || bp.length > 50)) {
+            res.status(400);
+            throw new Error('Invalid blood pressure value (must be under 50 characters)');
+        }
+        if (pulse && (typeof pulse !== 'string' || pulse.length > 50)) {
+            res.status(400);
+            throw new Error('Invalid pulse value (must be under 50 characters)');
+        }
+        if (temperature && (typeof temperature !== 'string' || temperature.length > 50)) {
+            res.status(400);
+            throw new Error('Invalid temperature value (must be under 50 characters)');
+        }
+        if (weight && (typeof weight !== 'string' || weight.length > 50)) {
+            res.status(400);
+            throw new Error('Invalid weight value (must be under 50 characters)');
+        }
+    }
+
+    // Custom Vitals validation
+    if (req.body.custom_vitals) {
+        if (!Array.isArray(req.body.custom_vitals)) {
+            res.status(400);
+            throw new Error('custom_vitals must be an array');
+        }
+        if (req.body.custom_vitals.length > 10) {
+            res.status(400);
+            throw new Error('A maximum of 10 custom vital fields is allowed');
+        }
+        for (const item of req.body.custom_vitals) {
+            if (!item.name || typeof item.name !== 'string' || item.name.trim() === '') {
+                res.status(400);
+                throw new Error('Custom vital field name is required and must be a non-empty string');
+            }
+            if (item.name.length > 50) {
+                res.status(400);
+                throw new Error('Custom vital field name must be under 50 characters');
+            }
+            if (!item.value || typeof item.value !== 'string' || item.value.trim() === '') {
+                res.status(400);
+                throw new Error('Custom vital field value is required and must be a non-empty string');
+            }
+            if (item.value.length > 50) {
+                res.status(400);
+                throw new Error('Custom vital field value must be under 50 characters');
+            }
+        }
+    }
+
+    // Create or update Prescription record
+    const prescription = await Prescription.findOneAndUpdate(
+        { appointment_id: appointment._id },
+        {
+            appointment_id: appointment._id,
+            patient_id: appointment.patient_id,
+            doctor_id: appointment.doctor_id,
+            diagnosis: req.body.prescription?.diagnosis || 'General Health Review',
+            notes: req.body.prescription?.notes || req.body.consultation_notes || '',
+            follow_up_date: req.body.prescription?.follow_up_date,
+            medicines: req.body.prescription?.medicines || [],
+            vitals: req.body.vitals || {},
+            custom_vitals: req.body.custom_vitals || []
+        },
+        { upsert: true, new: true }
+    );
+
     appointment.status = 'completed';
-    appointment.prescription = req.body.prescription || appointment.prescription;
-    appointment.consultation_notes = req.body.consultation_notes || appointment.consultation_notes;
+    appointment.prescription_id = prescription._id;
     await appointment.save();
 
     await AppointmentSlot.findByIdAndUpdate(appointment.slot_id, { status: 'completed' });
-    res.json({ message: 'Consultation completed', appointment });
+
+    // Return populated and formatted response
+    const populated = await populateAppointmentQuery(Appointment.findById(appointment._id));
+    res.json({ message: 'Consultation completed', appointment: formatAppointmentResponse(populated) });
+});
+
+const noShowAppointment = asyncHandler(async (req, res) => {
+    const appointment = await Appointment.findById(req.params.id);
+    if (!appointment) {
+        res.status(404);
+        throw new Error('Appointment not found');
+    }
+    if (appointment.status !== 'booked') {
+        res.status(400);
+        throw new Error('Only booked appointments can be marked as no-show');
+    }
+
+    await assertCanManageAppointment(req, appointment);
+    appointment.status = 'no_show';
+    await appointment.save();
+
+    await AppointmentSlot.findByIdAndUpdate(appointment.slot_id, { status: 'no_show' });
+    res.json({ message: 'Patient marked as no-show', appointment });
 });
 
 const cancelAppointment = asyncHandler(async (req, res) => {
@@ -549,7 +669,7 @@ const getQueuePreview = asyncHandler(async (req, res) => {
     const queue = await populateAppointmentQuery(Appointment.find({
         doctor_id: appointment.doctor_id,
         slot_id: { $in: slots.map(slot => slot._id) },
-        status: { $in: ['booked', 'consulting', 'completed'] },
+        status: { $in: ['booked', 'consulting', 'completed', 'no_show'] },
     }));
 
     queue.sort((a, b) => {
@@ -560,13 +680,15 @@ const getQueuePreview = asyncHandler(async (req, res) => {
     });
 
     const current = queue.find(item => item.status === 'consulting');
-    const currentIndex = current ? queue.findIndex(item => item._id.toString() === current._id.toString()) : -1;
-    const patientIndex = queue.findIndex(item => item._id.toString() === appointment._id.toString());
     const firstSlot = slots[0];
     const duration = firstSlot
         ? Math.max(5, Math.round((new Date(firstSlot.end_datetime) - new Date(firstSlot.start_datetime)) / 60000))
         : 10;
-    const tokensAhead = Math.max(0, patientIndex - Math.max(currentIndex, -1) - (currentIndex >= 0 ? 0 : 1));
+
+    const activeQueue = queue.filter(item => ['booked', 'consulting'].includes(item.status));
+    const activePatientIndex = activeQueue.findIndex(item => item._id.toString() === appointment._id.toString());
+    const activeCurrentIndex = activeQueue.findIndex(item => item.status === 'consulting');
+    const tokensAhead = activePatientIndex === -1 ? 0 : Math.max(0, activePatientIndex - Math.max(activeCurrentIndex, -1) - (activeCurrentIndex >= 0 ? 0 : 1));
 
     res.json({
         appointment_id: appointment._id,
@@ -978,6 +1100,7 @@ module.exports = {
     completeAppointment,
     createOfflineAppointment,
     cancelAppointment,
+    noShowAppointment,
     getQueuePreview,
     notifyParticipant,
     markParticipantJoined,

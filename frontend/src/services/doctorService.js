@@ -76,6 +76,10 @@ const doctorService = {
 
   toggleCloseBooking: appointmentService.toggleCloseBooking,
 
+  noShowAppointment: appointmentService.noShowAppointment,
+
+
+
   getProfile: async () => {
     const response = await api.get('/auth/me');
     return response.data;

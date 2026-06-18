@@ -78,19 +78,10 @@ const appointmentSchema = mongoose.Schema({
         doctor_notified_at: Date,
         patient_notified_at: Date,
     },
-    prescription: {
-        diagnosis: String,
-        notes: String,
-        follow_up_date: Date,
-        medicines: [{
-            name: String,
-            dosage: String,
-            frequency: String,
-            duration: String,
-            instruction: String,
-        }],
+    prescription_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Prescription',
     },
-    consultation_notes: String,
     feedback: {
         doctor_rating: { type: Number, min: 1, max: 5 },
         hospital_rating: { type: Number, min: 1, max: 5 },

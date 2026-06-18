@@ -131,6 +131,7 @@ const DoctorDashboard = () => {
       case 'booked': return 'bg-purple-600 text-white border-purple-700 font-black';
       case 'completed': return 'bg-slate-100 text-navy/70 border-slate-300 font-bold';
       case 'cancelled': return 'bg-red-50 text-red-600 border-red-200 font-bold';
+      case 'no_show': return 'bg-amber-100 text-amber-800 border-amber-300 font-bold';
       default: return 'bg-gray-100 text-gray-600';
     }
   };
@@ -143,6 +144,20 @@ const DoctorDashboard = () => {
       navigate(`/doctor/appointments/${appId}/consult`);
     } catch (error) {
       toast.error('Failed to start consultation', { id: 'start-consult' });
+    }
+  };
+
+  const handleMarkNoShow = async (appId) => {
+    if (!window.confirm('Are you sure you want to mark this patient as No-Show?')) {
+      return;
+    }
+    try {
+      toast.loading('Marking patient as no-show...', { id: 'no-show-toast' });
+      await doctorService.noShowAppointment(appId);
+      toast.success('Patient marked as no-show', { id: 'no-show-toast' });
+      fetchDashboardData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update status', { id: 'no-show-toast' });
     }
   };
 
@@ -558,15 +573,26 @@ const DoctorDashboard = () => {
                    Close
                 </Button>
                 {selectedAppointment.status === 'booked' && (
-                   <Button 
-                      onClick={() => {
-                        setDetailsModalOpen(false);
-                        handleStartConsultation(selectedAppointment.id);
-                      }} 
-                      className="bg-[#0D9488] text-white rounded-2xl px-10 shadow-xl border-none font-black text-[10px] h-12 uppercase tracking-widest"
-                   >
-                      Start Consultation
-                   </Button>
+                   <div className="flex gap-2">
+                      <Button 
+                         onClick={() => {
+                           setDetailsModalOpen(false);
+                           handleMarkNoShow(selectedAppointment.id);
+                         }} 
+                         className="bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 rounded-2xl px-6 font-black text-[10px] h-12 uppercase tracking-widest"
+                      >
+                         Mark No-Show
+                      </Button>
+                      <Button 
+                         onClick={() => {
+                           setDetailsModalOpen(false);
+                           handleStartConsultation(selectedAppointment.id);
+                         }} 
+                         className="bg-[#0D9488] text-white rounded-2xl px-10 shadow-xl border-none font-black text-[10px] h-12 uppercase tracking-widest"
+                      >
+                         Start Consultation
+                      </Button>
+                   </div>
                 )}
              </div>
           </div>

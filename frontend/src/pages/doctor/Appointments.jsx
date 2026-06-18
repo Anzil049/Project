@@ -32,7 +32,7 @@ const DoctorAppointments = () => {
   const navigate = useNavigate();
   const [consultType, setConsultType] = useState('offline'); // 'offline' | 'online'
   const [appointmentTab, setAppointmentTab] = useState('Upcoming'); // 'Upcoming', 'Completed', 'Cancelled'
-  const [dateFilter, setDateFilter] = useState('all'); // 'all', 'today', 'yesterday', 'tomorrow', 'custom'
+  const [dateFilter, setDateFilter] = useState('today'); // 'today', 'yesterday', 'tomorrow', 'custom'
   const [customDate, setCustomDate] = useState(getLocalDateString(new Date()));
   
   const [appointments, setAppointments] = useState([]);
@@ -101,6 +101,9 @@ const DoctorAppointments = () => {
       ? new Date(start).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
       : 'N/A';
 
+    const isPast = start && new Date(start) < now;
+    const displayStatus = (app.status === 'booked' && isPast) ? 'cancelled' : app.status;
+
     return {
       ...app,
       id: app._id,
@@ -116,12 +119,17 @@ const DoctorAppointments = () => {
       token: app.token_number,
       type: isOnline ? 'Online' : 'Physical',
       wasRebooked: isSlotRebooked(app),
+      displayStatus,
     };
   });
 
-  // For the Cancelled tab: ALL cancelled of current type
+  // For the Cancelled tab: ALL cancelled or no-show of current type, plus past booked slots
   const allCancelledProcessed = appointments
-    .filter(app => app.status === 'cancelled' && app.consultation_type === consultType)
+    .filter(app => {
+      if (app.consultation_type !== consultType) return false;
+      const isPast = app.slot_id?.start_datetime && new Date(app.slot_id.start_datetime) < now;
+      return ['cancelled', 'no_show'].includes(app.status) || (app.status === 'booked' && isPast);
+    })
     .sort((a, b) => {
       if (!a.slot_id?.start_datetime || !b.slot_id?.start_datetime) return 0;
       return new Date(a.slot_id.start_datetime) - new Date(b.slot_id.start_datetime);
@@ -135,6 +143,10 @@ const DoctorAppointments = () => {
       const timeStr = start
         ? new Date(start).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
         : 'N/A';
+
+      const isPast = start && new Date(start) < now;
+      const displayStatus = (app.status === 'booked' && isPast) ? 'cancelled' : app.status;
+
       return {
         ...app,
         id: app._id,
@@ -150,6 +162,7 @@ const DoctorAppointments = () => {
         token: app.token_number,
         type: isOnline ? 'Online' : 'Physical',
         wasRebooked: isSlotRebooked(app),
+        displayStatus,
       };
     });
 
@@ -188,7 +201,7 @@ const DoctorAppointments = () => {
     return processedAppointments.filter(app => {
       let matchesTab = false;
       if (tabName === 'Upcoming') {
-        matchesTab = ['booked', 'consulting'].includes(app.status);
+        matchesTab = ['booked', 'consulting'].includes(app.status) && app.displayStatus !== 'cancelled';
       } else if (tabName === 'Completed') {
         matchesTab = app.status === 'completed';
       }
@@ -240,7 +253,7 @@ const DoctorAppointments = () => {
     : processedAppointments.filter(app => {
         let matchesTab = false;
         if (appointmentTab === 'Upcoming') {
-          matchesTab = ['booked', 'consulting'].includes(app.status);
+          matchesTab = ['booked', 'consulting'].includes(app.status) && app.displayStatus !== 'cancelled';
         } else if (appointmentTab === 'Completed') {
           matchesTab = app.status === 'completed';
         }
@@ -262,6 +275,7 @@ const DoctorAppointments = () => {
       case 'booked': return 'bg-purple-600 text-white border-purple-700 font-black';
       case 'completed': return 'bg-slate-100 text-navy/70 border-slate-300 font-bold';
       case 'cancelled': return 'bg-red-50 text-red-600 border-red-200 font-bold';
+      case 'no_show': return 'bg-amber-100 text-amber-800 border-amber-300 font-bold';
       default: return 'bg-gray-100 text-gray-600';
     }
   };
@@ -277,6 +291,49 @@ const DoctorAppointments = () => {
     }
   };
 
+  const handleMarkNoShow = async (appId) => {
+    if (!window.confirm('Are you sure you want to mark this patient as No-Show?')) {
+      return;
+    }
+    try {
+      toast.loading('Marking patient as no-show...', { id: 'no-show-toast' });
+      await doctorService.noShowAppointment(appId);
+      toast.success('Patient marked as no-show', { id: 'no-show-toast' });
+      fetchAppointments();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update status', { id: 'no-show-toast' });
+    }
+  };
+
+  const handleStartClinicSession = async () => {
+    const active = appointments.find(a => a.status === 'consulting');
+    if (active) {
+      toast.success('Resuming active session...');
+      navigate(`/doctor/appointments/${active._id}/consult`);
+      return;
+    }
+
+    const today = getLocalDateString(new Date());
+    const todayBooked = appointments
+      .filter(a => a.status === 'booked' && a.consultation_type === consultType && getLocalDateString(a.slot_id?.start_datetime) === today)
+      .sort((a, b) => new Date(a.slot_id?.start_datetime) - new Date(b.slot_id?.start_datetime));
+
+    if (todayBooked.length === 0) {
+      toast.error("No booked appointments scheduled for today.");
+      return;
+    }
+
+    const firstPatient = todayBooked[0];
+    try {
+      toast.loading("Starting today's clinic session...", { id: 'start-clinic' });
+      await doctorService.startAppointment(firstPatient._id);
+      toast.success('Session started!', { id: 'start-clinic' });
+      navigate(`/doctor/appointments/${firstPatient._id}/consult`);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to start clinic session', { id: 'start-clinic' });
+    }
+  };
+
   if (loading) {
     return (
       <DashboardLayout title="Appointments & Consultations" role="doctor">
@@ -288,13 +345,14 @@ const DoctorAppointments = () => {
   }
 
   const activeSession = processedAppointments.find(a => a.status === 'consulting');
+  const nextBookedApp = filteredAppointments.find(app => app.status === 'booked');
 
   return (
     <DashboardLayout title="Appointments & Consultations" role="doctor">
       <div className="max-w-7xl mx-auto space-y-8 pb-20 font-body animate-in fade-in duration-700">
         
-        {/* Consultation Type Switcher */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        {/* Header Title + Type Switcher and Date Filters */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-2">
             <h1 className="text-4xl font-heading font-black text-navy tracking-tight">
               {consultType === 'offline' ? 'Offline' : <span className="text-[#0D9488]">Online</span>}{' '}
@@ -305,13 +363,14 @@ const DoctorAppointments = () => {
             </p>
           </div>
 
-          {/* Type Switch + Date Filter row */}
+          {/* Type Switch + Date Filter controls */}
           <div className="flex flex-wrap items-center gap-3">
             {/* Offline / Online pill switcher */}
             <div className="flex bg-navy p-1 rounded-2xl">
               {[['offline', 'Offline'], ['online', 'Online']].map(([val, label]) => (
                 <button
                   key={val}
+                  type="button"
                   onClick={() => { setConsultType(val); setAppointmentTab('Upcoming'); }}
                   className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
                     consultType === val
@@ -328,9 +387,10 @@ const DoctorAppointments = () => {
 
             {/* Date filter */}
             <div className="flex bg-[#EEF2F6] p-1 rounded-2xl border border-gray-150">
-              {['all', 'today', 'yesterday', 'tomorrow', 'custom'].map(filterType => (
+              {['today', 'yesterday', 'tomorrow', 'custom'].map(filterType => (
                 <button
                   key={filterType}
+                  type="button"
                   onClick={() => setDateFilter(filterType)}
                   className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
                     dateFilter === filterType 
@@ -356,17 +416,33 @@ const DoctorAppointments = () => {
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-gray-200">
-          {['Upcoming', 'Completed', 'Cancelled'].map(tab => (
-            <button
-              key={tab}
-              onClick={() => setAppointmentTab(tab)}
-              className={`px-8 py-4 text-sm font-black transition-all border-b-2 ${appointmentTab === tab ? 'border-[#0D9488] text-[#0D9488]' : 'border-transparent text-navy/40 hover:text-navy hover:bg-gray-50/50'}`}
+        {/* Tab Navigation Row with Start Clinic Session at the end (right) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-gray-200 gap-4">
+          <div className="flex flex-wrap">
+            {['Upcoming', 'Completed', 'Cancelled'].map(tab => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setAppointmentTab(tab)}
+                className={`px-8 py-4 text-sm font-black transition-all border-b-2 -mb-[2px] ${
+                  appointmentTab === tab 
+                    ? 'border-[#0D9488] text-[#0D9488]' 
+                    : 'border-transparent text-navy/40 hover:text-navy hover:bg-gray-50/50'
+                }`}
+              >
+                {tab === 'Cancelled' ? 'CANCELLED / NO-SHOW' : tab.toUpperCase()} ({getTabCount(tab)})
+              </button>
+            ))}
+          </div>
+
+          <div className="pb-3 sm:pb-0 flex items-center justify-end">
+            <Button
+              onClick={handleStartClinicSession}
+              className="bg-[#0D9488] hover:bg-[#0D9488]/90 text-white rounded-2xl px-6 py-2.5 font-black text-[10px] uppercase tracking-widest border-none shadow-lg shadow-[#0D9488]/20 flex items-center gap-2"
             >
-              {tab.toUpperCase()} ({getTabCount(tab)})
-            </button>
-          ))}
+              <CheckCircle2 size={13} /> Start Clinic Session
+            </Button>
+          </div>
         </div>
 
         {/* Main List */}
@@ -384,83 +460,52 @@ const DoctorAppointments = () => {
                 </div>
              ) : (
                 filteredAppointments.map(app => (
-                   <Card key={app.id} className={`p-6 bg-white border ${app.status === 'consulting' ? 'border-[#0D9488] shadow-lg shadow-[#0D9488]/5 ring-1 ring-[#0D9488]/10' : app.status === 'cancelled' ? 'border-red-100' : 'border-gray-100'} rounded-[32px] hover:-translate-y-1 transition-all duration-300 group`}>
+                   <Card key={app.id} className={`p-6 bg-white border ${app.displayStatus === 'consulting' ? 'border-[#0D9488] shadow-lg shadow-[#0D9488]/5 ring-1 ring-[#0D9488]/10' : app.displayStatus === 'cancelled' ? 'border-red-100' : 'border-gray-100'} rounded-[32px] hover:-translate-y-1 transition-all duration-300 group`}>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                          
                          <div className="flex items-center gap-5">
                             <div className="relative">
-                               <Avatar name={app.patient} size="lg" className={`${app.status === 'consulting' ? 'ring-4 ring-[#0D9488]/20' : app.status === 'cancelled' ? 'opacity-60' : ''}`} />
+                               <Avatar name={app.patient} size="lg" className={`${app.displayStatus === 'consulting' ? 'ring-4 ring-[#0D9488]/20' : app.displayStatus === 'cancelled' ? 'opacity-60' : ''}`} />
                                <div className="absolute -bottom-2 -right-2 bg-white rounded-full p-1 border border-gray-100 shadow-sm">
-                                  <Stethoscope size={14} className={app.status === 'cancelled' ? 'text-red-400' : 'text-[#0D9488]'} />
+                                  <Stethoscope size={14} className={app.displayStatus === 'cancelled' ? 'text-red-400' : 'text-[#0D9488]'} />
                                </div>
                             </div>
                             <div>
-                               <h3 className={`text-base font-black leading-none mb-1 ${app.status === 'cancelled' ? 'text-navy/50' : 'text-navy'}`}>{app.patient}</h3>
+                               <h3 className={`text-base font-black leading-none mb-1 ${app.displayStatus === 'cancelled' ? 'text-navy/50' : 'text-navy'}`}>{app.patient}</h3>
                                <p className="text-[10px] font-black tracking-widest uppercase text-navy/40 flex items-center gap-2 mt-1">
                                   {app.date} • {app.time} • Token T-{app.token} • <span className="text-teal-600 font-bold">{app.type}</span>
                                </p>
-                               {app.status === 'cancelled' && app.wasRebooked && (
+                               {app.displayStatus === 'cancelled' && app.wasRebooked && (
                                   <p className="text-[9px] font-black tracking-widest uppercase text-orange-500 mt-1">⟳ Slot was rebooked by another patient</p>
-                               )}
-                               {app.status === 'cancelled' && app.cancellation_reason && (
+                                )}
+                               {app.displayStatus === 'cancelled' && app.cancellation_reason && (
                                   <p className="text-[9px] font-black text-red-400 mt-0.5 uppercase tracking-wider">Reason: {app.cancellation_reason}</p>
-                               )}
+                                )}
                             </div>
                          </div>
 
                          <div className="flex flex-col sm:items-end gap-3">
-                            <div className="flex items-center gap-2 flex-wrap justify-end">
-                               <Badge className={`text-[9px] px-4 py-1.5 ${getStatusStyle(app.status)}`}>
-                                  {app.status === 'booked' ? 'SCHEDULED' : app.status.toUpperCase()}
-                               </Badge>
-                               {app.status === 'cancelled' && app.wasRebooked && (
-                                  <Badge className="text-[9px] px-3 py-1.5 bg-orange-50 text-orange-600 border border-orange-200 font-bold">
-                                     SLOT REBOOKED
-                                  </Badge>
-                               )}
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
-                               <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  onClick={() => { setSelectedAppointment(app); setDetailsModalOpen(true); }}
-                                  className="rounded-xl border-gray-200 text-[10px] px-4 py-2 font-black"
-                                >
-                                  DETAILS
-                               </Button>
-
-                               {app.status === 'consulting' ? (
-                                  <Button 
-                                    size="sm" 
-                                    onClick={() => navigate(`/doctor/appointments/${app.id}/consult`)} 
-                                    className="bg-[#0D9488] text-white border-none shadow-lg shadow-[#0D9488]/20 rounded-xl text-[10px] px-4 py-2 font-black"
-                                  >
-                                    OPEN DETAILS
-                                  </Button>
-                               ) : app.status === 'booked' ? (
-                                  // Only show START CONSULTATION once the slot start time is reached
-                                  now >= new Date(app.slot_id?.start_datetime)
-                                    ? (
-                                      <Button 
-                                        size="sm" 
-                                        onClick={() => handleStartConsultation(app.id)} 
-                                        className="bg-[#0D9488] text-white border-none shadow-lg shadow-[#0D9488]/20 rounded-xl text-[10px] px-4 py-2 font-black animate-pulse"
-                                      >
-                                        START CONSULTATION
-                                      </Button>
-                                    )
-                                    : null  // before start time: only show SCHEDULED badge + DETAILS
-                               ) : app.status === 'completed' ? (
-                                  <Button 
-                                    size="sm" 
-                                    onClick={() => navigate(`/doctor/appointments/${app.id}/consult`)} 
-                                    className="bg-gray-100 text-navy hover:bg-[#0D9488]/10 hover:text-[#0D9488] rounded-xl text-[10px] px-4 py-2 font-black border-transparent"
-                                  >
-                                    VIEW RX
-                                  </Button>
-                               ) : null}
-                            </div>
+                             <div className="flex items-center gap-2 flex-wrap justify-end">
+                                <Badge className={`text-[9px] px-4 py-1.5 ${getStatusStyle(app.displayStatus)}`}>
+                                   {app.displayStatus === 'booked' ? 'SCHEDULED' : app.displayStatus === 'no_show' ? 'NO-SHOW' : app.displayStatus.toUpperCase()}
+                                </Badge>
+                                {app.displayStatus === 'cancelled' && app.wasRebooked && (
+                                   <Badge className="text-[9px] px-3 py-1.5 bg-orange-50 text-orange-600 border border-orange-200 font-bold">
+                                      SLOT REBOOKED
+                                   </Badge>
+                                )}
+                             </div>
+                             
+                             <div className="flex items-center gap-2">
+                                <Button 
+                                   variant="outline" 
+                                   size="sm" 
+                                   onClick={() => { setSelectedAppointment(app); setDetailsModalOpen(true); }}
+                                   className="rounded-xl border-gray-200 text-[10px] px-6 py-2.5 font-black uppercase tracking-wider"
+                                 >
+                                   Details
+                                </Button>
+                             </div>
                          </div>
 
                       </div>
@@ -531,11 +576,11 @@ const DoctorAppointments = () => {
                       </div>
                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                   <Badge className={`text-[10px] px-6 py-2 font-black uppercase tracking-widest ${getStatusStyle(selectedAppointment.status)}`}>
-                      {selectedAppointment.status === 'booked' ? 'SCHEDULED' : selectedAppointment.status}
-                   </Badge>
-                </div>
+                 <div className="flex items-center gap-2">
+                    <Badge className={`text-[10px] px-6 py-2 font-black uppercase tracking-widest ${getStatusStyle(selectedAppointment.displayStatus)}`}>
+                       {selectedAppointment.displayStatus === 'booked' ? 'SCHEDULED' : selectedAppointment.displayStatus.toUpperCase()}
+                    </Badge>
+                 </div>
              </div>
 
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -612,24 +657,13 @@ const DoctorAppointments = () => {
 
              {/* Actions */}
              <div className="pt-8 border-t border-gray-100 flex items-center justify-end gap-4">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setDetailsModalOpen(false)}
-                  className="rounded-2xl px-8 border-gray-200"
-                >
-                   Close
-                </Button>
-                {selectedAppointment.status === 'booked' && (
-                   <Button 
-                      onClick={() => {
-                        setDetailsModalOpen(false);
-                        handleStartConsultation(selectedAppointment.id);
-                      }} 
-                      className="bg-[#0D9488] text-white rounded-2xl px-10 shadow-xl shadow-[#0D9488]/20 border-none font-black text-[10px] h-12 uppercase tracking-widest"
-                   >
-                      Start Consultation
-                   </Button>
-                )}
+                 <Button 
+                   variant="outline" 
+                   onClick={() => setDetailsModalOpen(false)}
+                   className="rounded-2xl px-8 border-gray-200 uppercase tracking-widest font-black text-[10px]"
+                 >
+                    Close
+                 </Button>
              </div>
           </div>
         )}
