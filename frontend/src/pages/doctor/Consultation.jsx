@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button, Badge, Avatar } from '../../components/common';
 import { 
   Activity, ClipboardList, PlusCircle, Trash2, Calendar, 
-  Clock, Heart, Thermometer, User, FileText, ChevronLeft, Plus, CheckCircle2, Download, Users
+  Clock, Heart, Thermometer, User, FileText, ChevronLeft, Plus, CheckCircle2, Download, Users,
+  Mic, MicOff, Video, VideoOff, PhoneOff, Send, MessageSquare, AlertCircle
 } from 'lucide-react';
 import doctorService from '../../services/doctorService';
 import { generatePrescriptionPDF } from '../../utils/pdfGenerator';
 import toast from 'react-hot-toast';
+import useConsultationStore from '../../store/consultationStore';
 
 const calculateAge = (dobString) => {
   if (!dobString) return 'N/A';
@@ -16,6 +18,144 @@ const calculateAge = (dobString) => {
   const diffMs = Date.now() - dob.getTime();
   const ageDate = new Date(diffMs);
   return Math.abs(ageDate.getUTCFullYear() - 1970);
+};
+
+const EMPTY_ARRAY = [];
+
+const getLocalDateString = (dateInput) => {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Helper: get the session (schedule) that a given appointment belongs to
+const getAppointmentSession = (app, todaySchedules) => {
+  const startDatetime = app.slot_id?.start_datetime || app.start_datetime;
+  if (!startDatetime) return null;
+  const startTime = new Date(startDatetime);
+  const slotMinutes = startTime.getHours() * 60 + startTime.getMinutes();
+  return todaySchedules.find(s => {
+    if (!s.start_time || !s.end_time) return false;
+    const [sH, sM] = s.start_time.split(':').map(Number);
+    const [eH, eM] = s.end_time.split(':').map(Number);
+    return slotMinutes >= sH * 60 + sM && slotMinutes < eH * 60 + eM;
+  }) || null;
+};
+
+const isAppointmentStartable = (app, appointmentsList, schedulesList = []) => {
+  if (!app) return true;
+
+  const appIdStr = (app._id || app.id || '').toString();
+  const nowTime = new Date();
+  const today = getLocalDateString(nowTime);
+
+  const startDatetime = app.slot_id?.start_datetime || app.start_datetime;
+  if (!startDatetime) return true;
+
+  const startTime = new Date(startDatetime);
+  const appType = app.consultation_type;
+
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const todayDayOfWeek = days[nowTime.getDay()];
+
+  const todaySchedules = (schedulesList || []).filter(s =>
+    s.consultation_type === appType && (s.custom_date === today || s.day_of_week === todayDayOfWeek)
+  );
+
+  const appointmentSession = getAppointmentSession(app, todaySchedules);
+
+  let availabilityEndTime = null;
+  if (todaySchedules.length > 0) {
+    const endTimes = todaySchedules.map(s => {
+      if (!s.end_time) return null;
+      const [endH, endM] = s.end_time.split(':').map(Number);
+      const dt = new Date(nowTime);
+      dt.setHours(endH, endM, 0, 0);
+      return dt;
+    }).filter(Boolean);
+    if (endTimes.length > 0) availabilityEndTime = new Date(Math.max(...endTimes));
+  }
+  if (!availabilityEndTime) {
+    const getEndDatetime = (a) => {
+      if (a.slot_id?.end_datetime) return new Date(a.slot_id.end_datetime);
+      if (a.end_datetime) return new Date(a.end_datetime);
+      const start = a.slot_id?.start_datetime || a.start_datetime;
+      if (start) return new Date(new Date(start).getTime() + 15 * 60 * 1000);
+      return null;
+    };
+    const todaySlots = appointmentsList
+      .filter(a => {
+        const aStart = a.slot_id?.start_datetime || a.start_datetime;
+        return aStart && getLocalDateString(aStart) === today && a.consultation_type === appType;
+      })
+      .map(a => getEndDatetime(a)).filter(Boolean);
+    availabilityEndTime = todaySlots.length > 0 ? new Date(Math.max(...todaySlots)) : null;
+  }
+
+  if (app.status === 'no_show') {
+    const appDate = getLocalDateString(startTime);
+    let sessionEndTime = null;
+    let allOtherFinished = true;
+    if (appointmentSession) {
+      const [eH, eM] = appointmentSession.end_time.split(':').map(Number);
+      sessionEndTime = new Date(startTime);
+      sessionEndTime.setHours(eH, eM, 0, 0);
+      const [sH, sM] = appointmentSession.start_time.split(':').map(Number);
+      const sMin = sH * 60 + sM;
+      const eMin = eH * 60 + eM;
+      const sameSessionApps = appointmentsList.filter(a => {
+        const aStart = a.slot_id?.start_datetime || a.start_datetime;
+        if (!aStart || getLocalDateString(aStart) !== appDate || a.consultation_type !== appType) return false;
+        const aMin = new Date(aStart).getHours() * 60 + new Date(aStart).getMinutes();
+        return aMin >= sMin && aMin < eMin;
+      });
+      allOtherFinished = sameSessionApps.every(a =>
+        (a._id || a.id || '').toString() === appIdStr || ['completed', 'cancelled', 'no_show'].includes(a.status)
+      );
+    }
+    if (sessionEndTime && nowTime > sessionEndTime && allOtherFinished) return false;
+    if (availabilityEndTime && nowTime > availabilityEndTime) return false;
+    return true;
+  }
+
+  const appDate = getLocalDateString(startTime);
+  if (appDate !== today) return false;
+
+  let sameSessionApps;
+  if (appointmentSession) {
+    const [sH, sM] = appointmentSession.start_time.split(':').map(Number);
+    const [eH, eM] = appointmentSession.end_time.split(':').map(Number);
+    const sMin = sH * 60 + sM;
+    const eMin = eH * 60 + eM;
+    sameSessionApps = appointmentsList
+      .filter(a => {
+        const aStart = a.slot_id?.start_datetime || a.start_datetime;
+        if (!aStart || getLocalDateString(aStart) !== today || a.consultation_type !== appType) return false;
+        const aMin = new Date(aStart).getHours() * 60 + new Date(aStart).getMinutes();
+        return aMin >= sMin && aMin < eMin;
+      })
+      .sort((a, b) => new Date(a.slot_id?.start_datetime || a.start_datetime) - new Date(b.slot_id?.start_datetime || b.start_datetime));
+  } else {
+    sameSessionApps = appointmentsList
+      .filter(a => {
+        const aStart = a.slot_id?.start_datetime || a.start_datetime;
+        return aStart && getLocalDateString(aStart) === today && a.consultation_type === appType;
+      })
+      .sort((a, b) => new Date(a.slot_id?.start_datetime || a.start_datetime) - new Date(b.slot_id?.start_datetime || b.start_datetime));
+  }
+
+  const appIdx = sameSessionApps.findIndex(a => (a._id || a.id || '').toString() === appIdStr);
+  if (appIdx === -1) return false;
+
+  if (appIdx === 0) {
+    // On the Consultation page, first patient is always allowed to start (they're already in a session)
+    return true;
+  }
+
+  return sameSessionApps.slice(0, appIdx).every(a => ['completed', 'cancelled', 'no_show'].includes(a.status));
 };
 
 const DoctorConsultationPage = () => {
@@ -45,86 +185,255 @@ const DoctorConsultationPage = () => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [nextPatient, setNextPatient] = useState(null);
   const [queue, setQueue] = useState([]);
+  const [schedules, setSchedules] = useState([]);
+  const [now, setNow] = useState(new Date());
+
+  // Online consultation room state & sync
+  const isOnline = appointment?.consultation_type === 'online';
+  const { getSession, sendMessage } = useConsultationStore();
+  const activeSessionData = useConsultationStore(s => s.sessions.find(x => x.id === id));
+  const messages = activeSessionData?.messages || EMPTY_ARRAY;
+  const chatBottomRef = useRef(null);
+  const localVideoRef = useRef(null);
+
+  const [stream, setStream] = useState(null);
+  const [camError, setCamError] = useState(null);
+  const [micOn, setMicOn] = useState(true);
+  const [camOn, setCamOn] = useState(true);
+  const [chatInput, setChatInput] = useState('');
 
   useEffect(() => {
-    const fetchAppointmentDetails = async () => {
-      try {
-        setLoading(true);
-        const data = await doctorService.getAppointmentById(id);
-        setAppointment(data);
-        
-        // Pre-fill prescription
-        if (data.prescription) {
-          setPrescriptionForm({
-            diagnosis: data.prescription.diagnosis || '',
-            notes: data.prescription.notes || '',
-            medicines: data.prescription.medicines?.length > 0 
-              ? data.prescription.medicines.map(m => ({
-                  name: m.name || '',
-                  dosage: m.dosage || '',
-                  frequency: m.frequency || '',
-                  duration: m.duration || '',
-                  instruction: m.instruction || ''
-                }))
-              : [{ name: '', dosage: '', frequency: '', duration: '', instruction: '' }]
-          });
-        }
-        if (data.consultation_notes) {
-          setConsultationNotes(data.consultation_notes);
-        }
-        
-        // Pre-fill vitals
-        if (data.vitals) {
-          setVitalsForm({
-            bp: data.vitals.bp || '',
-            pulse: data.vitals.pulse || '',
-            temperature: data.vitals.temperature || '',
-            weight: data.vitals.weight || '',
-          });
-        }
-        if (data.custom_vitals) {
-          setCustomVitals(data.custom_vitals.map(cv => ({
-            name: cv.name || '',
-            value: cv.value || ''
-          })));
-        }
+    if (isOnline && appointment) {
+      const existing = useConsultationStore.getState().sessions.find(s => s.id === id);
+      if (!existing) {
+        useConsultationStore.setState(state => ({
+          sessions: [
+            ...state.sessions,
+            {
+              id: id,
+              patientName: appointment.patient_snapshot?.name || 'Patient',
+              patientInitials: appointment.patient_snapshot?.name ? appointment.patient_snapshot.name.split(' ').map(n => n[0]).join('') : 'P',
+              doctorName: 'Doctor',
+              doctorInitials: 'D',
+              type: 'video',
+              status: 'active',
+              messages: []
+            }
+          ]
+        }));
+      }
+    }
+  }, [isOnline, appointment, id]);
 
-        // Fetch queue preview to find next patient
-        try {
-          const queueData = await doctorService.getQueuePreview(id);
-          const q = queueData.queue || [];
-          setQueue(q);
-          const currentIdx = q.findIndex(item => item.id.toString() === id.toString());
-          if (currentIdx !== -1) {
-            const nextBooked = q.find((item, index) => index > currentIdx && item.status === 'booked');
-            if (nextBooked) {
-              setNextPatient(nextBooked);
-            } else {
-              setNextPatient(null);
-            }
-          } else {
-            const nextBooked = q.find(item => item.status === 'booked');
-            if (nextBooked) {
-              setNextPatient(nextBooked);
-            } else {
-              setNextPatient(null);
-            }
-          }
-        } catch (queueError) {
-          console.error('Failed to load queue preview:', queueError);
+  useEffect(() => {
+    if (!isOnline) return;
+    let localStream = null;
+    const startCamera = async () => {
+      try {
+        const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localStream = mediaStream;
+        setStream(mediaStream);
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = mediaStream;
         }
-      } catch (error) {
-        toast.error('Failed to load appointment details');
-        navigate('/doctor/appointments');
-      } finally {
-        setLoading(false);
+      } catch (err) {
+        setCamError('Camera/Microphone permission denied. Please allow access and reload.');
       }
     };
+    startCamera();
+    return () => {
+      if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, [isOnline]);
 
-    fetchAppointmentDetails();
+  useEffect(() => {
+    if (isOnline) {
+      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isOnline]);
+
+  const toggleMic = () => {
+    stream?.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
+    setMicOn(p => !p);
+  };
+
+  const toggleCam = () => {
+    stream?.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
+    setCamOn(p => !p);
+  };
+
+  const handleSend = () => {
+    if (!chatInput.trim()) return;
+    const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    // Ensure session is initialized in the store if it's not already
+    const existing = useConsultationStore.getState().sessions.find(s => s.id === id);
+    if (!existing) {
+      useConsultationStore.setState(state => ({
+        sessions: [
+          ...state.sessions,
+          {
+            id: id,
+            patientName: appointment?.patient_snapshot?.name || 'Patient',
+            patientInitials: appointment?.patient_snapshot?.name ? appointment.patient_snapshot.name.split(' ').map(n => n[0]).join('') : 'P',
+            doctorName: 'Doctor',
+            doctorInitials: 'D',
+            type: 'video',
+            status: 'active',
+            messages: []
+          }
+        ]
+      }));
+    }
+
+    sendMessage(id, {
+      role: 'doctor',
+      text: chatInput.trim(),
+      time: nowStr,
+    });
+    setChatInput('');
+  };
+
+  // Refresh current time every 30 seconds so start consultation checks are updated
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const fetchAppointmentDetails = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      setShowSuccess(false);
+      const [data, scheduleData] = await Promise.all([
+        doctorService.getAppointmentById(id),
+        doctorService.getSchedules()
+      ]);
+      setAppointment(data);
+      // Handle both { doctor, schedules } and plain array responses
+      const parsedSchedules = scheduleData?.schedules && Array.isArray(scheduleData.schedules)
+        ? scheduleData.schedules
+        : Array.isArray(scheduleData) ? scheduleData : [];
+      setSchedules(parsedSchedules);
+      
+      // Pre-fill prescription
+      if (data.prescription) {
+        setPrescriptionForm({
+          diagnosis: data.prescription.diagnosis || '',
+          notes: data.prescription.notes || '',
+          medicines: data.prescription.medicines?.length > 0 
+            ? data.prescription.medicines.map(m => ({
+                name: m.name || '',
+                dosage: m.dosage || '',
+                frequency: m.frequency || '',
+                duration: m.duration || '',
+                instruction: m.instruction || ''
+              }))
+            : [{ name: '', dosage: '', frequency: '', duration: '', instruction: '' }]
+        });
+      } else {
+        setPrescriptionForm({
+          diagnosis: '',
+          notes: '',
+          medicines: [{ name: '', dosage: '', frequency: '', duration: '', instruction: '' }]
+        });
+      }
+      if (data.consultation_notes) {
+        setConsultationNotes(data.consultation_notes);
+      } else {
+        setConsultationNotes('');
+      }
+      
+      // Pre-fill vitals
+      if (data.vitals) {
+        setVitalsForm({
+          bp: data.vitals.bp || '',
+          pulse: data.vitals.pulse || '',
+          temperature: data.vitals.temperature || '',
+          weight: data.vitals.weight || '',
+        });
+      } else {
+        setVitalsForm({
+          bp: '',
+          pulse: '',
+          temperature: '',
+          weight: '',
+        });
+      }
+      if (data.custom_vitals) {
+        setCustomVitals(data.custom_vitals.map(cv => ({
+          name: cv.name || '',
+          value: cv.value || ''
+        })));
+      } else {
+        setCustomVitals([]);
+      }
+
+      // Fetch queue preview to find next patient
+      try {
+        const queueData = await doctorService.getQueuePreview(id);
+        const q = queueData.queue || [];
+        const activeType = data.consultation_type;
+
+        // Determine session boundaries for the current appointment
+        const apptStart = data.slot_id?.start_datetime || data.start_datetime;
+        let sessionFilteredQ = q.filter(item => item.consultation_type === activeType);
+
+        if (apptStart && parsedSchedules.length > 0) {
+          const apptTime = new Date(apptStart);
+          const apptMin = apptTime.getHours() * 60 + apptTime.getMinutes();
+          const today = `${apptTime.getFullYear()}-${String(apptTime.getMonth()+1).padStart(2,'0')}-${String(apptTime.getDate()).padStart(2,'0')}`;
+          const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          const dayOfWeek = DAYS[apptTime.getDay()];
+
+          const matchingSchedule = parsedSchedules.find(s => {
+            if (s.consultation_type !== activeType) return false;
+            if (s.custom_date !== today && s.day_of_week !== dayOfWeek) return false;
+            if (!s.start_time || !s.end_time) return false;
+            const [sH, sM] = s.start_time.split(':').map(Number);
+            const [eH, eM] = s.end_time.split(':').map(Number);
+            return apptMin >= sH * 60 + sM && apptMin < eH * 60 + eM;
+          });
+
+          if (matchingSchedule) {
+            const [sH, sM] = matchingSchedule.start_time.split(':').map(Number);
+            const [eH, eM] = matchingSchedule.end_time.split(':').map(Number);
+            const sMin = sH * 60 + sM;
+            const eMin = eH * 60 + eM;
+            sessionFilteredQ = sessionFilteredQ.filter(item => {
+              if (!item.start_datetime) return false;
+              const t = new Date(item.start_datetime);
+              const tMin = t.getHours() * 60 + t.getMinutes();
+              return tMin >= sMin && tMin < eMin;
+            });
+          }
+        }
+
+        setQueue(sessionFilteredQ);
+        const currentIdx = sessionFilteredQ.findIndex(item => item.id.toString() === id.toString());
+        if (currentIdx !== -1) {
+          const nextBooked = sessionFilteredQ.find((item, index) => index > currentIdx && item.status === 'booked');
+          setNextPatient(nextBooked || null);
+        } else {
+          setNextPatient(sessionFilteredQ.find(item => item.status === 'booked') || null);
+        }
+      } catch (queueError) {
+        console.error('Failed to load queue preview:', queueError);
+      }
+    } catch (error) {
+      toast.error('Failed to load appointment details');
+      navigate('/doctor/appointments');
+    } finally {
+      setLoading(false);
+    }
   }, [id, navigate]);
 
-  const isReadOnly = appointment?.status === 'completed' || appointment?.status === 'no_show';
+  useEffect(() => {
+    fetchAppointmentDetails();
+  }, [fetchAppointmentDetails]);
+
+  const isReadOnly = appointment?.status === 'completed' || appointment?.status === 'no_show' || appointment?.status === 'booked';
 
   const addMedicine = () => {
     if (isReadOnly) return;
@@ -171,7 +480,7 @@ const DoctorConsultationPage = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (isReadOnly) return;
 
     if (!prescriptionForm.diagnosis.trim()) {
@@ -232,88 +541,308 @@ const DoctorConsultationPage = () => {
   };
 
   const handleSelectQueuePatient = async (item) => {
-    if (item.status === 'completed' || item.status === 'no_show') {
+    const proceedNavigation = () => {
       navigate(`/doctor/appointments/${item.id}/consult`);
-    } else if (item.status === 'booked') {
-      if (appointment?.status === 'consulting') {
-        if (!window.confirm(`Are you sure you want to start consultation for ${item.patient_name}? The current consultation will remain unsaved.`)) {
-          return;
+    };
+
+    if (appointment?.status === 'consulting' && item.id.toString() !== id.toString()) {
+      toast((t) => (
+        <div className="flex flex-col gap-3 p-1 font-body text-left">
+          <p className="text-sm font-bold text-navy leading-normal">
+            Are you sure you want to view <span className="text-[#0D9488] font-black">{item.patient_name}</span>? The current active consultation session will remain unsaved.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => {
+                toast.dismiss(t.id);
+                proceedNavigation();
+              }}
+              className="px-4 py-2 bg-[#0D9488] hover:bg-[#0D9488]/90 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+            >
+              Yes, Proceed
+            </button>
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="px-4 py-2 bg-gray-100 text-navy hover:bg-gray-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ), {
+        duration: 8000,
+        position: 'top-center',
+        style: {
+          borderRadius: '24px',
+          background: '#fff',
+          color: '#0C1A2E',
+          border: '1px solid #E2E8F0',
+          boxShadow: '0 20px 25px -5px rgb(12 26 46 / 0.1), 0 8px 10px -6px rgb(12 26 46 / 0.1)',
+          maxWidth: '400px',
         }
+      });
+    } else {
+      proceedNavigation();
+    }
+  };
+
+  const handleRestartConsultation = async () => {
+    try {
+      toast.loading('Restarting consultation...', { id: 'restart-action' });
+      await doctorService.startAppointment(id);
+      toast.success('Consultation restarted!', { id: 'restart-action' });
+      
+      const data = await doctorService.getAppointmentById(id);
+      setAppointment(data);
+      
+      if (data.prescription) {
+        setPrescriptionForm({
+          diagnosis: data.prescription.diagnosis || '',
+          notes: data.prescription.notes || '',
+          medicines: data.prescription.medicines?.length > 0 
+            ? data.prescription.medicines.map(m => ({
+                name: m.name || '',
+                dosage: m.dosage || '',
+                frequency: m.frequency || '',
+                duration: m.duration || '',
+                instruction: m.instruction || ''
+              }))
+            : [{ name: '', dosage: '', frequency: '', duration: '', instruction: '' }]
+        });
       } else {
-        if (!window.confirm(`Start consultation for ${item.patient_name}?`)) {
-          return;
-        }
+        setPrescriptionForm({
+          diagnosis: '',
+          notes: '',
+          medicines: [{ name: '', dosage: '', frequency: '', duration: '', instruction: '' }]
+        });
       }
+      if (data.consultation_notes) {
+        setConsultationNotes(data.consultation_notes);
+      } else {
+        setConsultationNotes('');
+      }
+      
+      if (data.vitals) {
+        setVitalsForm({
+          bp: data.vitals.bp || '',
+          pulse: data.vitals.pulse || '',
+          temperature: data.vitals.temperature || '',
+          weight: data.vitals.weight || '',
+        });
+      } else {
+        setVitalsForm({
+          bp: '',
+          pulse: '',
+          temperature: '',
+          weight: '',
+        });
+      }
+      if (data.custom_vitals) {
+        setCustomVitals(data.custom_vitals.map(cv => ({
+          name: cv.name || '',
+          value: cv.value || ''
+        })));
+      } else {
+        setCustomVitals([]);
+      }
+
       try {
-        toast.loading(`Starting consultation for ${item.patient_name}...`, { id: 'start-early-action' });
-        await doctorService.startAppointment(item.id);
-        toast.success('Consultation started!', { id: 'start-early-action' });
-        navigate(`/doctor/appointments/${item.id}/consult`);
-      } catch (err) {
-        toast.error(err.response?.data?.message || 'Failed to start consultation', { id: 'start-early-action' });
+        const queueData = await doctorService.getQueuePreview(id);
+        const q = queueData.queue || [];
+        const activeType = data.consultation_type;
+        const filteredQ = q.filter(item => item.consultation_type === activeType);
+        setQueue(filteredQ);
+        const currentIdx = filteredQ.findIndex(item => item.id.toString() === id.toString());
+        if (currentIdx !== -1) {
+          const nextBooked = filteredQ.find((item, index) => index > currentIdx && item.status === 'booked');
+          setNextPatient(nextBooked || null);
+        } else {
+          const nextBooked = filteredQ.find(item => item.status === 'booked');
+          setNextPatient(nextBooked || null);
+        }
+      } catch (queueError) {
+        console.error('Failed to load queue preview:', queueError);
       }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to restart consultation', { id: 'restart-action' });
     }
   };
 
   const handleMarkNoShowSidebar = async (itemId, patientName, e) => {
     e.stopPropagation();
-    if (!window.confirm(`Are you sure you want to mark ${patientName} as No-Show?`)) {
-      return;
-    }
-    try {
-      toast.loading('Marking patient as no-show...', { id: 'no-show-sidebar' });
-      await doctorService.noShowAppointment(itemId);
-      toast.success(`${patientName} marked as no-show`, { id: 'no-show-sidebar' });
-      
-      // Update queue preview in state
-      const queueData = await doctorService.getQueuePreview(id);
-      const q = queueData.queue || [];
-      setQueue(q);
-      
-      // Update next patient if needed
-      const currentIdx = q.findIndex(item => item.id.toString() === id.toString());
-      if (currentIdx !== -1) {
-        const nextBooked = q.find((item, index) => index > currentIdx && item.status === 'booked');
-        setNextPatient(nextBooked || null);
-      } else {
-        const nextBooked = q.find(item => item.status === 'booked');
-        setNextPatient(nextBooked || null);
+
+    const proceedNoShow = async () => {
+      // Optimistically update the status to no-show state on the spot for sidebar patients
+      setQueue(prev => prev.map(item => item.id.toString() === itemId.toString() ? { ...item, status: 'no_show' } : item));
+
+      try {
+        toast.loading('Marking patient as no-show...', { id: 'no-show-sidebar' });
+        await doctorService.noShowAppointment(itemId);
+        toast.success(`${patientName} marked as no-show`, { id: 'no-show-sidebar' });
+        
+        // Update queue preview in state
+        const queueData = await doctorService.getQueuePreview(id);
+        const q = queueData.queue || [];
+        const activeType = appointment?.consultation_type;
+        const filteredQ = q.filter(item => item.consultation_type === activeType);
+        setQueue(filteredQ);
+        
+        // Update next patient if needed
+        const currentIdx = filteredQ.findIndex(item => item.id.toString() === id.toString());
+        if (currentIdx !== -1) {
+          const nextBooked = filteredQ.find((item, index) => index > currentIdx && item.status === 'booked');
+          setNextPatient(nextBooked || null);
+        } else {
+          const nextBooked = filteredQ.find(item => item.status === 'booked');
+          setNextPatient(nextBooked || null);
+        }
+      } catch (error) {
+        toast.error(error.response?.data?.message || 'Failed to update status', { id: 'no-show-sidebar' });
       }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update status', { id: 'no-show-sidebar' });
-    }
+    };
+
+    toast((t) => (
+      <div className="flex flex-col gap-3 p-1 font-body text-left">
+        <p className="text-sm font-bold text-navy leading-normal">
+          Are you sure you want to mark <span className="text-[#0D9488] font-black">{patientName}</span> as No-Show?
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => {
+              toast.dismiss(t.id);
+              proceedNoShow();
+            }}
+            className="px-4 py-2 bg-[#0D9488] hover:bg-[#0D9488]/90 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+          >
+            Yes, Proceed
+          </button>
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-4 py-2 bg-gray-100 text-navy hover:bg-gray-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: 8000,
+      position: 'top-center',
+      style: {
+        borderRadius: '24px',
+        background: '#fff',
+        color: '#0C1A2E',
+        border: '1px solid #E2E8F0',
+        boxShadow: '0 20px 25px -5px rgb(12 26 46 / 0.1), 0 8px 10px -6px rgb(12 26 46 / 0.1)',
+        maxWidth: '400px',
+      }
+    });
   };
 
   const handleMarkActiveNoShow = async () => {
-    if (!window.confirm('Are you sure you want to mark the current patient as No-Show?')) {
-      return;
-    }
-    try {
-      toast.loading('Marking patient as no-show...', { id: 'no-show-action' });
-      await doctorService.noShowAppointment(id);
-      toast.success('Patient marked as no-show', { id: 'no-show-action' });
-      
-      // Find next booked patient in queue
-      const queueData = await doctorService.getQueuePreview(id);
-      const q = queueData.queue || [];
-      setQueue(q);
-      const nextBooked = q.find(item => item.status === 'booked' && item.id !== id);
-      if (nextBooked) {
-        if (window.confirm(`Would you like to start the consultation for the next patient: ${nextBooked.patient_name}?`)) {
-          toast.loading('Starting next consultation...', { id: 'start-next-action' });
-          await doctorService.startAppointment(nextBooked.id);
-          toast.success('Consultation started!', { id: 'start-next-action' });
-          navigate(`/doctor/appointments/${nextBooked.id}/consult`);
+    const proceedNoShow = async () => {
+      try {
+        toast.loading('Marking patient as no-show...', { id: 'no-show-action' });
+        await doctorService.noShowAppointment(id);
+        toast.success('Patient marked as no-show', { id: 'no-show-action' });
+        
+        // Refresh details to update state and header buttons
+        await fetchAppointmentDetails();
+
+        // Find next booked patient in queue
+        const queueData = await doctorService.getQueuePreview(id);
+        const q = queueData.queue || [];
+        const activeType = appointment?.consultation_type;
+        const filteredQ = q.filter(item => item.consultation_type === activeType);
+        setQueue(filteredQ);
+        const nextBooked = filteredQ.find(item => item.status === 'booked' && item.id !== id);
+        if (nextBooked) {
+          toast((t) => (
+            <div className="flex flex-col gap-3 p-1 font-body text-left">
+              <p className="text-sm font-bold text-navy leading-normal">
+                Would you like to start the consultation for the next patient: <span className="text-[#0D9488] font-black">{nextBooked.patient_name}</span>?
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={async () => {
+                    toast.dismiss(t.id);
+                    try {
+                      toast.loading('Starting next consultation...', { id: 'start-next-action' });
+                      await doctorService.startAppointment(nextBooked.id);
+                      toast.success('Consultation started!', { id: 'start-next-action' });
+                      navigate(`/doctor/appointments/${nextBooked.id}/consult`);
+                    } catch (err) {
+                      toast.error(err.response?.data?.message || 'Failed to start next consultation', { id: 'start-next-action' });
+                    }
+                  }}
+                  className="px-4 py-2 bg-[#0D9488] hover:bg-[#0D9488]/90 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => {
+                    toast.dismiss(t.id);
+                  }}
+                  className="px-4 py-2 bg-gray-100 text-navy hover:bg-gray-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+                >
+                  No
+                </button>
+              </div>
+            </div>
+          ), {
+            duration: 10000,
+            position: 'top-center',
+            style: {
+              borderRadius: '24px',
+              background: '#fff',
+              color: '#0C1A2E',
+              border: '1px solid #E2E8F0',
+              boxShadow: '0 20px 25px -5px rgb(12 26 46 / 0.1), 0 8px 10px -6px rgb(12 26 46 / 0.1)',
+              maxWidth: '400px',
+            }
+          });
         } else {
-          navigate('/doctor/appointments');
+          toast.success('No more patients in queue today.');
         }
-      } else {
-        toast.success('No more patients in queue today.');
-        navigate('/doctor/appointments');
+      } catch (error) {
+        toast.error(error.response?.data?.message || 'Failed to mark patient as no-show', { id: 'no-show-action' });
       }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to mark patient as no-show', { id: 'no-show-action' });
-    }
+    };
+
+    toast((t) => (
+      <div className="flex flex-col gap-3 p-1 font-body text-left">
+        <p className="text-sm font-bold text-navy leading-normal">
+          Are you sure you want to mark the current patient as No-Show?
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => {
+              toast.dismiss(t.id);
+              proceedNoShow();
+            }}
+            className="px-4 py-2 bg-[#0D9488] hover:bg-[#0D9488]/90 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+          >
+            Yes, Proceed
+          </button>
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-4 py-2 bg-gray-100 text-navy hover:bg-gray-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: 8000,
+      position: 'top-center',
+      style: {
+        borderRadius: '24px',
+        background: '#fff',
+        color: '#0C1A2E',
+        border: '1px solid #E2E8F0',
+        boxShadow: '0 20px 25px -5px rgb(12 26 46 / 0.1), 0 8px 10px -6px rgb(12 26 46 / 0.1)',
+        maxWidth: '400px',
+      }
+    });
   };
 
   const handleStartNextPatient = async () => {
@@ -322,18 +851,56 @@ const DoctorConsultationPage = () => {
       toast.error("No booked patients left in today's queue.");
       return;
     }
-    if (appointment?.status === 'consulting') {
-      if (!window.confirm('The current patient consultation is still active. Are you sure you want to proceed to the next patient without completing this one?')) {
-        return;
+
+    const proceedStart = async () => {
+      try {
+        toast.loading('Starting next consultation...', { id: 'start-next-action' });
+        await doctorService.startAppointment(nextBooked.id);
+        toast.success('Consultation started!', { id: 'start-next-action' });
+        navigate(`/doctor/appointments/${nextBooked.id}/consult`);
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to start next consultation', { id: 'start-next-action' });
       }
-    }
-    try {
-      toast.loading('Starting next consultation...', { id: 'start-next-action' });
-      await doctorService.startAppointment(nextBooked.id);
-      toast.success('Consultation started!', { id: 'start-next-action' });
-      navigate(`/doctor/appointments/${nextBooked.id}/consult`);
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to start next consultation', { id: 'start-next-action' });
+    };
+
+    if (appointment?.status === 'consulting') {
+      toast((t) => (
+        <div className="flex flex-col gap-3 p-1 font-body text-left">
+          <p className="text-sm font-bold text-navy leading-normal">
+            Are you sure you want to start consultation for <span className="text-[#0D9488] font-black">{nextBooked.patient_name}</span>? The current consultation will remain unsaved.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => {
+                toast.dismiss(t.id);
+                proceedStart();
+              }}
+              className="px-4 py-2 bg-[#0D9488] hover:bg-[#0D9488]/90 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+            >
+              Yes, Proceed
+            </button>
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="px-4 py-2 bg-gray-100 text-navy hover:bg-gray-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ), {
+        duration: 8000,
+        position: 'top-center',
+        style: {
+          borderRadius: '24px',
+          background: '#fff',
+          color: '#0C1A2E',
+          border: '1px solid #E2E8F0',
+          boxShadow: '0 20px 25px -5px rgb(12 26 46 / 0.1), 0 8px 10px -6px rgb(12 26 46 / 0.1)',
+          maxWidth: '400px',
+        }
+      });
+    } else {
+      proceedStart();
     }
   };
 
@@ -448,7 +1015,7 @@ const DoctorConsultationPage = () => {
           </button>
           
           <div className="flex items-center gap-3">
-            {isReadOnly && (
+            {appointment?.status === 'completed' && (
               <Button
                 type="button"
                 onClick={triggerDownloadPDF}
@@ -457,8 +1024,74 @@ const DoctorConsultationPage = () => {
                 <Download size={14} /> Download PDF
               </Button>
             )}
+            {appointment?.status === 'no_show' && (
+              <Button
+                type="button"
+                disabled={!isAppointmentStartable(appointment, queue, schedules)}
+                onClick={handleRestartConsultation}
+                className="bg-[#0D9488] hover:bg-[#0D9488]/90 text-white rounded-xl py-2.5 px-6 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 border-none shadow-md disabled:bg-gray-200 disabled:text-navy/30 disabled:cursor-not-allowed"
+              >
+                Restart Consultation
+              </Button>
+            )}
+            {appointment?.status === 'booked' && (
+              <>
+                <Button
+                  type="button"
+                  onClick={handleMarkActiveNoShow}
+                  className="bg-amber-600 hover:bg-amber-700 text-white border-none rounded-xl py-2.5 px-6 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 shadow-md"
+                >
+                  Mark No-Show
+                </Button>
+                <Button
+                  type="button"
+                  onClick={async () => {
+                    const canStart = isAppointmentStartable(appointment, queue, schedules);
+                    if (!canStart) {
+                      toast.error('Please complete or mark the preceding consultation as no-show first');
+                      return;
+                    }
+                    try {
+                      toast.loading(`Starting consultation for ${appointment.patient_snapshot?.name || 'Patient'}...`, { id: 'start-consultation-header' });
+                      await doctorService.startAppointment(id);
+                      toast.success('Consultation started!', { id: 'start-consultation-header' });
+                      fetchAppointmentDetails();
+                    } catch (err) {
+                      toast.error(err.response?.data?.message || 'Failed to start consultation', { id: 'start-consultation-header' });
+                    }
+                  }}
+                  className="bg-[#0D9488] hover:bg-[#0D9488]/90 text-white rounded-xl py-2.5 px-6 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 border-none shadow-md"
+                >
+                  Start Consultation
+                </Button>
+              </>
+            )}
+            {!isReadOnly && (
+              <>
+                <Button
+                  type="button"
+                  onClick={handleMarkActiveNoShow}
+                  className="bg-amber-600 hover:bg-amber-700 text-white border-none rounded-xl py-2.5 px-6 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 shadow-md"
+                >
+                  Mark No-Show
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => handleSubmit()}
+                  className="bg-[#0D9488] hover:bg-[#0D9488]/90 text-white rounded-xl py-2.5 px-6 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 border-none shadow-md"
+                >
+                  <CheckCircle2 size={14} /> Save & End Call
+                </Button>
+              </>
+            )}
             <Badge className={`${isReadOnly ? 'bg-slate-400 text-white' : 'bg-[#0D9488] text-white'} border-none text-[10px] px-6 py-2 font-black uppercase tracking-widest`}>
-              {appointment?.status === 'no_show' ? 'No-Show Record' : isReadOnly ? 'Completed Record' : 'Active Session'}
+              {appointment?.status === 'no_show' 
+                ? 'No-Show Record' 
+                : appointment?.status === 'booked'
+                ? 'Pending Session'
+                : isReadOnly 
+                ? 'Completed Record' 
+                : 'Active Session'}
             </Badge>
           </div>
         </div>
@@ -473,23 +1106,14 @@ const DoctorConsultationPage = () => {
                 <h3 className="text-xs font-black text-navy uppercase tracking-widest flex items-center gap-2">
                   <Users size={16} className="text-[#0D9488]" /> Daily Queue ({queue.length})
                 </h3>
-                {queue.some(item => item.status === 'booked') && (
-                  <button
-                    type="button"
-                    onClick={handleStartNextPatient}
-                    className="text-[9px] font-black text-[#0D9488] hover:underline uppercase tracking-wider"
-                  >
-                    Next Patient
-                  </button>
-                )}
-              </div>
+                </div>
               
               <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
                 {queue.length === 0 ? (
                   <p className="text-[10px] text-navy/40 italic text-center py-4">No patients in queue today.</p>
                 ) : (
                   queue.map(item => {
-                    const isActive = item.id.toString() === id.toString();
+                    const isActive = item.id.toString() === id.toString() && item.status === 'consulting';
                     const isOnline = item.consultation_type === 'online';
                     const timeStr = item.start_datetime 
                       ? new Date(item.start_datetime).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
@@ -553,23 +1177,31 @@ const DoctorConsultationPage = () => {
                             {isOnline ? 'Online' : 'Physical'}
                           </span>
                           
-                          {item.status === 'booked' && (
+                          {['booked', 'no_show'].includes(item.status) && (
                             <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={(e) => handleMarkNoShowSidebar(item.id, item.patient_name, e)}
-                                className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                title="Mark as No-Show"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                              <span className="text-[8px] font-black text-navy/40 uppercase tracking-widest group-hover:text-[#0D9488] transition-colors">
-                                Start →
-                              </span>
+                              {item.status === 'booked' && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleMarkNoShowSidebar(item.id, item.patient_name, e)}
+                                  className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                  title="Mark as No-Show"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                               {!isAppointmentStartable(item, queue, schedules) ? (
+                                <span className="text-[8px] font-bold text-navy/20 uppercase tracking-widest" title="Starts soon">
+                                  Locked
+                                </span>
+                              ) : (
+                                <span className="text-[8px] font-black text-navy/40 uppercase tracking-widest group-hover:text-[#0D9488] transition-colors">
+                                  Start →
+                                </span>
+                              )}
                             </div>
                           )}
                           
-                          {(item.status === 'completed' || item.status === 'no_show') && (
+                          {item.status === 'completed' && (
                             <span className="text-[8px] font-bold text-navy/40 uppercase tracking-wider">
                               View Record
                             </span>
@@ -624,6 +1256,117 @@ const DoctorConsultationPage = () => {
                 </div>
               </div>
             </div>
+
+            {/* If it's an online consultation, render the video feed and dialogue chat side-by-side above the clinical form */}
+            {isOnline && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in slide-in-from-top-2 duration-300">
+                {/* Left Card: Webcam video feed */}
+                <Card className="p-6 bg-white border border-gray-100 shadow-sm rounded-[32px] relative overflow-hidden flex flex-col h-[320px] bg-slate-50 justify-between">
+                  <div className="pb-3 border-b border-gray-100 flex items-center justify-between text-left shrink-0">
+                    <span className="text-[10px] font-black uppercase text-navy/40 tracking-wider flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> Virtual Call Stream
+                    </span>
+                    <Badge className="bg-[#0D9488]/10 text-[#0D9488] border-none text-[8px] px-2 py-0.5 font-black uppercase tracking-widest">Active Call</Badge>
+                  </div>
+                  
+                  {camError ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
+                      <AlertCircle size={32} className="text-red-500 mb-2 animate-bounce" />
+                      <p className="text-navy/60 font-bold text-xs leading-normal">{camError}</p>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center relative my-2 bg-slate-100/50 rounded-2xl border border-gray-100/50 overflow-hidden">
+                      <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#0D9488]/20 to-[#0D9488]/5 flex items-center justify-center text-navy text-xl font-black shadow-md border-2 border-white">
+                        {patientName ? patientName.split(' ').map(n => n[0]).join('') : 'P'}
+                      </div>
+                      <p className="absolute bottom-3 left-3 text-[10px] font-black text-navy/40 uppercase tracking-widest bg-white/80 backdrop-blur-sm px-3 py-1 rounded-full border border-gray-100 shadow-sm">
+                        Patient Presence
+                      </p>
+                      
+                      {/* Local PIP Video */}
+                      <div className="absolute bottom-3 right-3 w-28 h-20 rounded-2xl overflow-hidden border-2 border-white shadow-xl bg-white">
+                        {camOn ? (
+                          <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-slate-100">
+                            <VideoOff size={16} className="text-navy/10" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-center gap-4 pt-3 border-t border-gray-100 shrink-0">
+                    <button
+                      type="button"
+                      onClick={toggleMic}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-sm cursor-pointer ${micOn ? 'bg-slate-100 hover:bg-slate-200 text-navy' : 'bg-red-500 text-white shadow-md shadow-red-500/20'}`}
+                      title={micOn ? "Mute Microphone" : "Unmute Microphone"}
+                    >
+                      {micOn ? <Mic size={16} /> : <MicOff size={16} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={toggleCam}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-sm cursor-pointer ${camOn ? 'bg-slate-100 hover:bg-slate-200 text-navy' : 'bg-red-500 text-white shadow-md shadow-red-500/20'}`}
+                      title={camOn ? "Stop Camera" : "Start Camera"}
+                    >
+                      {camOn ? <Video size={16} /> : <VideoOff size={16} />}
+                    </button>
+                  </div>
+                </Card>
+
+                {/* Right Card: Dialogue Chat */}
+                <Card className="p-6 bg-white border border-gray-100 shadow-sm rounded-[32px] flex flex-col h-[320px] justify-between">
+                  <div className="pb-3 border-b border-gray-100 flex items-center justify-between text-left shrink-0">
+                    <span className="text-[10px] font-black uppercase text-navy/40 tracking-wider flex items-center gap-1.5">
+                      <MessageSquare size={14} className="text-[#0D9488]" /> Session Dialogue
+                    </span>
+                    <Badge className="bg-[#0D9488]/10 text-[#0D9488] border-none text-[8px] px-2 py-0.5 font-black uppercase tracking-widest">Secure Room</Badge>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto py-3 space-y-3 max-h-[160px] my-2 pr-1 custom-scrollbar">
+                    {messages.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center opacity-30 mt-6">
+                        <MessageSquare size={20} className="mb-1" />
+                        <p className="text-[9px] font-black uppercase tracking-widest">Awaiting Communication</p>
+                      </div>
+                    ) : (
+                      messages.map((msg, idx) => {
+                        const isMine = msg.role === 'doctor';
+                        return (
+                          <div key={idx} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[85%] px-4 py-2.5 rounded-2xl shadow-sm text-xs font-bold leading-normal ${isMine ? 'bg-[#0D9488] text-white rounded-br-sm' : 'bg-slate-100 text-navy/80 rounded-bl-sm border border-gray-100'}`}>
+                              <p className="break-words">{msg.text}</p>
+                              <p className="text-[8px] font-black text-right mt-1 opacity-40">{msg.time}</p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                    <div ref={chatBottomRef} />
+                  </div>
+
+                  <div className="flex gap-2 pt-3 border-t border-gray-100 shrink-0">
+                    <input
+                      type="text"
+                      placeholder="Type message..."
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                      className="flex-1 bg-slate-100 border border-transparent rounded-xl px-4 py-3 text-navy text-xs font-bold outline-none focus:bg-white focus:border-[#0D9488]/20 transition-all placeholder:text-navy/25"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSend}
+                      className="w-10 h-10 rounded-xl bg-[#0D9488] hover:bg-[#0f766e] flex items-center justify-center text-white shadow-md shadow-[#0D9488]/10 shrink-0 transition-transform active:scale-95 cursor-pointer"
+                    >
+                      <Send size={14} />
+                    </button>
+                  </div>
+                </Card>
+              </div>
+            )}
 
             {/* Main Clinical Consultation Form */}
             <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
@@ -966,52 +1709,32 @@ const DoctorConsultationPage = () => {
                 </Card>
 
                 {/* Form Action Buttons */}
-                <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-gray-100">
-                  <div className="flex items-center gap-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => navigate('/doctor/appointments')}
-                      className="rounded-2xl px-8 border-gray-200 uppercase tracking-widest font-black text-[10px] h-14"
-                    >
-                      {isReadOnly ? 'Appointments List' : 'Cancel'}
-                    </Button>
-
-                    {!isReadOnly && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleMarkActiveNoShow}
-                        className="rounded-2xl px-6 border-amber-200 hover:bg-amber-50 text-amber-700 uppercase tracking-widest font-black text-[10px] h-14"
-                      >
-                        Mark No-Show
-                      </Button>
-                    )}
+                {(isReadOnly || appointment?.status === 'no_show') && (
+                  <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-gray-100">
+                    <div className="flex items-center gap-3">
+                      {isReadOnly && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => navigate('/doctor/appointments')}
+                          className="rounded-2xl px-8 border-gray-200 uppercase tracking-widest font-black text-[10px] h-14"
+                        >
+                          Appointments List
+                        </Button>
+                      )}
+                      {appointment?.status === 'no_show' && (
+                        <Button
+                          type="button"
+                          disabled={!isAppointmentStartable(appointment, queue, schedules)}
+                          onClick={handleRestartConsultation}
+                          className="bg-[#0D9488] hover:bg-[#0D9488]/90 text-white rounded-2xl px-8 uppercase tracking-widest font-black text-[10px] h-14 border-none shadow-xl shadow-[#0D9488]/20 disabled:bg-gray-200 disabled:text-navy/30 disabled:cursor-not-allowed"
+                        >
+                          Restart Consultation
+                        </Button>
+                      )}
+                    </div>
                   </div>
-
-                  <div className="flex items-center gap-3">
-                    {nextPatient && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleStartNextPatient}
-                        className="rounded-2xl px-8 border-[#0D9488] hover:bg-teal-50/50 text-[#0D9488] uppercase tracking-widest font-black text-[10px] h-14"
-                      >
-                        Next Patient →
-                      </Button>
-                    )}
-                    
-                    {!isReadOnly && (
-                      <Button
-                        type="submit"
-                        loading={submitting}
-                        className="bg-[#0D9488] hover:bg-[#0D9488]/90 text-white rounded-2xl px-10 border-none shadow-xl shadow-[#0D9488]/20 uppercase tracking-widest font-black text-[10px] h-14 flex items-center gap-2"
-                      >
-                        <CheckCircle2 size={16} /> Save & End Call
-                      </Button>
-                    )}
-                  </div>
-                </div>
+                )}
               </div>
             </form>
           </div>

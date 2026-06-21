@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button, Avatar, Badge } from '../../components/common';
-import { Activity, Building2, Calendar, Clock, IndianRupee, MessageSquare, Video, XCircle } from 'lucide-react';
+import { Activity, Building2, Calendar, Clock, Download, IndianRupee, MessageSquare, Video, XCircle } from 'lucide-react';
 import appointmentService from '../../services/appointmentService';
 import { ROUTES } from '../../constants/routes';
+import { generatePrescriptionPDF } from '../../utils/pdfGenerator';
 import toast from 'react-hot-toast';
 
 const formatSlot = (slot) => {
@@ -101,6 +102,25 @@ const MyBookings = () => {
               const doctorName = appointment.doctor_id?.user?.name || 'Doctor';
               const hospitalName = appointment.doctor_id?.hospitalId?.name || 'Independent clinic';
               const refund = appointment.payment?.refund;
+              const hasRefund = refund && refund.status && refund.status !== 'none';
+              
+              const getStatusStyles = (status) => {
+                switch (status) {
+                  case 'booked':
+                    return 'bg-blue-50 text-blue-700 border-blue-100';
+                  case 'consulting':
+                    return 'bg-amber-50 text-amber-700 border-amber-100';
+                  case 'completed':
+                    return 'bg-green-50 text-green-700 border-green-100';
+                  case 'cancelled':
+                    return 'bg-red-50 text-red-700 border-red-100';
+                  case 'no_show':
+                    return 'bg-slate-100 text-slate-600 border-slate-200';
+                  default:
+                    return 'bg-gray-100 text-navy/60 border-gray-200';
+                }
+              };
+
               return (
                 <Card key={appointment._id} className="p-6 bg-white border border-gray-100 rounded-[32px] shadow-sm">
                   <div className="flex flex-col lg:flex-row lg:items-center gap-6 justify-between">
@@ -109,7 +129,9 @@ const MyBookings = () => {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-black text-navy truncate">{doctorName}</h3>
-                          <Badge className="bg-gray-100 text-navy/65 border-none text-[9px] uppercase">{appointment.status}</Badge>
+                          <Badge className={`${getStatusStyles(appointment.status)} border text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full`}>
+                            {appointment.status.replace('_', ' ')}
+                          </Badge>
                         </div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-[#0D9488] mt-1">
                           Token T-{appointment.token_number || '-'} • {appointment.doctor_id?.specialization || 'Consultation'}
@@ -121,7 +143,7 @@ const MyBookings = () => {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-1">
+                    <div className={`grid grid-cols-2 ${hasRefund ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-3 flex-1`}>
                       <div className="bg-gray-50 rounded-2xl p-4">
                         <p className="text-[9px] font-black uppercase text-navy/35">Date</p>
                         <p className="text-xs font-black text-navy mt-1">{date}</p>
@@ -131,28 +153,51 @@ const MyBookings = () => {
                         <p className="text-xs font-black text-navy mt-1 flex items-center gap-1"><Clock size={12} /> {time}</p>
                       </div>
                       <div className="bg-gray-50 rounded-2xl p-4">
+                        <p className="text-[9px] font-black uppercase text-navy/35">Status</p>
+                        <div className="mt-1">
+                          <span className={`inline-block border text-[9px] uppercase font-black px-2 py-0.5 rounded-full ${getStatusStyles(appointment.status)}`}>
+                            {appointment.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="bg-gray-50 rounded-2xl p-4">
                         <p className="text-[9px] font-black uppercase text-navy/35">Paid</p>
                         <p className="text-xs font-black text-navy mt-1 flex items-center gap-1"><IndianRupee size={12} /> {appointment.payment?.paid_amount || 0}</p>
                       </div>
-                      <div className="bg-gray-50 rounded-2xl p-4">
-                        <p className="text-[9px] font-black uppercase text-navy/35">Refund</p>
-                        <p className="text-xs font-black text-navy mt-1">{refund?.status || 'none'} {refund?.amount ? `- Rs ${refund.amount}` : ''}</p>
-                      </div>
+                      {hasRefund && (
+                        <div className="bg-gray-50 rounded-2xl p-4 border border-teal-100">
+                          <p className="text-[9px] font-black uppercase text-[#0D9488]">Refund</p>
+                          <p className="text-xs font-black text-navy mt-1">
+                            {refund.status.toUpperCase()} {refund.amount ? `- Rs ${refund.amount}` : ''}
+                          </p>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex lg:flex-col gap-2 shrink-0">
-                      {appointment.status === 'completed' && !appointment.feedback?.submitted_at && (
-                        <Button onClick={() => navigate(ROUTES.PATIENT.REVIEWS.replace(':id', appointment._id))} className="bg-[#0D9488] text-white rounded-xl border-none text-[10px]">
-                          <MessageSquare size={14} /> Review
-                        </Button>
+                    <div className="flex lg:flex-col gap-2 shrink-0 min-w-[130px]">
+                      {appointment.status === 'completed' && (
+                        <>
+                          <Button onClick={() => generatePrescriptionPDF(appointment)} className="bg-[#0D9488] hover:bg-[#0D9488]/90 text-white rounded-xl border-none text-[10px] flex items-center gap-1.5 justify-center w-full">
+                            <Download size={13} /> Download Rx
+                          </Button>
+                          {appointment.feedback?.submitted_at ? (
+                            <Button disabled className="bg-gray-50 text-navy/30 border border-gray-150 rounded-xl text-[10px] flex items-center gap-1.5 justify-center w-full cursor-not-allowed">
+                              <MessageSquare size={13} /> Reviewed
+                            </Button>
+                          ) : (
+                            <Button onClick={() => navigate(ROUTES.PATIENT.REVIEWS.replace(':id', appointment._id))} variant="outline" className="rounded-xl text-[10px] flex items-center gap-1.5 justify-center w-full border-[#0D9488] text-[#0D9488] hover:bg-[#0D9488]/5">
+                              <MessageSquare size={13} /> Review
+                            </Button>
+                          )}
+                        </>
                       )}
                       {appointment.status === 'booked' && (
-                        <Button variant="outline" onClick={() => navigate(ROUTES.PATIENT.TOKEN_TRACKER, { state: { appointmentId: appointment._id } })} className="rounded-xl text-[10px]">
+                        <Button variant="outline" onClick={() => navigate(ROUTES.PATIENT.TOKEN_TRACKER, { state: { appointmentId: appointment._id } })} className="rounded-xl text-[10px] flex items-center gap-1.5 justify-center w-full">
                           <Activity size={14} /> Track
                         </Button>
                       )}
                       {canCancel(appointment) && (
-                        <Button variant="outline" onClick={() => handleCancel(appointment._id)} className="rounded-xl text-red-500 border-red-100 text-[10px]">
+                        <Button variant="outline" onClick={() => handleCancel(appointment._id)} className="rounded-xl text-red-500 border-red-100 text-[10px] flex items-center gap-1.5 justify-center w-full">
                           <XCircle size={14} /> Cancel
                         </Button>
                       )}

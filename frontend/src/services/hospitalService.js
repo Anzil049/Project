@@ -49,6 +49,13 @@ const hospitalService = {
 
   blockDoctorDate: appointmentService.blockDoctorDate,
 
+  searchPatientByEmail: async (email) => {
+    const response = await api.get('/appointments/patient-search', {
+      params: { email }
+    });
+    return response.data;
+  },
+
   /**
    * Get all public hospitals
    */

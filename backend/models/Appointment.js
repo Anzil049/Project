@@ -34,6 +34,10 @@ const appointmentSchema = mongoose.Schema({
         enum: ['booked', 'consulting', 'completed', 'cancelled', 'no_show'],
         default: 'booked',
     },
+    previous_status: {
+        type: String,
+        enum: ['booked', 'no_show'],
+    },
     token_number: {
         type: Number,
         min: 1,

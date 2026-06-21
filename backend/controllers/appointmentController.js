@@ -76,23 +76,30 @@ const calculateRefund = (appointment, slot, reason = 'cancelled') => {
 };
 
 const getNextTokenNumber = async (doctorId, slotDateTime, consultationType = 'offline') => {
-    // Primary: query ALL persisted slots for this day sorted chronologically.
-    // Using DB directly ensures correct global daily position even when
-    // past-time slots are filtered out of generateAvailableSlots.
+    // Primary: query persisted slots for this session range on this day sorted chronologically.
     const slotDate = new Date(slotDateTime);
-    const dayStart = new Date(slotDate);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(slotDate);
-    dayEnd.setHours(23, 59, 59, 999);
+    const sessionRange = await getSessionRangeForSlot(doctorId, consultationType, slotDate);
+    
+    let queryStart, queryEnd;
+    if (sessionRange) {
+        queryStart = sessionRange.sessionStart;
+        queryEnd = sessionRange.sessionEnd;
+    } else {
+        // Fallback to full day if session range not found
+        queryStart = new Date(slotDate);
+        queryStart.setHours(0, 0, 0, 0);
+        queryEnd = new Date(slotDate);
+        queryEnd.setHours(23, 59, 59, 999);
+    }
 
-    const sameDaySlots = await AppointmentSlot.find({
+    const sameSessionSlots = await AppointmentSlot.find({
         doctor_id: doctorId,
         consultation_type: consultationType,
-        start_datetime: { $gte: dayStart, $lte: dayEnd },
+        start_datetime: { $gte: queryStart, $lte: queryEnd },
     }).select('_id start_datetime').sort({ start_datetime: 1 });
 
     const targetTime = new Date(slotDateTime).getTime();
-    const dbPosition = sameDaySlots.findIndex(s => new Date(s.start_datetime).getTime() === targetTime);
+    const dbPosition = sameSessionSlots.findIndex(s => new Date(s.start_datetime).getTime() === targetTime);
     if (dbPosition !== -1) {
         return dbPosition + 1;
     }
@@ -102,21 +109,104 @@ const getNextTokenNumber = async (doctorId, slotDateTime, consultationType = 'of
         const slots = await generateAvailableSlots(doctorId, consultationType, { isOfflineBooking: true, includeReserved: true });
         const targetDateStr = normalizeDateKey(new Date(slotDateTime));
         const daySlots = slots.filter(s => normalizeDateKey(s.start_datetime) === targetDateStr);
-        daySlots.sort((a, b) => new Date(a.start_datetime) - new Date(b.start_datetime));
         const targetIso = new Date(slotDateTime).toISOString();
-        const pos = daySlots.findIndex(s => new Date(s.start_datetime).toISOString() === targetIso);
-        if (pos !== -1) return pos + 1;
+        const targetSlot = daySlots.find(s => new Date(s.start_datetime).toISOString() === targetIso);
+        
+        if (targetSlot) {
+            // Filter daySlots to only include those in the same session
+            const sameSessionDaySlots = daySlots.filter(s => 
+                s.session_start_time === targetSlot.session_start_time && 
+                s.session_end_time === targetSlot.session_end_time
+            );
+            sameSessionDaySlots.sort((a, b) => new Date(a.start_datetime) - new Date(b.start_datetime));
+            const pos = sameSessionDaySlots.findIndex(s => new Date(s.start_datetime).toISOString() === targetIso);
+            if (pos !== -1) return pos + 1;
+        }
     } catch (err) {
         console.error('Error in getNextTokenNumber generateAvailableSlots fallback:', err);
     }
 
-    // Last resort: next after highest existing token for the day
+    // Last resort: next after highest existing token for the session
     const last = await Appointment.find({
         doctor_id: doctorId,
-        slot_id: { $in: sameDaySlots.map(slot => slot._id) },
+        slot_id: { $in: sameSessionSlots.map(slot => slot._id) },
     }).sort({ token_number: -1 }).select('token_number').limit(1);
 
     return (last[0]?.token_number || 0) + 1;
+};
+
+const assertAppointmentCanStart = async (appointment, res) => {
+    if (!appointment.slot_id?.start_datetime) return;
+
+    const now = new Date();
+    const slotStart = new Date(appointment.slot_id.start_datetime);
+    const sessionRange = await getSessionRangeForSlot(
+        appointment.doctor_id,
+        appointment.consultation_type,
+        slotStart
+    );
+
+    if (appointment.status === 'no_show') {
+        if (sessionRange && (now < sessionRange.sessionStart || now > sessionRange.sessionEnd)) {
+            res.status(400);
+            throw new Error('No-show patients can be restarted only during the doctor availability window');
+        }
+        if (!sessionRange && appointment.slot_id?.end_datetime && now > new Date(appointment.slot_id.end_datetime)) {
+            res.status(400);
+            throw new Error('No-show patients can be restarted only before the slot finishes');
+        }
+        return;
+    }
+
+    if (appointment.status === 'consulting') return;
+
+    if (appointment.status !== 'booked') {
+        res.status(400);
+        throw new Error('Only booked or no-show appointments can be started');
+    }
+
+    const dayStart = new Date(slotStart);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(slotStart);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const sameDaySlots = await AppointmentSlot.find({
+        doctor_id: appointment.doctor_id,
+        consultation_type: appointment.consultation_type,
+        start_datetime: { $gte: dayStart, $lte: dayEnd },
+    }).select('_id start_datetime').sort({ start_datetime: 1 });
+
+    const queue = await Appointment.find({
+        doctor_id: appointment.doctor_id,
+        consultation_type: appointment.consultation_type,
+        slot_id: { $in: sameDaySlots.map(slot => slot._id) },
+        status: { $in: ['booked', 'consulting', 'completed', 'cancelled', 'no_show'] },
+    }).populate('slot_id');
+
+    queue.sort((a, b) => {
+        const timeA = a.slot_id?.start_datetime ? new Date(a.slot_id.start_datetime).getTime() : 0;
+        const timeB = b.slot_id?.start_datetime ? new Date(b.slot_id.start_datetime).getTime() : 0;
+        if (timeA !== timeB) return timeA - timeB;
+        return (a.token_number || 0) - (b.token_number || 0);
+    });
+
+    const appointmentId = appointment._id.toString();
+    const appointmentIndex = queue.findIndex(item => item._id.toString() === appointmentId);
+
+    if (appointmentIndex === 0) {
+        if (slotStart.getTime() - now.getTime() > 5 * 60 * 1000) {
+            res.status(400);
+            throw new Error('Consultation can start only within 5 minutes of the scheduled time');
+        }
+    }
+
+    const precedingAppointments = appointmentIndex === -1 ? [] : queue.slice(0, appointmentIndex);
+    const hasPendingPrecedingAppointment = precedingAppointments.some(item => ['booked', 'consulting'].includes(item.status));
+
+    if (hasPendingPrecedingAppointment) {
+        res.status(400);
+        throw new Error('Consultations must be started in appointment order. Mark absent earlier patients as no-show first.');
+    }
 };
 
 const assertCanManageAppointment = async (req, appointment) => {
@@ -187,6 +277,8 @@ const getDoctorSlots = asyncHandler(async (req, res) => {
                     booked_count: slot.booked_count,
                     booking_limit: slot.booking_limit,
                     slot_index: slot.slot_index,
+                    session_start_time: slot.session_start_time,
+                    session_end_time: slot.session_end_time,
                 })),
             });
         } else {
@@ -502,6 +594,31 @@ const startAppointment = asyncHandler(async (req, res) => {
     }
 
     await assertCanManageAppointment(req, appointment);
+
+    if (['completed', 'cancelled'].includes(appointment.status)) {
+        res.status(400);
+        throw new Error('This appointment has already been completed or cancelled');
+    }
+
+    await assertAppointmentCanStart(appointment, res);
+
+    // Automatically transition any currently active ('consulting') appointments for this doctor back to their previous status
+    const activeAppointments = await Appointment.find({
+        doctor_id: appointment.doctor_id,
+        status: 'consulting',
+        _id: { $ne: appointment._id }
+    });
+
+    for (const activeApp of activeAppointments) {
+        const targetStatus = activeApp.previous_status === 'no_show' ? 'no_show' : 'booked';
+        activeApp.status = targetStatus;
+        await activeApp.save();
+        if (activeApp.slot_id) {
+            await AppointmentSlot.findByIdAndUpdate(activeApp.slot_id, { status: targetStatus });
+        }
+    }
+
+    appointment.previous_status = appointment.status;
     appointment.status = 'consulting';
     await appointment.save();
     await AppointmentSlot.findByIdAndUpdate(appointment.slot_id, { status: 'booked' });
@@ -602,9 +719,9 @@ const noShowAppointment = asyncHandler(async (req, res) => {
         res.status(404);
         throw new Error('Appointment not found');
     }
-    if (appointment.status !== 'booked') {
+    if (!['booked', 'consulting'].includes(appointment.status)) {
         res.status(400);
-        throw new Error('Only booked appointments can be marked as no-show');
+        throw new Error('Only booked or active consultations can be marked as no-show');
     }
 
     await assertCanManageAppointment(req, appointment);
@@ -1089,6 +1206,18 @@ const getMyAppointments = asyncHandler(async (req, res) => {
     res.json(appointments.map(formatAppointmentResponse));
 });
 
+const getPatientByEmail = asyncHandler(async (req, res) => {
+    const { email } = req.query;
+    if (!email) {
+        return res.status(400).json({ message: 'Email query parameter is required' });
+    }
+    const patient = await User.findOne({ email: email.toLowerCase().trim(), role: 'patient' }).select('-password');
+    if (!patient) {
+        return res.status(404).json({ message: 'Patient not found' });
+    }
+    res.json(patient);
+});
+
 module.exports = {
     getDoctorSlots,
     bookAppointment,
@@ -1107,4 +1236,5 @@ module.exports = {
     submitFeedback,
     blockDoctorDate,
     toggleCloseBooking,
+    getPatientByEmail,
 };

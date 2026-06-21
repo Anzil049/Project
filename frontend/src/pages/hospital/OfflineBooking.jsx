@@ -22,6 +22,35 @@ const getLocalDateString = (dateInput) => {
   return `${year}-${month}-${day}`;
 };
 
+const getSessionsFromSlots = (slots) => {
+  const formatTimeStr = (timeStr) => {
+    if (!timeStr) return '';
+    const [hourStr, minuteStr] = timeStr.split(':');
+    const hour = parseInt(hourStr, 10);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour % 12 || 12;
+    return `${hour12}:${minuteStr} ${ampm}`;
+  };
+
+  const sessionsList = [];
+  const seen = new Set();
+  for (const slot of slots) {
+    if (slot.session_start_time && slot.session_end_time) {
+      const key = `${slot.session_start_time}-${slot.session_end_time}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        sessionsList.push({
+          key,
+          start: slot.session_start_time,
+          end: slot.session_end_time,
+          label: `${formatTimeStr(slot.session_start_time)} - ${formatTimeStr(slot.session_end_time)}`
+        });
+      }
+    }
+  }
+  return sessionsList;
+};
+
 const HospitalOfflineBooking = ({ role = 'hospital' }) => {
   const { user } = useAuthStore();
   
@@ -29,6 +58,8 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
   const [appointmentsList, setAppointmentsList] = useState([]);
   const [availableSlots, setAvailableSlots] = useState([]);
   const [selectedSlot, setSelectedSlot] = useState(null);
+  const [sessions, setSessions] = useState([]);
+  const [selectedSession, setSelectedSession] = useState('');
   
   const [formData, setFormData] = useState({
     patientName: '',
@@ -47,6 +78,45 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
   const [submitting, setSubmitting] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [isBookingClosed, setIsBookingClosed] = useState(false);
+
+  const handleSearchPatient = async () => {
+    if (!formData.email) {
+      toast.error('Please enter an email address to search');
+      return;
+    }
+    try {
+      toast.loading('Searching patient database...', { id: 'search-patient' });
+      let patientData;
+      if (role === 'hospital') {
+        patientData = await hospitalService.searchPatientByEmail(formData.email);
+      } else {
+        patientData = await doctorService.searchPatientByEmail(formData.email);
+      }
+      
+      // Calculate age from dob if it exists
+      let ageStr = '';
+      if (patientData.dob) {
+        const dob = new Date(patientData.dob);
+        const diffMs = Date.now() - dob.getTime();
+        const ageDate = new Date(diffMs);
+        ageStr = String(Math.abs(ageDate.getUTCFullYear() - 1970));
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        patientName: patientData.name || '',
+        phone: patientData.phone || '',
+        age: ageStr || prev.age,
+        gender: patientData.gender || 'Male',
+        bloodGroup: patientData.bloodGroup || 'O+',
+        address: patientData.address || '',
+      }));
+
+      toast.success('Patient details found and autofilled!', { id: 'search-patient' });
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Patient not found in database. You can register them as a new patient.', { id: 'search-patient' });
+    }
+  };
 
   const handleToggleBooking = async () => {
     if (!formData.doctorId || !formData.date) return;
@@ -120,8 +190,24 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
         return slotEnd > now;
       });
 
-      setAvailableSlots(times);
+      setAvailableSlots(allTimes);
       setIsBookingClosed(daySlots ? !!daySlots.bookingClosed : false);
+
+      // Compute unique sessions and set range list
+      const computedSessions = getSessionsFromSlots(allTimes);
+      setSessions(computedSessions);
+
+      let currentSessionKey = selectedSession;
+      if (!computedSessions.some(s => s.key === currentSessionKey)) {
+        currentSessionKey = computedSessions[0]?.key || '';
+        setSelectedSession(currentSessionKey);
+      }
+
+      // Filter slots for the selected session
+      const slotsInSession = times.filter(s => {
+        if (!currentSessionKey) return true;
+        return `${s.session_start_time}-${s.session_end_time}` === currentSessionKey;
+      });
 
       // Fetch appointments
       let apps = [];
@@ -156,15 +242,28 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
 
       setAppointmentsList(activeAndVisible);
 
-      // Auto-select next available slot:
+      // Auto-select next available slot in the selected session:
       // Only consider slots that haven't ended yet
       const nowTime = new Date().getTime();
-      const availableNotExpired = times.filter(
+      const availableNotExpired = slotsInSession.filter(
         s => s.status === 'available' && new Date(s.start_datetime).getTime() >= nowTime - 60000 // allow 1 min grace
       );
 
-      // Prefer the first available slot after the latest active booking
-      const activeApps = activeAndVisible.filter(app => app.status !== 'cancelled' && app.slot_id?.start_datetime);
+      // Prefer the first available slot after the latest active booking in this session
+      const activeApps = activeAndVisible.filter(app => {
+        if (app.status === 'cancelled' || !app.slot_id?.start_datetime) return false;
+        if (currentSessionKey) {
+          const appSlotStart = new Date(app.slot_id.start_datetime);
+          const [sH, sM] = currentSessionKey.split('-')[0].split(':').map(Number);
+          const [eH, eM] = currentSessionKey.split('-')[1].split(':').map(Number);
+          const sMin = sH * 60 + sM;
+          const eMin = eH * 60 + eM;
+          const slotMin = appSlotStart.getHours() * 60 + appSlotStart.getMinutes();
+          return slotMin >= sMin && slotMin < eMin;
+        }
+        return true;
+      });
+
       let nextAvailableSlot = null;
       if (activeApps.length > 0) {
         const latestStart = activeApps.reduce((latest, app) => {
@@ -189,7 +288,7 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
 
   useEffect(() => {
     fetchSlotsAndQueue();
-  }, [formData.doctorId, formData.date, role]);
+  }, [formData.doctorId, formData.date, selectedSession, role]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -260,6 +359,19 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
     return new Date(a.slot_id.start_datetime) - new Date(b.slot_id.start_datetime);
   });
 
+  // Filter queue by the selected session's time range
+  const filteredQueue = sortedQueue.filter(app => {
+    if (!selectedSession) return true;
+    if (!app.slot_id?.start_datetime) return false;
+    const appSlotStart = new Date(app.slot_id.start_datetime);
+    const [sH, sM] = selectedSession.split('-')[0].split(':').map(Number);
+    const [eH, eM] = selectedSession.split('-')[1].split(':').map(Number);
+    const sMin = sH * 60 + sM;
+    const eMin = eH * 60 + eM;
+    const slotMin = appSlotStart.getHours() * 60 + appSlotStart.getMinutes();
+    return slotMin >= sMin && slotMin < eMin;
+  });
+
   return (
     <DashboardLayout title="Offline Walk-In Registration" role={role}>
       <div className="max-w-7xl mx-auto space-y-8 pb-20 font-body animate-in fade-in duration-500">
@@ -290,7 +402,7 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                 <form onSubmit={handleSubmit} className="relative z-10 space-y-8">
                    
                    {/* Doctor & Date Selection */}
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                   <div className={`grid grid-cols-1 ${sessions.length > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-8`}>
                       {/* Doctor Selection (Only show if hospital) */}
                       {role === 'hospital' ? (
                         <div className="space-y-3">
@@ -338,6 +450,28 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                             />
                          </div>
                       </div>
+
+                      {/* Session selection drop-down if there are multiple sessions */}
+                      {sessions.length > 0 && (
+                        <div className="space-y-3">
+                           <label className="text-[10px] font-black text-navy/70 uppercase tracking-[0.2em] ml-1">Select Time Session</label>
+                           <div className="relative group">
+                              <Clock size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-[#0D9488]" />
+                              <select 
+                                 value={selectedSession}
+                                 onChange={(e) => setSelectedSession(e.target.value)}
+                                 className="w-full pl-14 pr-12 py-5 bg-gray-50 border-none rounded-[24px] text-sm font-bold text-navy appearance-none outline-none focus:ring-2 focus:ring-[#0D9488]/10 transition-all cursor-pointer"
+                              >
+                                 {sessions.map(s => (
+                                   <option key={s.key} value={s.key}>
+                                     {s.label}
+                                   </option>
+                                 ))}
+                              </select>
+                              <ChevronRight size={20} className="absolute right-6 top-1/2 -translate-y-1/2 text-navy/60 rotate-90" />
+                           </div>
+                        </div>
+                      )}
                    </div>
 
                      {/* Token & Slot Allocation Info Card */}
@@ -369,15 +503,20 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                              </p>
                           </div>
                         ) : selectedSlot ? (() => {
-                           // Compute correct token: position of selectedSlot in full sorted slot list
-                           const allSortedSlots = [...availableSlots].sort(
-                             (a, b) => new Date(a.start_datetime) - new Date(b.start_datetime)
-                           );
-                           const slotPosition = allSortedSlots.findIndex(
-                             s => new Date(s.start_datetime).getTime() === new Date(selectedSlot.start_datetime).getTime()
-                           );
-                           const nextToken = slotPosition !== -1 ? slotPosition + 1 : '?';
-                           return (
+                            // Filter slots to only include those in the same session range
+                            const sessionSlots = availableSlots.filter(s => 
+                              s.session_start_time === selectedSlot.session_start_time &&
+                              s.session_end_time === selectedSlot.session_end_time
+                            );
+                            // Compute correct token: position of selectedSlot in session-specific sorted slot list
+                            const allSortedSlots = [...sessionSlots].sort(
+                              (a, b) => new Date(a.start_datetime) - new Date(b.start_datetime)
+                            );
+                            const slotPosition = allSortedSlots.findIndex(
+                              s => new Date(s.start_datetime).getTime() === new Date(selectedSlot.start_datetime).getTime()
+                            );
+                            const nextToken = slotPosition !== -1 ? slotPosition + 1 : '?';
+                            return (
                           <div className="bg-slate-50 border border-slate-100 p-6 rounded-[24px] space-y-4">
                              <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm">
                                 <span className="text-[9px] font-black text-[#0D9488] uppercase tracking-wider block">Next Token to Book</span>
@@ -396,7 +535,12 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                         })() : (
                           <div className="p-6 bg-red-50 text-red-700/80 rounded-[24px] flex items-center gap-3 border border-red-100/50">
                              <AlertCircle size={18} />
-                             <span className="text-xs font-black uppercase tracking-wide">No slots available on this day.</span>
+                             <span className="text-xs font-black uppercase tracking-wide">
+                                {availableSlots.length === 0 
+                                   ? "No slots available on this day." 
+                                   : "No slots available in this range."
+                                }
+                             </span>
                           </div>
                         )}
                      </div>
@@ -431,8 +575,15 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                                value={formData.email}
                                onChange={(e) => setFormData({...formData, email: e.target.value})}
                                required
-                               className="w-full pl-14 pr-6 py-5 bg-gray-50/50 border-2 border-transparent focus:border-[#0D9488]/20 focus:bg-white rounded-[24px] text-sm font-bold text-navy outline-none transition-all placeholder:text-navy/40"
+                               className="w-full pl-14 pr-32 py-5 bg-gray-50/50 border-2 border-transparent focus:border-[#0D9488]/20 focus:bg-white rounded-[24px] text-sm font-bold text-navy outline-none transition-all placeholder:text-navy/40"
                             />
+                            <button
+                               type="button"
+                               onClick={handleSearchPatient}
+                               className="absolute right-3 top-1/2 -translate-y-1/2 px-4 py-2.5 bg-[#0D9488] hover:bg-[#0D9488]/90 text-white rounded-xl text-[10px] font-black uppercase tracking-wider border-none cursor-pointer flex items-center gap-1.5 transition-all shadow-sm"
+                            >
+                               <Search size={12} /> Search
+                            </button>
                          </div>
                       </div>
                    </div>
@@ -577,7 +728,7 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                    <Users size={18} className="text-[#0D9488]" /> Live Queue (Today)
                 </h3>
                 <Badge variant="outline" className="bg-white text-[10px] px-4 py-1.5 rounded-full border-gray-200 font-black text-navy/70">
-                   {sortedQueue.length} Active
+                   {filteredQueue.length} Active
                 </Badge>
              </div>
 
@@ -591,9 +742,9 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                 </div>
 
                 <div className="p-2 scroller-hidden h-[400px] overflow-y-auto">
-                   {sortedQueue.length > 0 ? (
+                   {filteredQueue.length > 0 ? (
                       <div className="space-y-1">
-                        {sortedQueue.map((app, idx) => {
+                        {filteredQueue.map((app, idx) => {
                           const slotTime = app.slot_id?.start_datetime
                             ? new Date(app.slot_id.start_datetime).toLocaleTimeString('en-IN', {
                                 hour: 'numeric',
@@ -650,7 +801,7 @@ const HospitalOfflineBooking = ({ role = 'hospital' }) => {
                    </div>
                    <div className="text-right">
                       <p className="text-[9px] font-black text-[#0D9488] uppercase tracking-widest">Total</p>
-                      <p className="text-xl font-heading font-black leading-none">{sortedQueue.length}</p>
+                      <p className="text-xl font-heading font-black leading-none">{filteredQueue.length}</p>
                    </div>
                 </div>
              </Card>

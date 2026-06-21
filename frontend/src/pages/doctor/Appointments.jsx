@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { Card, Button, Badge, Avatar, Modal } from '../../components/common';
@@ -29,12 +29,145 @@ const getLocalDateString = (dateInput) => {
   return `${year}-${month}-${day}`;
 };
 
+// Helper: get the session (schedule) that a given appointment belongs to
+const getAppointmentSession = (app, todaySchedules) => {
+  const startDatetime = app.slot_id?.start_datetime || app.start_datetime;
+  if (!startDatetime) return null;
+  const startTime = new Date(startDatetime);
+  const slotMinutes = startTime.getHours() * 60 + startTime.getMinutes();
+  return todaySchedules.find(s => {
+    if (!s.start_time || !s.end_time) return false;
+    const [sH, sM] = s.start_time.split(':').map(Number);
+    const [eH, eM] = s.end_time.split(':').map(Number);
+    return slotMinutes >= sH * 60 + sM && slotMinutes < eH * 60 + eM;
+  }) || null;
+};
+
+const isAppointmentStartable = (app, appointmentsList, schedulesList = []) => {
+  if (!app) return true;
+
+  const appIdStr = (app._id || app.id || '').toString();
+  const nowTime = new Date();
+  const today = getLocalDateString(nowTime);
+
+  const startDatetime = app.slot_id?.start_datetime || app.start_datetime;
+  if (!startDatetime) return true;
+
+  const startTime = new Date(startDatetime);
+  const appType = app.consultation_type;
+
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const todayDayOfWeek = days[nowTime.getDay()];
+
+  const todaySchedules = (schedulesList || []).filter(s =>
+    s.consultation_type === appType && (s.custom_date === today || s.day_of_week === todayDayOfWeek)
+  );
+
+  const appointmentSession = getAppointmentSession(app, todaySchedules);
+
+  let availabilityEndTime = null;
+  if (todaySchedules.length > 0) {
+    const endTimes = todaySchedules.map(s => {
+      if (!s.end_time) return null;
+      const [endH, endM] = s.end_time.split(':').map(Number);
+      const dt = new Date(nowTime);
+      dt.setHours(endH, endM, 0, 0);
+      return dt;
+    }).filter(Boolean);
+    if (endTimes.length > 0) availabilityEndTime = new Date(Math.max(...endTimes));
+  }
+  if (!availabilityEndTime) {
+    const getEndDatetime = (a) => {
+      if (a.slot_id?.end_datetime) return new Date(a.slot_id.end_datetime);
+      if (a.end_datetime) return new Date(a.end_datetime);
+      const start = a.slot_id?.start_datetime || a.start_datetime;
+      if (start) return new Date(new Date(start).getTime() + 15 * 60 * 1000);
+      return null;
+    };
+    const todaySlots = appointmentsList
+      .filter(a => {
+        const aStart = a.slot_id?.start_datetime || a.start_datetime;
+        return aStart && getLocalDateString(aStart) === today && a.consultation_type === appType;
+      })
+      .map(a => getEndDatetime(a)).filter(Boolean);
+    availabilityEndTime = todaySlots.length > 0 ? new Date(Math.max(...todaySlots)) : null;
+  }
+
+  if (app.status === 'no_show') {
+    const appDate = getLocalDateString(startTime);
+    let sessionEndTime = null;
+    let allOtherFinished = true;
+    if (appointmentSession) {
+      const [eH, eM] = appointmentSession.end_time.split(':').map(Number);
+      sessionEndTime = new Date(startTime);
+      sessionEndTime.setHours(eH, eM, 0, 0);
+      const [sH, sM] = appointmentSession.start_time.split(':').map(Number);
+      const sMin = sH * 60 + sM;
+      const eMin = eH * 60 + eM;
+      const sameSessionApps = appointmentsList.filter(a => {
+        const aStart = a.slot_id?.start_datetime || a.start_datetime;
+        if (!aStart || getLocalDateString(aStart) !== appDate || a.consultation_type !== appType) return false;
+        const aMin = new Date(aStart).getHours() * 60 + new Date(aStart).getMinutes();
+        return aMin >= sMin && aMin < eMin;
+      });
+      allOtherFinished = sameSessionApps.every(a =>
+        (a._id || a.id || '').toString() === appIdStr || ['completed', 'cancelled', 'no_show'].includes(a.status)
+      );
+    }
+    if (sessionEndTime && nowTime > sessionEndTime && allOtherFinished) return false;
+    if (availabilityEndTime && nowTime > availabilityEndTime) return false;
+    return true;
+  }
+
+  const appDate = getLocalDateString(startTime);
+  if (appDate !== today) return false;
+
+  let sameSessionApps;
+  if (appointmentSession) {
+    const [sH, sM] = appointmentSession.start_time.split(':').map(Number);
+    const [eH, eM] = appointmentSession.end_time.split(':').map(Number);
+    const sMin = sH * 60 + sM;
+    const eMin = eH * 60 + eM;
+    sameSessionApps = appointmentsList
+      .filter(a => {
+        const aStart = a.slot_id?.start_datetime || a.start_datetime;
+        if (!aStart || getLocalDateString(aStart) !== today || a.consultation_type !== appType) return false;
+        const aMin = new Date(aStart).getHours() * 60 + new Date(aStart).getMinutes();
+        return aMin >= sMin && aMin < eMin;
+      })
+      .sort((a, b) => new Date(a.slot_id?.start_datetime || a.start_datetime) - new Date(b.slot_id?.start_datetime || b.start_datetime));
+  } else {
+    sameSessionApps = appointmentsList
+      .filter(a => {
+        const aStart = a.slot_id?.start_datetime || a.start_datetime;
+        return aStart && getLocalDateString(aStart) === today && a.consultation_type === appType;
+      })
+      .sort((a, b) => new Date(a.slot_id?.start_datetime || a.start_datetime) - new Date(b.slot_id?.start_datetime || b.start_datetime));
+  }
+
+  const appIdx = sameSessionApps.findIndex(a => (a._id || a.id || '').toString() === appIdStr);
+  if (appIdx === -1) return false;
+
+  if (appIdx === 0) {
+    if (appointmentSession) {
+      const [sH, sM] = appointmentSession.start_time.split(':').map(Number);
+      const sessionStart = new Date(nowTime);
+      sessionStart.setHours(sH, sM, 0, 0);
+      return nowTime.getTime() >= sessionStart.getTime() - 5 * 60 * 1000;
+    }
+    return (startTime - nowTime <= 5 * 60 * 1000);
+  }
+
+  return sameSessionApps.slice(0, appIdx).every(a => ['completed', 'cancelled', 'no_show'].includes(a.status));
+};
+
 const DoctorAppointments = () => {
   const navigate = useNavigate();
   const [consultType, setConsultType] = useState('offline'); // 'offline' | 'online'
   const [appointmentTab, setAppointmentTab] = useState('Upcoming'); // 'Upcoming', 'Completed', 'Cancelled'
   const [dateFilter, setDateFilter] = useState('today'); // 'today', 'yesterday', 'tomorrow', 'custom'
   const [customDate, setCustomDate] = useState(getLocalDateString(new Date()));
+  const [selectedSession, setSelectedSession] = useState('');
   
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +175,7 @@ const DoctorAppointments = () => {
   const [isPrescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [selectedPrescriptionApp, setSelectedPrescriptionApp] = useState(null);
+  const [schedules, setSchedules] = useState([]);
   const [now, setNow] = useState(new Date());
 
   // Refresh current time every 30 seconds so the START CONSULTATION button appears on time
@@ -53,8 +187,12 @@ const DoctorAppointments = () => {
   const fetchAppointments = async () => {
     try {
       setLoading(true);
-      const data = await doctorService.getAppointments();
+      const [data, scheduleData] = await Promise.all([
+        doctorService.getAppointments(),
+        doctorService.getSchedules(),
+      ]);
       setAppointments(data);
+      setSchedules(scheduleData && Array.isArray(scheduleData.schedules) ? scheduleData.schedules : (Array.isArray(scheduleData) ? scheduleData : []));
     } catch (error) {
       toast.error('Failed to load appointments');
     } finally {
@@ -126,12 +264,16 @@ const DoctorAppointments = () => {
     };
   });
 
-  // For the Cancelled tab: ALL cancelled or no-show of current type, plus past booked slots
+  // For the Cancelled tab: ALL cancelled or no-show of current type (after availability closes), plus past booked slots
   const allCancelledProcessed = appointments
     .filter(app => {
       if (app.consultation_type !== consultType) return false;
       const isPast = app.slot_id?.start_datetime && new Date(app.slot_id.start_datetime) < now;
-      return ['cancelled', 'no_show'].includes(app.status) || (app.status === 'booked' && isPast);
+      if (app.status === 'no_show') {
+        const canStart = isAppointmentStartable(app, appointments, schedules);
+        return !canStart;
+      }
+      return app.status === 'cancelled' || (app.status === 'booked' && isPast);
     })
     .sort((a, b) => {
       if (!a.slot_id?.start_datetime || !b.slot_id?.start_datetime) return 0;
@@ -188,6 +330,78 @@ const DoctorAppointments = () => {
     return null;
   };
 
+  const getSessionsForSelectedDate = () => {
+    const targetDateStr = getFilterDateStr(dateFilter);
+    if (!targetDateStr) return [];
+    
+    const [year, month, day] = targetDateStr.split('-').map(Number);
+    const targetDate = new Date(year, month - 1, day);
+    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const targetDayOfWeek = DAYS[targetDate.getDay()];
+
+    const relevantSchedules = (schedules || []).filter(s => {
+      return s.consultation_type === consultType && (
+        s.custom_date === targetDateStr || s.day_of_week === targetDayOfWeek
+      );
+    });
+
+    const formatTimeStr = (timeStr) => {
+      if (!timeStr) return '';
+      const [hourStr, minuteStr] = timeStr.split(':');
+      const hour = parseInt(hourStr, 10);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const hour12 = hour % 12 || 12;
+      return `${hour12}:${minuteStr} ${ampm}`;
+    };
+
+    const sessionsList = relevantSchedules.map(s => {
+      const key = `${s.start_time}-${s.end_time}`;
+      return {
+        key,
+        start: s.start_time,
+        end: s.end_time,
+        label: `${formatTimeStr(s.start_time)} - ${formatTimeStr(s.end_time)}`
+      };
+    });
+
+    const seen = new Set();
+    return sessionsList.filter(s => {
+      if (seen.has(s.key)) return false;
+      seen.add(s.key);
+      return true;
+    });
+  };
+
+  const sessionsList = getSessionsForSelectedDate();
+
+  useEffect(() => {
+    if (sessionsList.length > 0) {
+      if (!selectedSession || !sessionsList.some(s => s.key === selectedSession)) {
+        // For today's view, auto-select the session that is currently active or next upcoming
+        if (dateFilter === 'today') {
+          const nowTime = new Date();
+          const nowMin = nowTime.getHours() * 60 + nowTime.getMinutes();
+          // Find the first session that is currently running or coming up next
+          const activeOrNext = sessionsList.find(s => {
+            const dashIdx = s.key.indexOf('-', 3);
+            const startPart = s.key.slice(0, dashIdx);
+            const endPart = s.key.slice(dashIdx + 1);
+            const [sH, sM] = startPart.split(':').map(Number);
+            const [eH, eM] = endPart.split(':').map(Number);
+            const eMin = eH * 60 + eM;
+            return nowMin < eMin; // session hasn't ended yet
+          });
+          setSelectedSession((activeOrNext || sessionsList[0]).key);
+        } else {
+          setSelectedSession(sessionsList[0].key);
+        }
+      }
+    } else {
+      setSelectedSession('');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFilter, consultType, customDate, schedules]);
+
   const getTabCount = (tabName) => {
     if (tabName === 'Cancelled') {
       // Count ALL cancelled appointments (including rebooked slots)
@@ -198,13 +412,24 @@ const DoctorAppointments = () => {
           const targetDate = getFilterDateStr(dateFilter);
           if (appDate !== targetDate) return false;
         }
+        if (selectedSession) {
+          if (!app.slot_id?.start_datetime) return false;
+          const appSlotStart = new Date(app.slot_id.start_datetime);
+          const [sH, sM] = selectedSession.split('-')[0].split(':').map(Number);
+          const [eH, eM] = selectedSession.split('-')[1].split(':').map(Number);
+          const sMin = sH * 60 + sM;
+          const eMin = eH * 60 + eM;
+          const slotMin = appSlotStart.getHours() * 60 + appSlotStart.getMinutes();
+          if (slotMin < sMin || slotMin >= eMin) return false;
+        }
         return true;
       }).length;
     }
     return processedAppointments.filter(app => {
       let matchesTab = false;
       if (tabName === 'Upcoming') {
-        matchesTab = ['booked', 'consulting'].includes(app.status) && app.displayStatus !== 'cancelled';
+        const isUpcomingNoShow = app.status === 'no_show' && isAppointmentStartable(app, appointments, schedules);
+        matchesTab = (['booked', 'consulting'].includes(app.status) || isUpcomingNoShow) && app.displayStatus !== 'cancelled';
       } else if (tabName === 'Completed') {
         matchesTab = app.status === 'completed';
       }
@@ -216,6 +441,16 @@ const DoctorAppointments = () => {
         const targetDate = getFilterDateStr(dateFilter);
         if (appDate !== targetDate) return false;
       }
+      if (selectedSession) {
+        if (!app.slot_id?.start_datetime) return false;
+        const appSlotStart = new Date(app.slot_id.start_datetime);
+        const [sH, sM] = selectedSession.split('-')[0].split(':').map(Number);
+        const [eH, eM] = selectedSession.split('-')[1].split(':').map(Number);
+        const sMin = sH * 60 + sM;
+        const eMin = eH * 60 + eM;
+        const slotMin = appSlotStart.getHours() * 60 + appSlotStart.getMinutes();
+        if (slotMin < sMin || slotMin >= eMin) return false;
+      }
       return true;
     }).length;
   };
@@ -224,7 +459,17 @@ const DoctorAppointments = () => {
   const todayAppointments = processedAppointments.filter(app => {
     if (!app.slot_id?.start_datetime) return false;
     const appDate = getLocalDateString(app.slot_id.start_datetime);
-    return appDate === todayStr;
+    if (appDate !== todayStr) return false;
+    if (selectedSession) {
+      const appSlotStart = new Date(app.slot_id.start_datetime);
+      const [sH, sM] = selectedSession.split('-')[0].split(':').map(Number);
+      const [eH, eM] = selectedSession.split('-')[1].split(':').map(Number);
+      const sMin = sH * 60 + sM;
+      const eMin = eH * 60 + eM;
+      const slotMin = appSlotStart.getHours() * 60 + appSlotStart.getMinutes();
+      if (slotMin < sMin || slotMin >= eMin) return false;
+    }
+    return true;
   });
 
   const calculateWaitTime = (appointmentId) => {
@@ -251,12 +496,23 @@ const DoctorAppointments = () => {
           const targetDate = getFilterDateStr(dateFilter);
           if (appDate !== targetDate) return false;
         }
+        if (selectedSession) {
+          if (!app.slot_id?.start_datetime) return false;
+          const appSlotStart = new Date(app.slot_id.start_datetime);
+          const [sH, sM] = selectedSession.split('-')[0].split(':').map(Number);
+          const [eH, eM] = selectedSession.split('-')[1].split(':').map(Number);
+          const sMin = sH * 60 + sM;
+          const eMin = eH * 60 + eM;
+          const slotMin = appSlotStart.getHours() * 60 + appSlotStart.getMinutes();
+          if (slotMin < sMin || slotMin >= eMin) return false;
+        }
         return true;
       })
     : processedAppointments.filter(app => {
         let matchesTab = false;
         if (appointmentTab === 'Upcoming') {
-          matchesTab = ['booked', 'consulting'].includes(app.status) && app.displayStatus !== 'cancelled';
+          const isUpcomingNoShow = app.status === 'no_show' && isAppointmentStartable(app, appointments, schedules);
+          matchesTab = (['booked', 'consulting'].includes(app.status) || isUpcomingNoShow) && app.displayStatus !== 'cancelled';
         } else if (appointmentTab === 'Completed') {
           matchesTab = app.status === 'completed';
         }
@@ -267,6 +523,16 @@ const DoctorAppointments = () => {
           const appDate = getLocalDateString(app.slot_id.start_datetime);
           const targetDate = getFilterDateStr(dateFilter);
           if (appDate !== targetDate) return false;
+        }
+        if (selectedSession) {
+          if (!app.slot_id?.start_datetime) return false;
+          const appSlotStart = new Date(app.slot_id.start_datetime);
+          const [sH, sM] = selectedSession.split('-')[0].split(':').map(Number);
+          const [eH, eM] = selectedSession.split('-')[1].split(':').map(Number);
+          const sMin = sH * 60 + sM;
+          const eMin = eH * 60 + eM;
+          const slotMin = appSlotStart.getHours() * 60 + appSlotStart.getMinutes();
+          if (slotMin < sMin || slotMin >= eMin) return false;
         }
         return true;
       });
@@ -284,58 +550,201 @@ const DoctorAppointments = () => {
   };
 
   const handleStartConsultation = async (appId) => {
-    try {
-      toast.loading('Starting consultation...', { id: 'start-consult' });
-      await doctorService.startAppointment(appId);
-      toast.success('Consultation started!', { id: 'start-consult' });
-      navigate(`/doctor/appointments/${appId}/consult`);
-    } catch (error) {
-      toast.error('Failed to start consultation', { id: 'start-consult' });
+    const app = appointments.find(a => a._id === appId);
+    if (app) {
+      const canStart = isAppointmentStartable(app, appointments, schedules);
+      if (!canStart) {
+        toast.error("Consultation can only start in order. No-show patients can start during the availability window.");
+        return;
+      }
+    }
+
+    const activeApp = appointments.find(a => a.status === 'consulting' && a.slot_id?.start_datetime && getLocalDateString(a.slot_id.start_datetime) === todayStr);
+    const patientName = app ? (app.patient || app.patient_id?.name || app.patient_snapshot?.name || 'Walk-in Patient') : 'Patient';
+
+    const proceedStart = async () => {
+      try {
+        toast.loading('Starting consultation...', { id: 'start-consult' });
+        await doctorService.startAppointment(appId);
+        toast.success('Consultation started!', { id: 'start-consult' });
+        navigate(`/doctor/appointments/${appId}/consult`);
+      } catch (error) {
+        toast.error('Failed to start consultation', { id: 'start-consult' });
+      }
+    };
+
+    if (activeApp && activeApp._id !== appId) {
+      toast((t) => (
+        <div className="flex flex-col gap-3 p-1 font-body text-left">
+          <p className="text-sm font-bold text-navy leading-normal">
+            Are you sure you want to start consultation for <span className="text-[#0D9488] font-black">{patientName}</span>? The current consultation will remain unsaved.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => {
+                toast.dismiss(t.id);
+                proceedStart();
+              }}
+              className="px-4 py-2 bg-[#0D9488] hover:bg-[#0D9488]/90 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+            >
+              Yes, Proceed
+            </button>
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="px-4 py-2 bg-gray-100 text-navy hover:bg-gray-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ), {
+        duration: 8000,
+        position: 'top-center',
+        style: {
+          borderRadius: '24px',
+          background: '#fff',
+          color: '#0C1A2E',
+          border: '1px solid #E2E8F0',
+          boxShadow: '0 20px 25px -5px rgb(12 26 46 / 0.1), 0 8px 10px -6px rgb(12 26 46 / 0.1)',
+          maxWidth: '400px',
+        }
+      });
+    } else {
+      proceedStart();
     }
   };
 
   const handleMarkNoShow = async (appId) => {
-    if (!window.confirm('Are you sure you want to mark this patient as No-Show?')) {
-      return;
-    }
-    try {
-      toast.loading('Marking patient as no-show...', { id: 'no-show-toast' });
-      await doctorService.noShowAppointment(appId);
-      toast.success('Patient marked as no-show', { id: 'no-show-toast' });
-      fetchAppointments();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update status', { id: 'no-show-toast' });
-    }
+    const app = appointments.find(a => a._id === appId);
+    const patientName = app ? (app.patient || app.patient_id?.name || app.patient_snapshot?.name || 'this patient') : 'this patient';
+
+    const proceedNoShow = async () => {
+      try {
+        toast.loading('Marking patient as no-show...', { id: 'no-show-toast' });
+        await doctorService.noShowAppointment(appId);
+        toast.success('Patient marked as no-show', { id: 'no-show-toast' });
+        fetchAppointments();
+      } catch (error) {
+        toast.error(error.response?.data?.message || 'Failed to update status', { id: 'no-show-toast' });
+      }
+    };
+
+    toast((t) => (
+      <div className="flex flex-col gap-3 p-1 font-body text-left">
+        <p className="text-sm font-bold text-navy leading-normal">
+          Are you sure you want to mark <span className="text-[#0D9488] font-black">{patientName}</span> as No-Show?
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => {
+              toast.dismiss(t.id);
+              proceedNoShow();
+            }}
+            className="px-4 py-2 bg-[#0D9488] hover:bg-[#0D9488]/90 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+          >
+            Yes, Proceed
+          </button>
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-4 py-2 bg-gray-100 text-navy hover:bg-gray-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: 8000,
+      position: 'top-center',
+      style: {
+        borderRadius: '24px',
+        background: '#fff',
+        color: '#0C1A2E',
+        border: '1px solid #E2E8F0',
+        boxShadow: '0 20px 25px -5px rgb(12 26 46 / 0.1), 0 8px 10px -6px rgb(12 26 46 / 0.1)',
+        maxWidth: '400px',
+      }
+    });
   };
 
   const handleStartClinicSession = async () => {
-    const active = appointments.find(a => a.status === 'consulting');
+    const today = getLocalDateString(new Date());
+    const active = appointments.find(a => a.status === 'consulting' && a.slot_id?.start_datetime && getLocalDateString(a.slot_id.start_datetime) === today);
     if (active) {
       toast.success('Resuming active session...');
       navigate(`/doctor/appointments/${active._id}/consult`);
       return;
     }
 
-    const today = getLocalDateString(new Date());
-    const todayBooked = appointments
-      .filter(a => a.status === 'booked' && a.consultation_type === consultType && getLocalDateString(a.slot_id?.start_datetime) === today)
+    // Filter to the selected session range
+    let sessionApps = appointments
+      .filter(a => getLocalDateString(a.slot_id?.start_datetime) === today && a.consultation_type === consultType)
       .sort((a, b) => new Date(a.slot_id?.start_datetime) - new Date(b.slot_id?.start_datetime));
 
-    if (todayBooked.length === 0) {
-      toast.error("No booked appointments scheduled for today.");
+    if (selectedSession) {
+      const dashIdx = selectedSession.indexOf('-', 3);
+      const startPart = selectedSession.slice(0, dashIdx);
+      const endPart = selectedSession.slice(dashIdx + 1);
+      const [sH, sM] = startPart.split(':').map(Number);
+      const [eH, eM] = endPart.split(':').map(Number);
+      const sMin = sH * 60 + sM;
+      const eMin = eH * 60 + eM;
+      sessionApps = sessionApps.filter(a => {
+        const slotStart = new Date(a.slot_id?.start_datetime);
+        const slotMin = slotStart.getHours() * 60 + slotStart.getMinutes();
+        return slotMin >= sMin && slotMin < eMin;
+      });
+      // Enforce 5-minute pre-start rule based on session start time
+      const nowTime = new Date();
+      const sessionStart = new Date(nowTime);
+      sessionStart.setHours(sH, sM, 0, 0);
+      if (nowTime.getTime() < sessionStart.getTime() - 5 * 60 * 1000) {
+        const label = sessionsList.find(s => s.key === selectedSession)?.label || selectedSession;
+        toast.error(`The session (${label}) can only be started within 5 minutes of its scheduled time.`);
+        return;
+      }
+    }
+
+    if (sessionApps.length === 0) {
+      toast.error("No booked appointments scheduled for the selected session.");
       return;
     }
 
-    const firstPatient = todayBooked[0];
+    const hasRemaining = sessionApps.some(a => ['booked', 'consulting', 'no_show'].includes(a.status));
+    if (!hasRemaining) {
+      toast.error("All consultations in this session have already been completed or processed.");
+      return;
+    }
+
+    // Include startable no-show patients when no booked patients remain
+    const startableCandidates = sessionApps
+      .filter(a => {
+        if (a.status === 'booked') return true;
+        if (a.status === 'no_show') return isAppointmentStartable(a, appointments, schedules);
+        return false;
+      })
+      .sort((a, b) => new Date(a.slot_id?.start_datetime) - new Date(b.slot_id?.start_datetime));
+
+    if (startableCandidates.length === 0) {
+      toast.error("No patients available to start in this session. All may be completed, cancelled, or the session window has ended.");
+      return;
+    }
+
+    const firstPatient = startableCandidates[0];
+    const canStart = isAppointmentStartable(firstPatient, appointments, schedules);
+    if (!canStart) {
+      toast.error("The session cannot be started yet. Check the session start time.");
+      return;
+    }
+
     try {
-      toast.loading("Starting today's clinic session...", { id: 'start-clinic' });
+      toast.loading("Starting clinic session...", { id: 'start-clinic' });
       await doctorService.startAppointment(firstPatient._id);
       toast.success('Session started!', { id: 'start-clinic' });
       navigate(`/doctor/appointments/${firstPatient._id}/consult`);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to start clinic session', { id: 'start-clinic' });
     }
-  };
+  }
 
   if (loading) {
     return (
@@ -347,8 +756,11 @@ const DoctorAppointments = () => {
     );
   }
 
-  const activeSession = processedAppointments.find(a => a.status === 'consulting');
+  const activeSession = processedAppointments.find(a => a.status === 'consulting' && a.slot_id?.start_datetime && getLocalDateString(a.slot_id.start_datetime) === todayStr);
   const nextBookedApp = filteredAppointments.find(app => app.status === 'booked');
+
+  // Lock calculations for Start Clinic Session button
+  const activeSessionToday = appointments.find(a => a.status === 'consulting' && a.slot_id?.start_datetime && getLocalDateString(a.slot_id.start_datetime) === todayStr);
 
   return (
     <DashboardLayout title="Appointments & Consultations" role="doctor">
@@ -416,6 +828,25 @@ const DoctorAppointments = () => {
                 />
               </div>
             )}
+
+            {/* Session selection dropdown */}
+            {sessionsList.length > 0 && (
+              <div className="relative group animate-in slide-in-from-left-2 duration-200">
+                <Clock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#0D9488]" />
+                <select
+                  value={selectedSession}
+                  onChange={(e) => setSelectedSession(e.target.value)}
+                  className="pl-9 pr-9 py-2 bg-white border border-gray-200 rounded-xl text-[10px] font-black uppercase tracking-wider text-navy appearance-none outline-none focus:ring-2 focus:ring-[#0D9488]/10 cursor-pointer"
+                >
+                  {sessionsList.map(s => (
+                    <option key={s.key} value={s.key}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronRight size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-navy/60 rotate-90 pointer-events-none" />
+              </div>
+            )}
           </div>
         </div>
 
@@ -441,9 +872,9 @@ const DoctorAppointments = () => {
           <div className="pb-3 sm:pb-0 flex items-center justify-end">
             <Button
               onClick={handleStartClinicSession}
-              className="bg-[#0D9488] hover:bg-[#0D9488]/90 text-white rounded-2xl px-6 py-2.5 font-black text-[10px] uppercase tracking-widest border-none shadow-lg shadow-[#0D9488]/20 flex items-center gap-2"
+              className="rounded-2xl px-6 py-2.5 font-black text-[10px] uppercase tracking-widest border-none flex items-center gap-2 transition-all bg-[#0D9488] hover:bg-[#0D9488]/90 text-white shadow-lg shadow-[#0D9488]/20"
             >
-              <CheckCircle2 size={13} /> Start Clinic Session
+              <CheckCircle2 size={13} /> {activeSessionToday ? 'Resume Session' : 'Start Clinic Session'}
             </Button>
           </div>
         </div>
@@ -517,6 +948,15 @@ const DoctorAppointments = () => {
                                       View Rx
                                    </Button>
                                 )}
+                                {app.displayStatus === 'consulting' && (
+                                   <Button 
+                                      size="sm" 
+                                      onClick={() => navigate(`/doctor/appointments/${app.id}/consult`)}
+                                      className="rounded-xl bg-[#0D9488] hover:bg-[#0D9488]/90 text-white text-[10px] px-6 py-2.5 font-black uppercase tracking-wider border-none shadow-sm animate-pulse"
+                                   >
+                                      Resume
+                                   </Button>
+                                )}
                              </div>
                          </div>
 
@@ -534,15 +974,15 @@ const DoctorAppointments = () => {
                 <div className="space-y-6 relative z-10">
                    <div className="flex items-center justify-between border-b border-white/10 pb-4">
                       <span className="text-sm font-bold opacity-90">Total Patients</span>
-                      <span className="text-2xl font-black">{processedAppointments.length}</span>
+                      <span className="text-2xl font-black">{todayAppointments.length}</span>
                    </div>
                    <div className="flex items-center justify-between border-b border-white/10 pb-4">
                       <span className="text-sm font-bold opacity-90">Completed</span>
-                      <span className="text-xl font-black">{processedAppointments.filter(a => a.status === 'completed').length}</span>
+                      <span className="text-xl font-black">{todayAppointments.filter(a => a.status === 'completed').length}</span>
                    </div>
                     <div className="flex items-center justify-between border-b border-white/10 pb-4">
                        <span className="text-sm font-bold opacity-90 flex items-center gap-2"><Stethoscope size={14}/> {consultType === 'offline' ? 'Physical Visits' : 'Online Sessions'}</span>
-                       <span className="text-xl font-black">{processedAppointments.filter(a => a.type.toLowerCase() === consultType).length}</span>
+                       <span className="text-xl font-black">{todayAppointments.length}</span>
                     </div>
                 </div>
              </div>
@@ -669,13 +1109,13 @@ const DoctorAppointments = () => {
 
              {/* Actions */}
              <div className="pt-8 border-t border-gray-100 flex items-center justify-end gap-4">
-                 <Button 
-                   variant="outline" 
-                   onClick={() => setDetailsModalOpen(false)}
-                   className="rounded-2xl px-8 border-gray-200 uppercase tracking-widest font-black text-[10px]"
-                 >
-                    Close
-                 </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setDetailsModalOpen(false)}
+                    className="rounded-2xl px-8 border-gray-200 uppercase tracking-widest font-black text-[10px]"
+                  >
+                     Close
+                  </Button>
              </div>
           </div>
         )}

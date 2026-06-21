@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import DashboardLayout from '../../components/layout/DashboardLayout';
@@ -32,21 +32,193 @@ const getLocalDateString = (dateInput) => {
   return `${year}-${month}-${day}`;
 };
 
+// Helper: get the session (schedule) that a given appointment belongs to
+const getAppointmentSession = (app, todaySchedules) => {
+  const startDatetime = app.slot_id?.start_datetime || app.start_datetime;
+  if (!startDatetime) return null;
+  const startTime = new Date(startDatetime);
+  const slotMinutes = startTime.getHours() * 60 + startTime.getMinutes();
+  return todaySchedules.find(s => {
+    if (!s.start_time || !s.end_time) return false;
+    const [sH, sM] = s.start_time.split(':').map(Number);
+    const [eH, eM] = s.end_time.split(':').map(Number);
+    return slotMinutes >= sH * 60 + sM && slotMinutes < eH * 60 + eM;
+  }) || null;
+};
+
+const isAppointmentStartable = (app, appointmentsList, schedulesList = []) => {
+  if (!app) return true;
+
+  const appIdStr = (app._id || app.id || '').toString();
+  
+  const nowTime = new Date();
+  const today = getLocalDateString(nowTime);
+
+  const startDatetime = app.slot_id?.start_datetime || app.start_datetime;
+  if (!startDatetime) return true;
+
+  const startTime = new Date(startDatetime);
+  const appType = app.consultation_type;
+  
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const todayDayOfWeek = days[nowTime.getDay()];
+
+  const todaySchedules = (schedulesList || []).filter(s => {
+    return s.consultation_type === appType && (
+      s.custom_date === today || s.day_of_week === todayDayOfWeek
+    );
+  });
+
+  // Determine which session this appointment belongs to
+  const appointmentSession = getAppointmentSession(app, todaySchedules);
+
+  // Calculate availability end time (latest end across all sessions)
+  let availabilityEndTime = null;
+  if (todaySchedules.length > 0) {
+    const endTimes = todaySchedules.map(s => {
+      if (!s.end_time) return null;
+      const [endH, endM] = s.end_time.split(':').map(Number);
+      const endDatetime = new Date(nowTime);
+      endDatetime.setHours(endH, endM, 0, 0);
+      return endDatetime;
+    }).filter(Boolean);
+    if (endTimes.length > 0) availabilityEndTime = new Date(Math.max(...endTimes));
+  }
+
+  if (!availabilityEndTime) {
+    const getEndDatetime = (a) => {
+      if (a.slot_id?.end_datetime) return new Date(a.slot_id.end_datetime);
+      if (a.end_datetime) return new Date(a.end_datetime);
+      const start = a.slot_id?.start_datetime || a.start_datetime;
+      if (start) return new Date(new Date(start).getTime() + 15 * 60 * 1000);
+      return null;
+    };
+    const todaySlots = appointmentsList
+      .filter(a => {
+        const aStart = a.slot_id?.start_datetime || a.start_datetime;
+        return aStart && getLocalDateString(aStart) === today && a.consultation_type === appType;
+      })
+      .map(a => getEndDatetime(a))
+      .filter(Boolean);
+    availabilityEndTime = todaySlots.length > 0 ? new Date(Math.max(...todaySlots)) : null;
+  }
+
+  // no_show logic: startable only until the session ends and all others finished
+  if (app.status === 'no_show') {
+    const appDate = getLocalDateString(startTime);
+    let sessionEndTime = null;
+    let allOtherFinished = true;
+
+    if (appointmentSession) {
+      const [eH, eM] = appointmentSession.end_time.split(':').map(Number);
+      sessionEndTime = new Date(startTime);
+      sessionEndTime.setHours(eH, eM, 0, 0);
+
+      const [sH, sM] = appointmentSession.start_time.split(':').map(Number);
+      const sMin = sH * 60 + sM;
+      const eMin = eH * 60 + eM;
+
+      const sameSessionApps = appointmentsList.filter(a => {
+        const aStart = a.slot_id?.start_datetime || a.start_datetime;
+        if (!aStart) return false;
+        if (getLocalDateString(aStart) !== appDate || a.consultation_type !== appType) return false;
+        const aTime = new Date(aStart);
+        const aMin = aTime.getHours() * 60 + aTime.getMinutes();
+        return aMin >= sMin && aMin < eMin;
+      });
+
+      allOtherFinished = sameSessionApps.every(a => {
+        if ((a._id || a.id || '').toString() === appIdStr) return true;
+        return ['completed', 'cancelled', 'no_show'].includes(a.status);
+      });
+    }
+
+    if (sessionEndTime && nowTime > sessionEndTime && allOtherFinished) return false;
+    if (availabilityEndTime && nowTime > availabilityEndTime) return false;
+    return true;
+  }
+
+  // Regular appointment: must be today
+  const appDate = getLocalDateString(startTime);
+  if (appDate !== today) return false;
+
+  // Scope queue to the SAME SESSION as this appointment
+  let sameSessionApps;
+  if (appointmentSession) {
+    const [sH, sM] = appointmentSession.start_time.split(':').map(Number);
+    const [eH, eM] = appointmentSession.end_time.split(':').map(Number);
+    const sMin = sH * 60 + sM;
+    const eMin = eH * 60 + eM;
+    sameSessionApps = appointmentsList
+      .filter(a => {
+        const aStart = a.slot_id?.start_datetime || a.start_datetime;
+        if (!aStart || getLocalDateString(aStart) !== today || a.consultation_type !== appType) return false;
+        const aTime = new Date(aStart);
+        const aMin = aTime.getHours() * 60 + aTime.getMinutes();
+        return aMin >= sMin && aMin < eMin;
+      })
+      .sort((a, b) => new Date(a.slot_id?.start_datetime || a.start_datetime) - new Date(b.slot_id?.start_datetime || b.start_datetime));
+  } else {
+    // Fallback: all same-type today, sorted
+    sameSessionApps = appointmentsList
+      .filter(a => {
+        const aStart = a.slot_id?.start_datetime || a.start_datetime;
+        return aStart && getLocalDateString(aStart) === today && a.consultation_type === appType;
+      })
+      .sort((a, b) => new Date(a.slot_id?.start_datetime || a.start_datetime) - new Date(b.slot_id?.start_datetime || b.start_datetime));
+  }
+
+  const appIdx = sameSessionApps.findIndex(a => (a._id || a.id || '').toString() === appIdStr);
+  if (appIdx === -1) return false;
+
+  if (appIdx === 0) {
+    // First patient in the session: allow only within 5 minutes before session start
+    if (appointmentSession) {
+      const [sH, sM] = appointmentSession.start_time.split(':').map(Number);
+      const sessionStart = new Date(nowTime);
+      sessionStart.setHours(sH, sM, 0, 0);
+      // Allow if now is within 5 mins before session start, or session has already started
+      return (nowTime.getTime() >= sessionStart.getTime() - 5 * 60 * 1000);
+    }
+    // Fallback: 5 minutes before the slot time
+    return (startTime - nowTime <= 5 * 60 * 1000);
+  }
+
+  const precedingApps = sameSessionApps.slice(0, appIdx);
+  return precedingApps.every(a => ['completed', 'cancelled', 'no_show'].includes(a.status));
+};
+
 const DoctorDashboard = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
 
   const [appointments, setAppointments] = useState([]);
+  const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedSession, setSelectedSession] = useState('');
 
   const [isDetailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
+  const [now, setNow] = useState(new Date());
+
+  // Refresh current time every 30 seconds so start consultation checks are updated
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const data = await doctorService.getAppointments();
-      setAppointments(data);
+      const [appData, scheduleData] = await Promise.all([
+        doctorService.getAppointments(),
+        doctorService.getSchedules()
+      ]);
+      setAppointments(appData);
+      // Handle both { doctor, schedules } and plain array responses
+      setSchedules(scheduleData?.schedules && Array.isArray(scheduleData.schedules)
+        ? scheduleData.schedules
+        : Array.isArray(scheduleData) ? scheduleData : []);
     } catch (error) {
       toast.error('Failed to load dashboard data');
     } finally {
@@ -103,11 +275,63 @@ const DoctorDashboard = () => {
     };
   });
 
-  // Filter for today's appointments
+  // Compute today's sessions for the dropdown
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const todayDayOfWeek = DAYS[new Date().getDay()];
+  const todaySessionsList = (() => {
+    const relevantSchedules = (schedules || []).filter(s =>
+      s.custom_date === todayStr || s.day_of_week === todayDayOfWeek
+    );
+    const formatTimeStr = (t) => {
+      if (!t) return '';
+      const [h, m] = t.split(':');
+      const hour = parseInt(h, 10);
+      return `${hour % 12 || 12}:${m} ${hour >= 12 ? 'PM' : 'AM'}`;
+    };
+    const seen = new Set();
+    return relevantSchedules
+      .map(s => ({ key: `${s.start_time}-${s.end_time}`, start: s.start_time, end: s.end_time, label: `${formatTimeStr(s.start_time)} – ${formatTimeStr(s.end_time)}` }))
+      .filter(s => { if (seen.has(s.key)) return false; seen.add(s.key); return true; });
+  })();
+
+  // Auto-select the active or next upcoming session when sessions load
+  useEffect(() => {
+    if (todaySessionsList.length > 0) {
+      if (!selectedSession || !todaySessionsList.some(s => s.key === selectedSession)) {
+        const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+        // Find the first session that hasn't ended yet (active or upcoming)
+        const activeOrNext = todaySessionsList.find(s => {
+          const [eH, eM] = s.end.split(':').map(Number);
+          return nowMin < eH * 60 + eM;
+        });
+        setSelectedSession((activeOrNext || todaySessionsList[0]).key);
+      }
+    } else {
+      setSelectedSession('');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedules, todayStr]);
+
+  // Filter for today's appointments, then narrow to selected session
   const todayAppointments = processedAppointments.filter(app => {
     if (!app.slot_id?.start_datetime) return false;
     const appDate = getLocalDateString(app.slot_id.start_datetime);
-    return appDate === todayStr;
+    if (appDate !== todayStr) return false;
+    if (selectedSession) {
+      const parts = selectedSession.split('-');
+      // key format: "HH:MM-HH:MM" — but could have colons, so split on last dash for end
+      const dashIdx = selectedSession.indexOf('-', 3); // skip past the first HH:MM
+      const startPart = selectedSession.slice(0, dashIdx);
+      const endPart = selectedSession.slice(dashIdx + 1);
+      const [sH, sM] = startPart.split(':').map(Number);
+      const [eH, eM] = endPart.split(':').map(Number);
+      const sMin = sH * 60 + sM;
+      const eMin = eH * 60 + eM;
+      const slotStart = new Date(app.slot_id.start_datetime);
+      const slotMin = slotStart.getHours() * 60 + slotStart.getMinutes();
+      if (slotMin < sMin || slotMin >= eMin) return false;
+    }
+    return true;
   });
 
   const isIndependent = !user?.doctorProfile?.hospitalId;
@@ -137,28 +361,121 @@ const DoctorDashboard = () => {
   };
 
   const handleStartConsultation = async (appId) => {
-    try {
-      toast.loading('Starting consultation...', { id: 'start-consult' });
-      await doctorService.startAppointment(appId);
-      toast.success('Consultation started!', { id: 'start-consult' });
-      navigate(`/doctor/appointments/${appId}/consult`);
-    } catch (error) {
-      toast.error('Failed to start consultation', { id: 'start-consult' });
+    const app = appointments.find(a => a._id === appId);
+    if (app) {
+      const canStart = isAppointmentStartable(app, appointments, schedules);
+      if (!canStart) {
+        toast.error("Consultation can only be started up to 5 minutes before the scheduled time or after preceding sessions finish");
+        return;
+      }
+    }
+
+    const todayStr = getLocalDateString(new Date());
+    const activeApp = appointments.find(a => a.status === 'consulting' && a.slot_id?.start_datetime && getLocalDateString(a.slot_id.start_datetime) === todayStr);
+    const patientName = app ? (app.patient || app.patient_id?.name || app.patient_snapshot?.name || 'Walk-in Patient') : 'Patient';
+
+    const proceedStart = async () => {
+      try {
+        toast.loading('Starting consultation...', { id: 'start-consult' });
+        await doctorService.startAppointment(appId);
+        toast.success('Consultation started!', { id: 'start-consult' });
+        navigate(`/doctor/appointments/${appId}/consult`);
+      } catch (error) {
+        toast.error('Failed to start consultation', { id: 'start-consult' });
+      }
+    };
+
+    if (activeApp && activeApp._id !== appId) {
+      toast((t) => (
+        <div className="flex flex-col gap-3 p-1 font-body text-left">
+          <p className="text-sm font-bold text-navy leading-normal">
+            Are you sure you want to start consultation for <span className="text-[#0D9488] font-black">{patientName}</span>? The current consultation will remain unsaved.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => {
+                toast.dismiss(t.id);
+                proceedStart();
+              }}
+              className="px-4 py-2 bg-[#0D9488] hover:bg-[#0D9488]/90 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+            >
+              Yes, Proceed
+            </button>
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="px-4 py-2 bg-gray-100 text-navy hover:bg-gray-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ), {
+        duration: 8000,
+        position: 'top-center',
+        style: {
+          borderRadius: '24px',
+          background: '#fff',
+          color: '#0C1A2E',
+          border: '1px solid #E2E8F0',
+          boxShadow: '0 20px 25px -5px rgb(12 26 46 / 0.1), 0 8px 10px -6px rgb(12 26 46 / 0.1)',
+          maxWidth: '400px',
+        }
+      });
+    } else {
+      proceedStart();
     }
   };
 
   const handleMarkNoShow = async (appId) => {
-    if (!window.confirm('Are you sure you want to mark this patient as No-Show?')) {
-      return;
-    }
-    try {
-      toast.loading('Marking patient as no-show...', { id: 'no-show-toast' });
-      await doctorService.noShowAppointment(appId);
-      toast.success('Patient marked as no-show', { id: 'no-show-toast' });
-      fetchDashboardData();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update status', { id: 'no-show-toast' });
-    }
+    const app = appointments.find(a => a._id === appId);
+    const patientName = app ? (app.patient || app.patient_id?.name || app.patient_snapshot?.name || 'this patient') : 'this patient';
+
+    const proceedNoShow = async () => {
+      try {
+        toast.loading('Marking patient as no-show...', { id: 'no-show-toast' });
+        await doctorService.noShowAppointment(appId);
+        toast.success('Patient marked as no-show', { id: 'no-show-toast' });
+        fetchDashboardData();
+      } catch (error) {
+        toast.error(error.response?.data?.message || 'Failed to update status', { id: 'no-show-toast' });
+      }
+    };
+
+    toast((t) => (
+      <div className="flex flex-col gap-3 p-1 font-body text-left">
+        <p className="text-sm font-bold text-navy leading-normal">
+          Are you sure you want to mark <span className="text-[#0D9488] font-black">{patientName}</span> as No-Show?
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => {
+              toast.dismiss(t.id);
+              proceedNoShow();
+            }}
+            className="px-4 py-2 bg-[#0D9488] hover:bg-[#0D9488]/90 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+          >
+            Yes, Proceed
+          </button>
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-4 py-2 bg-gray-100 text-navy hover:bg-gray-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: 8000,
+      position: 'top-center',
+      style: {
+        borderRadius: '24px',
+        background: '#fff',
+        color: '#0C1A2E',
+        border: '1px solid #E2E8F0',
+        boxShadow: '0 20px 25px -5px rgb(12 26 46 / 0.1), 0 8px 10px -6px rgb(12 26 46 / 0.1)',
+        maxWidth: '400px',
+      }
+    });
   };
 
   const AppointmentCard = ({ app }) => (
@@ -186,16 +503,12 @@ const DoctorDashboard = () => {
              <Button size="sm" onClick={() => navigate(`/doctor/appointments/${app.id}/consult`)} className="bg-[#0D9488] text-white shadow-lg border-none shadow-[#0D9488]/20 rounded-xl text-[9px] px-4 py-2 hover:bg-[#0D9488]/90 transition-all font-black">
                 Prescribe
              </Button>
-          ) : app.status === 'booked' ? (
-             <Button size="sm" onClick={() => handleStartConsultation(app.id)} className="bg-navy text-white rounded-xl text-[9px] px-4 py-2 shadow-lg hover:bg-[#0D9488] transition-all">
-                Start Session
-             </Button>
           ) : (
              <Button 
                variant="outline" 
                size="sm" 
                onClick={() => { setSelectedAppointment(app); setDetailsModalOpen(true); }}
-               className="rounded-xl border-gray-100 text-[9px] px-4 py-2 text-navy/70 font-black"
+               className="rounded-xl border-gray-150 text-[9px] px-4 py-2 text-navy/70 font-black"
              >
                 Details
              </Button>
@@ -323,18 +636,32 @@ const DoctorDashboard = () => {
                  </div>
               ) : (
                  <div className="space-y-6 h-full text-left">
-                    <div className="flex items-center justify-between px-2 min-h-[40px]">
-                       <div className="flex items-center gap-3">
-                          <Users size={18} className="text-[#0D9488]" />
-                          <h3 className="text-sm font-black text-navy uppercase tracking-widest">Hospital Consultations</h3>
-                       </div>
-                       <div className="flex items-center gap-4">
-                          <Badge variant="success" className="text-[10px] px-4 font-black bg-[#0D9488] text-white">ACTIVE QUEUE</Badge>
-                          <Link to="/doctor/appointments" className="text-[10px] font-black text-[#0D9488] hover:text-[#0D9488]/80 uppercase tracking-widest flex items-center gap-1 transition-colors">
-                             View All <ChevronRight size={12} />
-                          </Link>
-                       </div>
-                    </div>
+                     <div className="flex flex-wrap items-center justify-between px-2 min-h-[40px] gap-3">
+                        <div className="flex items-center gap-3">
+                           <Users size={18} className="text-[#0D9488]" />
+                           <h3 className="text-sm font-black text-navy uppercase tracking-widest">Hospital Consultations</h3>
+                        </div>
+                        <div className="flex items-center gap-3">
+                           {todaySessionsList.length > 0 && (
+                             <div className="relative">
+                               <Clock size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#0D9488]" />
+                               <select
+                                 value={selectedSession}
+                                 onChange={e => setSelectedSession(e.target.value)}
+                                 className="pl-7 pr-6 py-1.5 bg-white border border-gray-200 rounded-xl text-[9px] font-black uppercase tracking-wider text-navy appearance-none outline-none cursor-pointer focus:ring-2 focus:ring-[#0D9488]/10"
+                               >
+                                 {todaySessionsList.map(s => (
+                                   <option key={s.key} value={s.key}>{s.label}</option>
+                                 ))}
+                               </select>
+                             </div>
+                           )}
+                           <Badge variant="success" className="text-[10px] px-4 font-black bg-[#0D9488] text-white">ACTIVE QUEUE</Badge>
+                           <Link to="/doctor/appointments" className="text-[10px] font-black text-[#0D9488] hover:text-[#0D9488]/80 uppercase tracking-widest flex items-center gap-1 transition-colors">
+                              View All <ChevronRight size={12} />
+                           </Link>
+                        </div>
+                     </div>
 
                     <Card className="bg-white border border-gray-100 shadow-2xl shadow-navy/5 rounded-[48px] overflow-hidden">
                        <div className="overflow-x-auto">
@@ -378,10 +705,6 @@ const DoctorDashboard = () => {
                                            ) : app.status === 'consulting' ? (
                                               <Button size="sm" onClick={() => navigate(`/doctor/appointments/${app.id}/consult`)} className="bg-[#0D9488] text-white shadow-lg border-none shadow-[#0D9488]/20 rounded-xl text-[9px] px-5 py-2 hover:bg-[#0D9488]/90 transition-all font-black ml-auto">
                                                  Prescribe
-                                              </Button>
-                                           ) : app.status === 'booked' ? (
-                                              <Button size="sm" onClick={() => handleStartConsultation(app.id)} className="bg-navy text-white rounded-xl text-[9px] px-5 py-2 shadow-lg hover:bg-[#0D9488] transition-all ml-auto border-none">
-                                                 Start Session
                                               </Button>
                                            ) : (
                                               <Button 
@@ -450,13 +773,23 @@ const DoctorDashboard = () => {
                                  <Clock size={14} className="text-[#0D9488]" /> {calculateWaitTime(nextPatient.id)} mins
                               </span>
                            </div>
-                           <Button 
-                             onClick={() => handleStartConsultation(nextPatient.id)}
-                             size="sm" 
-                             className="bg-[#0D9488] text-white font-black text-[11px] rounded-[18px] px-6 py-3 hover:bg-[#0f766e] shadow-xl border-none transition-all"
-                           >
-                              Call Patient
-                           </Button>
+                           {(() => {
+                              const canStart = isAppointmentStartable(nextPatient, appointments, schedules);
+                              return (
+                                 <Button 
+                                   disabled={!canStart}
+                                   onClick={() => handleStartConsultation(nextPatient.id)}
+                                   size="sm" 
+                                   className={`font-black text-[11px] rounded-[18px] px-6 py-3 border-none transition-all ${
+                                      canStart 
+                                        ? 'bg-[#0D9488] text-white hover:bg-[#0f766e] shadow-xl' 
+                                        : 'bg-white/10 text-white/30 cursor-not-allowed shadow-none'
+                                   }`}
+                                 >
+                                    Call Patient
+                                 </Button>
+                              );
+                           })()}
                         </div>
                       </>
                     ) : (
@@ -572,28 +905,6 @@ const DoctorDashboard = () => {
                 >
                    Close
                 </Button>
-                {selectedAppointment.status === 'booked' && (
-                   <div className="flex gap-2">
-                      <Button 
-                         onClick={() => {
-                           setDetailsModalOpen(false);
-                           handleMarkNoShow(selectedAppointment.id);
-                         }} 
-                         className="bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 rounded-2xl px-6 font-black text-[10px] h-12 uppercase tracking-widest"
-                      >
-                         Mark No-Show
-                      </Button>
-                      <Button 
-                         onClick={() => {
-                           setDetailsModalOpen(false);
-                           handleStartConsultation(selectedAppointment.id);
-                         }} 
-                         className="bg-[#0D9488] text-white rounded-2xl px-10 shadow-xl border-none font-black text-[10px] h-12 uppercase tracking-widest"
-                      >
-                         Start Consultation
-                      </Button>
-                   </div>
-                )}
              </div>
           </div>
         )}

@@ -294,7 +294,7 @@ const generateAvailableSlots = async (doctorId, consultationType, options = {}) 
                 const startOfToday = new Date(now);
                 startOfToday.setHours(0, 0, 0, 0);
                 const isFutureOrOfflineToday = slotStart > now ||
-                    (options.isOfflineBooking && slotEnd > now && slotStart >= startOfToday);
+                    (options.isOfflineBooking && slotStart >= startOfToday);
                 const bookedCount = persisted?.booked_count || 0;
                 if (isFutureOrOfflineToday && status !== 'blocked') {
                     generated.push({

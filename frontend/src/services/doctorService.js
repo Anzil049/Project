@@ -78,7 +78,12 @@ const doctorService = {
 
   noShowAppointment: appointmentService.noShowAppointment,
 
-
+  searchPatientByEmail: async (email) => {
+    const response = await api.get('/appointments/patient-search', {
+      params: { email }
+    });
+    return response.data;
+  },
 
   getProfile: async () => {
     const response = await api.get('/auth/me');
