@@ -541,12 +541,27 @@ const getDoctorAppointments = asyncHandler(async (req, res) => {
 });
 
 const getHospitalAppointments = asyncHandler(async (req, res) => {
-    const doctors = await Doctor.find({ hospitalId: req.user.userId }).select('_id user specialization').populate('user', 'name image');
+    const doctors = await Doctor.find({ hospitalId: req.user.userId })
+        .select('_id user specialization')
+        .populate('user', 'name image')
+        .lean();
+
     const doctorIds = doctors.map(doctor => doctor._id);
+    
+    // Fetch doctor schedules
+    const DoctorSchedule = require('../models/DoctorSchedule');
+    const schedules = await DoctorSchedule.find({ doctor_id: { $in: doctorIds } }).lean();
+
+    // Attach schedules to each doctor
+    const doctorsWithSchedules = doctors.map(doc => ({
+        ...doc,
+        schedules: schedules.filter(s => s.doctor_id.toString() === doc._id.toString())
+    }));
+
     const appointments = await populateAppointmentQuery(Appointment.find({ doctor_id: { $in: doctorIds } }))
         .sort({ createdAt: -1 });
 
-    res.json({ doctors, appointments: appointments.map(formatAppointmentResponse) });
+    res.json({ doctors: doctorsWithSchedules, appointments: appointments.map(formatAppointmentResponse) });
 });
 
 const getAppointmentById = asyncHandler(async (req, res) => {

@@ -33,6 +33,15 @@ const calculateSlotSummary = (schedule) => {
   };
 };
 
+const formatTime12 = (timeStr) => {
+  if (!timeStr) return '';
+  const [hourStr, minuteStr] = timeStr.split(':');
+  const hour = parseInt(hourStr, 10);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${minuteStr} ${ampm}`;
+};
+
 const HospitalDoctors = () => {
   const allDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -462,9 +471,8 @@ const HospitalDoctors = () => {
                   <thead>
                     <tr className="bg-gray-50/50">
                       <th className="px-8 py-5 text-[10px] uppercase tracking-[0.2em] font-black text-navy/30">Doctor Identity</th>
-                      <th className="px-8 py-5 text-[10px] uppercase tracking-[0.2em] font-black text-navy/30">Spec. & Days</th>
+                      <th className="px-8 py-5 text-[10px] uppercase tracking-[0.2em] font-black text-navy/30">Specialization</th>
                       <th className="px-8 py-5 text-[10px] uppercase tracking-[0.2em] font-black text-navy/30">Sessions</th>
-                      <th className="px-8 py-5 text-[10px] uppercase tracking-[0.2em] font-black text-navy/30 text-center">Total Bookings</th>
                       <th className="px-8 py-5 text-[10px] uppercase tracking-[0.2em] font-black text-navy/30 text-right">Administrative</th>
                     </tr>
                   </thead>
@@ -484,12 +492,6 @@ const HospitalDoctors = () => {
                            <div className="flex items-center gap-2 text-xs font-bold text-navy/80 capitalize">
                               <Stethoscope size={14} className="text-[#0D9488]/40" /> {doctor.specialization}
                            </div>
-                           <div className="flex items-center gap-4 mt-1.5">
-                              <p className="text-[10px] font-black text-[#0D9488] uppercase tracking-wider flex items-center gap-1">
-                                 <Calendar size={10} /> {formatDays(getAvailableDaysFromSchedules(doctor.schedules))}
-                              </p>
-
-                           </div>
                         </td>
                         <td className="px-8 py-6">
                            <div className="flex flex-col gap-1.5">
@@ -500,19 +502,11 @@ const HospitalDoctors = () => {
                               )}
                               {doctor.schedules && doctor.schedules.length > 0 ? doctor.schedules.map((schedule, i) => (
                                  <div key={i} className="inline-flex items-center self-start gap-2 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-wider border border-blue-100/50">
-                                    <Clock size={10} /> {schedule.custom_date ? new Date(schedule.custom_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}) : schedule.day_of_week}: {schedule.start_time} - {schedule.end_time} ({schedule.slot_duration}m)
+                                    <Clock size={10} /> {schedule.custom_date ? new Date(schedule.custom_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}) : schedule.day_of_week}: {formatTime12(schedule.start_time)} - {formatTime12(schedule.end_time)} ({schedule.slot_duration}m)
                                  </div>
                               )) : (
                                  <p className="text-[10px] font-bold text-navy/20 italic">No schedules defined</p>
                               )}
-                           </div>
-                        </td>
-                        <td className="px-8 py-6 text-center">
-                           <div className="inline-flex flex-col items-center">
-                              <p className="text-sm font-black text-navy">{doctor.appointmentsToday}</p>
-                              <p className="text-[9px] font-black text-navy/20 uppercase tracking-widest border-t border-gray-100 pt-1 mt-1">
-                                Limit: {doctor.maxTokens}
-                              </p>
                            </div>
                         </td>
                         <td className="px-8 py-6">
@@ -588,23 +582,11 @@ const HospitalDoctors = () => {
                          <div className="flex flex-wrap gap-2">
                             {doctor.schedules && doctor.schedules.length > 0 ? doctor.schedules.map((schedule, i) => (
                               <p key={i} className="text-[9px] font-bold text-navy/70 flex items-center gap-1.5 uppercase bg-white px-2 py-1 rounded-md shadow-sm border border-gray-100">
-                                 <Clock size={10} className="text-[#0D9488]" /> {schedule.custom_date ? new Date(schedule.custom_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}) : schedule.day_of_week}: {schedule.start_time} - {schedule.end_time}
+                                 <Clock size={10} className="text-[#0D9488]" /> {schedule.custom_date ? new Date(schedule.custom_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}) : schedule.day_of_week}: {formatTime12(schedule.start_time)} - {formatTime12(schedule.end_time)}
                               </p>
                             )) : (
                               <p className="text-[10px] font-bold text-navy/20 italic">No schedules defined</p>
                             )}
-                         </div>
-                      </div>
-                      <div className="p-4 bg-gray-50 rounded-2xl flex items-center justify-between">
-                         <div>
-                            <p className="text-[8px] font-black text-navy/30 uppercase tracking-widest mb-1.5">Total Bookings</p>
-                            <p className="text-[10px] font-bold text-navy/70 flex items-center gap-1.5 uppercase">
-                               <Calendar size={12} className="text-blue-500" /> {doctor.appointmentsToday} Tokens
-                            </p>
-                         </div>
-                         <div className="text-right">
-                            <p className="text-[8px] font-black text-navy/30 uppercase tracking-widest mb-1.5">Daily Limit</p>
-                            <p className="text-[11px] font-black text-[#0D9488] uppercase tracking-tighter">{doctor.maxTokens}</p>
                          </div>
                       </div>
                   </div>
@@ -764,22 +746,12 @@ const HospitalDoctors = () => {
                 </div>
              </div>
 
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Input 
-                    label="Full Professional Name"
-                    placeholder="e.g. Dr. Jane Smith"
-                    {...register('name')}
-                    error={errors.name?.message}
-                />
-                <Input 
-                    label="Daily Token Limit"
-                    type="number"
-                    placeholder="e.g. 20"
-                    icon={Hash}
-                    {...register('maxTokens')}
-                    error={errors.maxTokens?.message}
-                />
-             </div>
+             <Input 
+                 label="Full Professional Name"
+                 placeholder="e.g. Dr. Jane Smith"
+                 {...register('name')}
+                 error={errors.name?.message}
+             />
 
              <div className="space-y-1.5 text-left">
                 <label className="text-xs font-bold text-navy/40 uppercase tracking-widest pl-1">Primary Specialization</label>

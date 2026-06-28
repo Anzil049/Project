@@ -82,18 +82,13 @@ const SchedulePanel = ({ title, icon, consultationType, disabled, isEditing, sch
       </div>
 
       <div className="space-y-4">
-        {isHospitalDoctor && (
-          <div className="rounded-2xl bg-gray-50 p-5 flex items-center gap-3 text-navy/45">
-            <Ban size={18} />
-            <p className="text-[11px] font-black uppercase tracking-widest">Not available for hospital-associated doctors</p>
-          </div>
-        )}
 
-        {!isHospitalDoctor && schedules.length === 0 && (
+        {schedules.length === 0 && (
           <div className="rounded-2xl border-2 border-dashed border-gray-100 p-8 text-center">
             <p className="text-[10px] font-black uppercase tracking-widest text-navy/35">No schedule configured</p>
           </div>
         )}
+
 
         {schedules.map((schedule, index) => (
           <div key={`${consultationType}-${index}`} className="rounded-[24px] border border-gray-100 bg-[#F8FAFC] p-5 space-y-4">
@@ -489,11 +484,7 @@ const getDayOfWeekFromDate = (dateStr) => {
               <Calendar size={14} className="text-[#0D9488]" /> Rolling booking windows and independent slots
             </p>
           </div>
-          {isHospitalDoctor ? (
-            <div className="bg-amber-50 text-amber-700 border border-amber-200/50 rounded-2xl px-6 py-4 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm">
-              <Ban size={16} /> Managed by Associated Hospital
-            </div>
-          ) : (
+          {!isHospitalDoctor && (
             <div className="flex items-center gap-4">
               {isEditing ? (
                 <>
@@ -526,6 +517,20 @@ const getDayOfWeekFromDate = (dateStr) => {
             </div>
           )}
         </div>
+
+        {isHospitalDoctor && (
+          <div className="flex items-start gap-4 p-5 bg-amber-50 border border-amber-200/70 rounded-[24px] shadow-sm">
+            <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+              <Ban size={20} />
+            </div>
+            <div>
+              <p className="text-sm font-black text-amber-800 uppercase tracking-tight">Managed by Your Hospital</p>
+              <p className="text-[11px] font-bold text-amber-700/80 mt-1 leading-relaxed">
+                Your availability schedule is configured and managed by your associated hospital. To make any changes — including time slots, working days, or booking windows — please contact your hospital administration directly.
+              </p>
+            </div>
+          </div>
+        )}
 
         <Card className="p-6 md:p-8 rounded-[32px] border border-gray-100 shadow-sm bg-white">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
